@@ -1,0 +1,394 @@
+package channels
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+
+	lark "github.com/larksuite/oapi-sdk-go/v3"
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
+	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
+
+	"github.com/lingguard/internal/config"
+	"github.com/lingguard/pkg/logger"
+)
+
+// Message type display mapping for non-text messages
+var msgTypeMap = map[string]string{
+	"image":   "[image]",
+	"audio":   "[audio]",
+	"file":    "[file]",
+	"sticker": "[sticker]",
+	"video":   "[video]",
+}
+
+// FeishuChannel 飞书 WebSocket 渠道
+type FeishuChannel struct {
+	cfg      *config.FeishuConfig
+	client   *lark.Client
+	wsClient *larkws.Client
+	handler  MessageHandler
+	mu       sync.RWMutex
+	running  bool
+	allowMap map[string]bool
+
+	// Message deduplication
+	processedMsgs sync.Map // map[string]time.Time
+	dedupeMu      sync.Mutex
+
+	// Context for graceful shutdown
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+// NewFeishuChannel 创建飞书渠道
+func NewFeishuChannel(cfg *config.FeishuConfig, handler MessageHandler) *FeishuChannel {
+	allowMap := make(map[string]bool)
+	for _, id := range cfg.AllowFrom {
+		allowMap[id] = true
+	}
+	return &FeishuChannel{
+		cfg:      cfg,
+		handler:  handler,
+		allowMap: allowMap,
+	}
+}
+
+// Name 返回渠道名称
+func (f *FeishuChannel) Name() string { return "feishu" }
+
+// Start 启动渠道
+func (f *FeishuChannel) Start(ctx context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.running {
+		return nil
+	}
+
+	// Create context for graceful shutdown
+	f.ctx, f.cancel = context.WithCancel(ctx)
+
+	// Create Lark Client for sending messages
+	f.client = lark.NewClient(f.cfg.AppID, f.cfg.AppSecret)
+
+	// Create event handler
+	eventDispatcher := dispatcher.NewEventDispatcher(f.cfg.VerificationToken, f.cfg.EncryptKey).
+		OnP2MessageReceiveV1(f.handleMessage)
+
+	// Create WebSocket client with debug logging
+	f.wsClient = larkws.NewClient(f.cfg.AppID, f.cfg.AppSecret,
+		larkws.WithEventHandler(eventDispatcher),
+		larkws.WithAutoReconnect(true),
+		larkws.WithLogLevel(larkcore.LogLevelDebug),
+	)
+
+	// Start WebSocket client in a separate goroutine with reconnect loop
+	go func() {
+		for {
+			select {
+			case <-f.ctx.Done():
+				return
+			default:
+				if err := f.wsClient.Start(f.ctx); err != nil {
+					logger.Warn("Feishu WebSocket error: %v, reconnecting in 5s...", err)
+					time.Sleep(5 * time.Second)
+				}
+			}
+		}
+	}()
+
+	f.running = true
+	logger.Info("Feishu channel started with WebSocket long connection")
+	logger.Info("No public IP required - using WebSocket to receive events")
+	return nil
+}
+
+// Stop 停止渠道
+func (f *FeishuChannel) Stop() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.cancel != nil {
+		f.cancel()
+	}
+	f.running = false
+	logger.Info("Feishu channel stopped")
+	return nil
+}
+
+// IsRunning 检查是否运行中
+func (f *FeishuChannel) IsRunning() bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.running
+}
+
+// handleMessage 处理接收到的消息
+func (f *FeishuChannel) handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+	if event.Event == nil || event.Event.Message == nil {
+		return nil
+	}
+
+	msg := event.Event.Message
+	sender := event.Event.Sender
+
+	// Get message ID for deduplication
+	messageID := safeString(msg.MessageId)
+	if messageID == "" {
+		return nil
+	}
+
+	// Deduplication check
+	if f.isProcessed(messageID) {
+		logger.Debug("Skipping duplicate message: %s", messageID)
+		return nil
+	}
+	f.markProcessed(messageID)
+
+	// Skip bot messages
+	if sender != nil && safeString(sender.SenderType) == "bot" {
+		return nil
+	}
+
+	// Get sender ID
+	var senderID string
+	if sender != nil && sender.SenderId != nil && sender.SenderId.OpenId != nil {
+		senderID = *sender.SenderId.OpenId
+	}
+	if senderID == "" {
+		return nil
+	}
+
+	// Permission check
+	if len(f.allowMap) > 0 && !f.allowMap[senderID] {
+		logger.Warn("Access denied for sender %s on channel feishu. Add to allowFrom list to grant access.", senderID)
+		return nil
+	}
+
+	chatID := safeString(msg.ChatId)
+	chatType := safeString(msg.ChatType)
+	msgType := safeString(msg.MessageType)
+
+	// Add reaction to indicate "seen"
+	go f.addReaction(messageID, "THUMBSUP")
+
+	// Parse message content
+	var content string
+	if msgType == "text" {
+		content = f.parseTextContent(msg.Content)
+	} else {
+		content = msgTypeMap[msgType]
+		if content == "" {
+			content = fmt.Sprintf("[%s]", msgType)
+		}
+	}
+
+	if content == "" {
+		return nil
+	}
+
+	// Determine reply target: group -> chat_id, p2p -> sender open_id
+	replyTo := chatID
+	if chatType == "p2p" {
+		replyTo = senderID
+	}
+
+	// Build Message
+	channelMsg := &Message{
+		ID:        messageID,
+		SessionID: "feishu-" + senderID,
+		Content:   strings.TrimSpace(content),
+		Metadata: map[string]any{
+			"chat_id":    chatID,
+			"open_id":    senderID,
+			"chat_type":  chatType,
+			"msg_type":   msgType,
+			"reply_to":   replyTo,
+			"message_id": messageID,
+		},
+	}
+
+	logger.Debug("Received message from %s (chat_type=%s): %s", senderID, chatType, channelMsg.Content)
+
+	// Call handler
+	reply, err := f.handler.HandleMessage(ctx, channelMsg)
+	if err != nil {
+		logger.Error("Handler error: %v", err)
+		return err
+	}
+
+	// Send reply
+	if reply != "" {
+		return f.sendReply(ctx, replyTo, reply)
+	}
+	return nil
+}
+
+// addReaction 添加表情反应
+func (f *FeishuChannel) addReaction(messageID, emojiType string) {
+	if f.client == nil {
+		return
+	}
+
+	req := larkim.NewCreateMessageReactionReqBuilder().
+		MessageId(messageID).
+		Body(larkim.NewCreateMessageReactionReqBodyBuilder().
+			ReactionType(larkim.NewEmojiBuilder().
+				EmojiType(emojiType).
+				Build()).
+			Build()).
+		Build()
+
+	resp, err := f.client.Im.MessageReaction.Create(context.Background(), req)
+	if err != nil {
+		logger.Debug("Failed to add reaction: %v", err)
+		return
+	}
+
+	if resp.Code != 0 {
+		logger.Debug("Failed to add reaction: code=%d, msg=%s", resp.Code, resp.Msg)
+	} else {
+		logger.Debug("Added %s reaction to message %s", emojiType, messageID)
+	}
+}
+
+// sendReply 发送回复消息 (使用 Interactive Card)
+func (f *FeishuChannel) sendReply(ctx context.Context, receiveID, content string) error {
+	if receiveID == "" {
+		return fmt.Errorf("receive_id is empty")
+	}
+
+	// Determine receive_id_type based on ID format
+	// open_id starts with "ou_", chat_id starts with "oc_"
+	receiveIDType := larkim.ReceiveIdTypeOpenId
+	if strings.HasPrefix(receiveID, "oc_") {
+		receiveIDType = larkim.ReceiveIdTypeChatId
+	}
+
+	// Build interactive card with markdown support
+	card := map[string]any{
+		"config": map[string]any{
+			"wide_screen_mode": true,
+		},
+		"elements": []map[string]any{
+			{
+				"tag":     "markdown",
+				"content": content,
+			},
+		},
+	}
+
+	cardJSON, err := json.Marshal(card)
+	if err != nil {
+		return fmt.Errorf("marshal card: %w", err)
+	}
+
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(receiveIDType).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(receiveID).
+			MsgType(larkim.MsgTypeInteractive).
+			Content(string(cardJSON)).
+			Build()).
+		Build()
+
+	resp, err := f.client.Im.Message.Create(ctx, req)
+	if err != nil {
+		logger.Error("Failed to send reply: %v", err)
+		return err
+	}
+
+	if resp.Code != 0 {
+		logger.Error("Failed to send reply: code=%d, msg=%s", resp.Code, resp.Msg)
+		return fmt.Errorf("send message failed: %s", resp.Msg)
+	}
+
+	logger.Debug("Reply sent successfully to %s", receiveID)
+	return nil
+}
+
+// isProcessed 检查消息是否已处理
+func (f *FeishuChannel) isProcessed(messageID string) bool {
+	f.dedupeMu.Lock()
+	defer f.dedupeMu.Unlock()
+
+	// Clean up old entries (keep last 1 hour)
+	now := time.Now()
+	cutoff := now.Add(-1 * time.Hour)
+	var toDelete []string
+	f.processedMsgs.Range(func(key, value any) bool {
+		if t, ok := value.(time.Time); ok && t.Before(cutoff) {
+			toDelete = append(toDelete, key.(string))
+		}
+		return true
+	})
+	for _, k := range toDelete {
+		f.processedMsgs.Delete(k)
+	}
+
+	_, exists := f.processedMsgs.Load(messageID)
+	return exists
+}
+
+// markProcessed 标记消息为已处理
+func (f *FeishuChannel) markProcessed(messageID string) {
+	f.processedMsgs.Store(messageID, time.Now())
+}
+
+// parseTextContent 解析文本消息内容
+func (f *FeishuChannel) parseTextContent(content *string) string {
+	if content == nil || *content == "" {
+		return ""
+	}
+
+	// Feishu text message format: {"text":"actual content"}
+	var textMsg struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(*content), &textMsg); err == nil {
+		return textMsg.Text
+	}
+
+	// If parsing fails, return raw content
+	return *content
+}
+
+// safeString 安全获取字符串指针
+func safeString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// escapeJSONString 转义 JSON 字符串中的特殊字符
+func escapeJSONString(s string) string {
+	var result strings.Builder
+	for _, c := range s {
+		switch c {
+		case '"':
+			result.WriteString(`\"`)
+		case '\\':
+			result.WriteString(`\\`)
+		case '\n':
+			result.WriteString(`\n`)
+		case '\r':
+			result.WriteString(`\r`)
+		case '\t':
+			result.WriteString(`\t`)
+		default:
+			result.WriteRune(c)
+		}
+	}
+	return result.String()
+}
+
+// Compile-time check for unused code (regexp for markdown table parsing if needed later)
+var _ = regexp.MustCompile(``)
