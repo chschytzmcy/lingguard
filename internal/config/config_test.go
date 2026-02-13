@@ -13,12 +13,16 @@ func TestDefaultConfig(t *testing.T) {
 		t.Fatal("DefaultConfig() returned nil")
 	}
 
-	if cfg.Agents.MaxHistoryMessages != 50 {
-		t.Errorf("Expected MaxHistoryMessages=50, got %d", cfg.Agents.MaxHistoryMessages)
+	if cfg.Agents.MemoryWindow != 50 {
+		t.Errorf("Expected MemoryWindow=50, got %d", cfg.Agents.MemoryWindow)
 	}
 
-	if cfg.Agents.MaxToolCalls != 10 {
-		t.Errorf("Expected MaxToolCalls=10, got %d", cfg.Agents.MaxToolCalls)
+	if cfg.Agents.MaxToolIterations != 20 {
+		t.Errorf("Expected MaxToolIterations=20, got %d", cfg.Agents.MaxToolIterations)
+	}
+
+	if cfg.Agents.Model != "gpt-4o" {
+		t.Errorf("Expected Model=gpt-4o, got %s", cfg.Agents.Model)
 	}
 
 	if cfg.Storage.Type != "sqlite" {
@@ -47,11 +51,10 @@ func TestConfigSaveAndLoad(t *testing.T) {
 		APIBase: "https://api.test.com/v1",
 		Model:   "test-model",
 	}
-	cfg.Agents.DefaultProvider = "test"
+	cfg.Agents.Model = "test"
 	cfg.Agents.SystemPrompt = "Test prompt"
-	cfg.Agents.Mapping = map[string]string{
-		"dev_agent": "test",
-	}
+	cfg.Agents.Workspace = "/test/workspace"
+	cfg.Agents.MaxTokens = 4096
 
 	// 保存配置
 	err = cfg.Save(configPath)
@@ -70,16 +73,20 @@ func TestConfigSaveAndLoad(t *testing.T) {
 		t.Errorf("Expected APIKey=test-key, got %s", loadedCfg.Providers["test"].APIKey)
 	}
 
-	if loadedCfg.Agents.DefaultProvider != "test" {
-		t.Errorf("Expected DefaultProvider=test, got %s", loadedCfg.Agents.DefaultProvider)
+	if loadedCfg.Agents.Model != "test" {
+		t.Errorf("Expected Model=test, got %s", loadedCfg.Agents.Model)
 	}
 
 	if loadedCfg.Agents.SystemPrompt != "Test prompt" {
 		t.Errorf("Expected SystemPrompt='Test prompt', got %s", loadedCfg.Agents.SystemPrompt)
 	}
 
-	if loadedCfg.Agents.Mapping["dev_agent"] != "test" {
-		t.Errorf("Expected dev_agent mapping=test, got %s", loadedCfg.Agents.Mapping["dev_agent"])
+	if loadedCfg.Agents.Workspace != "/test/workspace" {
+		t.Errorf("Expected Workspace='/test/workspace', got %s", loadedCfg.Agents.Workspace)
+	}
+
+	if loadedCfg.Agents.MaxTokens != 4096 {
+		t.Errorf("Expected MaxTokens=4096, got %d", loadedCfg.Agents.MaxTokens)
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/internal/tools"
 	"github.com/lingguard/pkg/llm"
-	"github.com/lingguard/pkg/memory"
 )
 
 // MockProvider 用于测试的模拟 Provider
@@ -37,32 +36,31 @@ func (m *MockProvider) Stream(ctx context.Context, req *llm.Request) (<-chan llm
 
 func TestNewAgent(t *testing.T) {
 	cfg := &config.AgentsConfig{
-		DefaultProvider:    "mock",
-		SystemPrompt:       "You are a test assistant",
-		MaxHistoryMessages: 10,
-		MaxToolCalls:       5,
+		Model:             "mock",
+		SystemPrompt:      "You are a test assistant",
+		MemoryWindow:      10,
+		MaxToolIterations: 5,
+		Workspace:         "~/.lingguard/workspace",
 	}
 
 	mockProvider := &MockProvider{}
-	mem := memory.NewMemoryStore()
 
-	agent := NewAgent(cfg, mockProvider, mem)
+	agent := NewAgent(cfg, mockProvider)
 
 	if agent == nil {
 		t.Fatal("NewAgent returned nil")
 	}
 
-	if agent.config.DefaultProvider != "mock" {
-		t.Errorf("Expected defaultProvider=mock, got %s", agent.config.DefaultProvider)
+	if agent.config.Model != "mock" {
+		t.Errorf("Expected Model=mock, got %s", agent.config.Model)
 	}
 }
 
 func TestAgentRegisterTool(t *testing.T) {
-	cfg := &config.AgentsConfig{DefaultProvider: "mock"}
+	cfg := &config.AgentsConfig{Model: "mock"}
 	mockProvider := &MockProvider{}
-	mem := memory.NewMemoryStore()
 
-	agent := NewAgent(cfg, mockProvider, mem)
+	agent := NewAgent(cfg, mockProvider)
 
 	// 注册工具
 	agent.RegisterTool(tools.NewShellTool("", false))
@@ -76,10 +74,10 @@ func TestAgentRegisterTool(t *testing.T) {
 
 func TestAgentProcessMessage(t *testing.T) {
 	cfg := &config.AgentsConfig{
-		DefaultProvider:    "mock",
-		SystemPrompt:       "You are helpful",
-		MaxHistoryMessages: 10,
-		MaxToolCalls:       5,
+		Model:             "mock",
+		SystemPrompt:      "You are helpful",
+		MemoryWindow:      10,
+		MaxToolIterations: 5,
 	}
 
 	mockProvider := &MockProvider{
@@ -103,8 +101,7 @@ func TestAgentProcessMessage(t *testing.T) {
 		},
 	}
 
-	mem := memory.NewMemoryStore()
-	agent := NewAgent(cfg, mockProvider, mem)
+	agent := NewAgent(cfg, mockProvider)
 
 	ctx := context.Background()
 	response, err := agent.ProcessMessage(ctx, "test-session", "Hi")
@@ -118,18 +115,18 @@ func TestAgentProcessMessage(t *testing.T) {
 	}
 
 	// 验证消息存储
-	msgs, _ := mem.Get(ctx, "test-session", 0)
-	if len(msgs) != 2 {
-		t.Errorf("Expected 2 stored messages, got %d", len(msgs))
+	s := agent.sessions.GetOrCreate("test-session")
+	if len(s.Messages) != 2 {
+		t.Errorf("Expected 2 stored messages, got %d", len(s.Messages))
 	}
 }
 
 func TestAgentToolExecution(t *testing.T) {
 	cfg := &config.AgentsConfig{
-		DefaultProvider:    "mock",
-		SystemPrompt:       "You are helpful",
-		MaxHistoryMessages: 10,
-		MaxToolCalls:       5,
+		Model:             "mock",
+		SystemPrompt:      "You are helpful",
+		MemoryWindow:      10,
+		MaxToolIterations: 5,
 	}
 
 	// 第一次响应：调用工具
@@ -162,8 +159,7 @@ func TestAgentToolExecution(t *testing.T) {
 	}
 
 	mockProvider := &MockProvider{response: toolCallResponse}
-	mem := memory.NewMemoryStore()
-	agent := NewAgent(cfg, mockProvider, mem)
+	agent := NewAgent(cfg, mockProvider)
 
 	// 注册一个简单的测试工具
 	agent.RegisterTool(&EchoTool{})

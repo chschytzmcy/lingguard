@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/internal/providers"
+	"github.com/lingguard/internal/session"
 	"github.com/lingguard/internal/tools"
 	"github.com/lingguard/pkg/llm"
 	"github.com/lingguard/pkg/logger"
@@ -20,17 +21,17 @@ type Agent struct {
 	id           string
 	provider     providers.Provider
 	toolRegistry *tools.Registry
-	memory       memory.Store
+	sessions     *session.Manager
 	config       *config.AgentsConfig
 }
 
 // NewAgent 创建新代理
-func NewAgent(cfg *config.AgentsConfig, provider providers.Provider, mem memory.Store) *Agent {
+func NewAgent(cfg *config.AgentsConfig, provider providers.Provider) *Agent {
 	return &Agent{
 		id:           generateID(),
 		provider:     provider,
 		toolRegistry: tools.NewRegistry(),
-		memory:       mem,
+		sessions:     session.NewManager(memory.NewMemoryStore(), cfg.MemoryWindow),
 		config:       cfg,
 	}
 }
@@ -42,18 +43,12 @@ func (a *Agent) RegisterTool(t tools.Tool) {
 
 // ProcessMessage 处理消息
 func (a *Agent) ProcessMessage(ctx context.Context, sessionID, userMessage string) (string, error) {
-	// 1. 存储用户消息
-	userMsg := &memory.Message{
-		ID:      generateID(),
-		Role:    "user",
-		Content: userMessage,
-	}
-	if err := a.memory.Add(ctx, sessionID, userMsg); err != nil {
-		return "", fmt.Errorf("failed to store user message: %w", err)
-	}
+	// 1. 获取或创建会话并添加用户消息
+	s := a.sessions.GetOrCreate(sessionID)
+	s.AddMessage("user", userMessage)
 
 	// 2. 构建上下文
-	messages, err := a.buildContext(ctx, sessionID)
+	messages, err := a.buildContext(sessionID)
 	if err != nil {
 		return "", fmt.Errorf("failed to build context: %w", err)
 	}
@@ -63,7 +58,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, sessionID, userMessage strin
 }
 
 // buildContext 构建上下文
-func (a *Agent) buildContext(ctx context.Context, sessionID string) ([]llm.Message, error) {
+func (a *Agent) buildContext(sessionID string) ([]llm.Message, error) {
 	messages := make([]llm.Message, 0)
 
 	// 添加系统提示
@@ -74,14 +69,9 @@ func (a *Agent) buildContext(ctx context.Context, sessionID string) ([]llm.Messa
 		})
 	}
 
-	// 获取历史消息
-	history, err := a.memory.Get(ctx, sessionID, a.config.MaxHistoryMessages)
-	if err != nil {
-		return nil, err
-	}
-
-	// 添加历史消息
-	for _, msg := range history {
+	// 获取会话历史消息（使用 MemoryWindow）
+	s := a.sessions.GetOrCreate(sessionID)
+	for _, msg := range s.GetHistory(a.config.MemoryWindow) {
 		messages = append(messages, llm.Message{
 			Role:    msg.Role,
 			Content: msg.Content,
@@ -94,8 +84,8 @@ func (a *Agent) buildContext(ctx context.Context, sessionID string) ([]llm.Messa
 // runLoop 代理执行循环
 func (a *Agent) runLoop(ctx context.Context, sessionID string, messages []llm.Message) (string, error) {
 	iterations := 0
-	maxIterations := a.config.MaxToolCalls
-	if maxIterations == 0 {
+	maxIterations := a.config.MaxToolIterations
+	if maxIterations <= 0 {
 		maxIterations = 10
 	}
 
@@ -118,14 +108,10 @@ func (a *Agent) runLoop(ctx context.Context, sessionID string, messages []llm.Me
 		// 获取响应消息
 		assistantMsg := resp.ToMessage()
 
-		// 存储助手消息
+		// 存储助手消息到会话
+		s := a.sessions.GetOrCreate(sessionID)
 		if assistantMsg.Content != "" || len(assistantMsg.ToolCalls) > 0 {
-			memMsg := &memory.Message{
-				ID:      generateID(),
-				Role:    "assistant",
-				Content: assistantMsg.Content,
-			}
-			a.memory.Add(ctx, sessionID, memMsg)
+			s.AddMessage("assistant", assistantMsg.Content)
 		}
 
 		// 检查是否有工具调用

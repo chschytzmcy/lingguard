@@ -10,8 +10,9 @@ import (
 
 // Registry 提供商注册表
 type Registry struct {
-	mu        sync.RWMutex
-	providers map[string]Provider
+	mu          sync.RWMutex
+	providers   map[string]Provider
+	defaultName string
 }
 
 // NewRegistry 创建注册表
@@ -86,4 +87,34 @@ func isAnthropicEndpoint(apiBase string) bool {
 	}
 	lower := strings.ToLower(apiBase)
 	return strings.Contains(lower, "/anthropic")
+}
+
+// SetDefault 设置默认 Provider
+func (r *Registry) SetDefault(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.defaultName = name
+}
+
+// MatchProvider 根据模型名自动匹配 Provider
+func (r *Registry) MatchProvider(model string) (Provider, bool) {
+	// 1. 尝试解析 "provider/model" 格式
+	if parts := strings.SplitN(model, "/", 2); len(parts) == 2 {
+		return r.Get(parts[0])
+	}
+
+	// 2. 检查 model 是否是已注册的 provider 名称
+	if p, ok := r.Get(model); ok {
+		return p, true
+	}
+
+	// 3. 通过关键词匹配
+	if spec := FindSpecByModel(model); spec != nil {
+		if p, ok := r.Get(spec.Name); ok {
+			return p, true
+		}
+	}
+
+	// 4. 返回默认 Provider
+	return r.Get(r.defaultName)
 }

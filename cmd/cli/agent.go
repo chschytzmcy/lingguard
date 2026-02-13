@@ -11,7 +11,6 @@ import (
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/internal/providers"
 	"github.com/lingguard/internal/tools"
-	"github.com/lingguard/pkg/memory"
 	"github.com/spf13/cobra"
 )
 
@@ -55,27 +54,34 @@ func init() {
 }
 
 func createAgent(cfg *config.Config) (*agent.Agent, error) {
-	// 创建 Provider 注册表
+	// 1. 创建 Provider 注册表
 	registry := providers.NewRegistry()
 	if err := registry.InitFromConfig(cfg); err != nil {
 		return nil, err
 	}
 
-	// 获取默认 provider
-	providerName := cfg.Agents.DefaultProvider
-	provider, ok := registry.Get(providerName)
+	// 2. 通过 model 配置自动匹配 Provider
+	model := cfg.Agents.Model
+	provider, ok := registry.MatchProvider(model)
 	if !ok {
-		return nil, fmt.Errorf("provider not found: %s", providerName)
+		return nil, fmt.Errorf("provider not found for model: %s", model)
 	}
 
-	// 创建内存存储
-	mem := memory.NewMemoryStore()
+	// 3. 设置默认 Provider（如果配置的是 provider 名称）
+	if strings.Contains(model, "/") {
+		registry.SetDefault(strings.SplitN(model, "/", 2)[0])
+	} else {
+		registry.SetDefault(model)
+	}
 
-	// 创建 Agent
-	ag := agent.NewAgent(&cfg.Agents, provider, mem)
+	// 4. 创建 Agent
+	ag := agent.NewAgent(&cfg.Agents, provider)
 
-	// 注册工具
-	workspace := cfg.Tools.Workspace
+	// 5. 注册工具
+	workspace := cfg.Agents.Workspace
+	if workspace == "" {
+		workspace = cfg.Tools.Workspace
+	}
 	ag.RegisterTool(tools.NewShellTool(workspace, cfg.Tools.RestrictToWorkspace))
 	ag.RegisterTool(tools.NewFileTool(workspace, cfg.Tools.RestrictToWorkspace))
 

@@ -8,7 +8,7 @@
       "maxTokens": 4096
     },
     "glm": {
-      "apiKey": "bf780a4d27454909ad02ba7c9a0e6d19.LsBBLU4U3bCCdvqm",
+      "apiKey": "aa1d0dc2e27c4eaa80a9772536d2031c.BGqk7a4NgHcCPxXR",
       "apiBase": "https://open.bigmodel.cn/api/anthropic",
       "model": "glm-5",
       "temperature": 0.7,
@@ -39,16 +39,13 @@
   },
 
   "agents": {
-    "defaultProvider": "qwen",
-    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。",
-    "maxHistoryMessages": 50,
-    "maxToolCalls": 10,
-    "mapping": {
-      "market_agent": "qwen",
-      "dev_agent": "minimax",
-      "schedule_agent": "qwen",
-      "chat_agent": "qwen"
-    }
+    "workspace": "~/.lingguard/workspace",
+    "model": "glm",
+    "maxTokens": 8192,
+    "temperature": 0.7,
+    "maxToolIterations": 20,
+    "memoryWindow": 50,
+    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。"
   },
 
   "channels": {

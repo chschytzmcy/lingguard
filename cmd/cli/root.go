@@ -118,22 +118,10 @@ func runStatus() {
 
 	// 显示 Agent 信息
 	fmt.Println("\nAgent:")
-	defaultProvider := cfg.Agents.DefaultProvider
-	if defaultModel, ok := cfg.Providers[defaultProvider]; ok {
-		fmt.Printf("  Default: %s/%s\n", defaultProvider, defaultModel.Model)
-	} else {
-		fmt.Printf("  Default Provider: %s\n", defaultProvider)
-	}
-	if len(cfg.Agents.Mapping) > 0 {
-		fmt.Println("  Agent-LLM Mapping:")
-		for agentType, provider := range cfg.Agents.Mapping {
-			if pc, ok := cfg.Providers[provider]; ok {
-				fmt.Printf("    - %s -> %s/%s\n", agentType, provider, pc.Model)
-			} else {
-				fmt.Printf("    - %s -> %s (not found)\n", agentType, provider)
-			}
-		}
-	}
+	fmt.Printf("  Model: %s\n", cfg.Agents.Model)
+	fmt.Printf("  Workspace: %s\n", cfg.Agents.Workspace)
+	fmt.Printf("  Max Iterations: %d\n", cfg.Agents.MaxToolIterations)
+	fmt.Printf("  Memory Window: %d\n", cfg.Agents.MemoryWindow)
 
 	// 显示渠道信息
 	fmt.Println("\nChannels:")

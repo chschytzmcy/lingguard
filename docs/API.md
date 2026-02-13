@@ -50,7 +50,7 @@ POST {apiBase}/chat/completions
   "id": "chatcmpl-xxx",
   "object": "chat.completion",
   "created": 1234567890,
-  "model": "gpt-4o",
+  "model": "glm-5",
   "choices": [
     {
       "index": 0,
@@ -101,9 +101,56 @@ data: [DONE]
 
 ---
 
-## 3. 工具调用 API
+## 3. Provider 自动匹配
 
-### 3.1 工具定义格式
+LingGuard 支持根据模型名自动选择 Provider：
+
+### 3.1 匹配规则
+
+1. **直接匹配 Provider 名称**: 如果 model 值是已注册的 provider 名称，直接使用该 provider
+2. **解析 `provider/model` 格式**: 支持 `glm/glm-4-plus` 格式
+3. **关键词匹配**: 根据模型名中的关键词自动匹配
+4. **默认 Provider**: 如果以上都不匹配，使用默认 provider
+
+### 3.2 内置关键词
+
+| Provider | 关键词 |
+|----------|--------|
+| openai | gpt, o1, o3 |
+| anthropic | claude |
+| deepseek | deepseek |
+| qwen | qwen, tongyi, dashscope |
+| glm | glm, chatglm, codegeex |
+| minimax | minimax |
+| moonshot | moonshot, kimi |
+| gemini | gemini |
+| groq | llama, mixtral, gemma |
+
+### 3.3 配置示例
+
+```json
+{
+  "agents": {
+    "model": "glm"  // 直接使用 glm provider
+  }
+}
+```
+
+或使用 `provider/model` 格式：
+
+```json
+{
+  "agents": {
+    "model": "glm/glm-4-plus"  // 解析为 glm provider
+  }
+}
+```
+
+---
+
+## 4. 工具调用 API
+
+### 4.1 工具定义格式
 
 ```json
 {
@@ -129,7 +176,7 @@ data: [DONE]
 }
 ```
 
-### 3.2 工具调用响应
+### 4.2 工具调用响应
 
 当 LLM 决定调用工具时，响应中包含 `tool_calls`：
 
@@ -150,7 +197,7 @@ data: [DONE]
 }
 ```
 
-### 3.3 工具结果提交
+### 4.3 工具结果提交
 
 ```json
 {
@@ -162,9 +209,9 @@ data: [DONE]
 
 ---
 
-## 4. 内置工具
+## 5. 内置工具
 
-### 4.1 Shell 工具
+### 5.1 Shell 工具
 
 执行 shell 命令。
 
@@ -173,7 +220,7 @@ data: [DONE]
 | command | string | 是 | Shell 命令 |
 | timeout | integer | 否 | 超时秒数，默认 30 |
 
-### 4.2 文件操作工具
+### 5.2 文件操作工具
 
 | 工具名 | 说明 | 参数 |
 |--------|------|------|
@@ -182,14 +229,14 @@ data: [DONE]
 | file_edit | 编辑文件 | `path`, `old_string`, `new_string` |
 | file_list | 列出目录 | `path`: 目录路径 |
 
-### 4.3 网页工具
+### 5.3 网页工具
 
 | 工具名 | 说明 | 参数 |
 |--------|------|------|
 | web_fetch | 抓取网页 | `url`: 网页地址 |
 | web_search | 搜索网页 | `query`: 搜索关键词 |
 
-### 4.4 Spawn 工具
+### 5.4 Spawn 工具
 
 生成子任务并行处理。
 
@@ -201,9 +248,9 @@ data: [DONE]
 
 ---
 
-## 5. 飞书 Channel API
+## 6. 飞书 Channel API
 
-### 5.1 获取访问令牌
+### 6.1 获取访问令牌
 
 ```
 POST https://open.feishu.cn/open-api/auth/v3/tenant_access_token/internal/
@@ -226,7 +273,7 @@ Content-Type: application/json
 }
 ```
 
-### 5.2 获取 WebSocket 连接地址
+### 6.2 获取 WebSocket 连接地址
 
 ```
 GET https://open.feishu.cn/open-api/bot/v3/ws
@@ -245,7 +292,7 @@ Authorization: Bearer {tenant_access_token}
 }
 ```
 
-### 5.3 发送消息
+### 6.3 发送消息
 
 ```
 POST https://open.feishu.cn/open-api/im/v1/messages?receive_id_type=open_id
@@ -259,7 +306,7 @@ Content-Type: application/json
 }
 ```
 
-### 5.4 接收消息事件 (WebSocket)
+### 6.4 接收消息事件 (WebSocket)
 
 ```json
 {
@@ -285,9 +332,9 @@ Content-Type: application/json
 
 ---
 
-## 6. 错误处理
+## 7. 错误处理
 
-### 6.1 错误响应格式
+### 7.1 错误响应格式
 
 ```json
 {
@@ -299,7 +346,7 @@ Content-Type: application/json
 }
 ```
 
-### 6.2 常见错误码
+### 7.2 常见错误码
 
 | HTTP 状态码 | 错误类型 | 说明 |
 |-------------|----------|------|
@@ -313,16 +360,19 @@ Content-Type: application/json
 
 ---
 
-## 7. Go SDK 使用示例
+## 8. Go SDK 使用示例
 
-### 7.1 使用 go-resty 发送请求
+### 8.1 使用 net/http 发送请求
 
 ```go
 package main
 
 import (
+    "bytes"
+    "encoding/json"
     "fmt"
-    "github.com/go-resty/resty/v2"
+    "io"
+    "net/http"
 )
 
 type ChatRequest struct {
@@ -345,112 +395,142 @@ type ChatResponse struct {
 }
 
 func main() {
-    client := resty.New()
-
     req := ChatRequest{
-        Model: "gpt-4o",
+        Model: "glm-5",
         Messages: []Message{
             {Role: "user", Content: "Hello!"},
         },
         Stream: false,
     }
 
-    var resp ChatResponse
+    body, _ := json.Marshal(req)
 
-    _, err := client.R().
-        SetHeader("Content-Type", "application/json").
-        SetHeader("Authorization", "Bearer sk-xxx").
-        SetBody(req).
-        SetResult(&resp).
-        Post("https://api.openai.com/v1/chat/completions")
+    httpReq, _ := http.NewRequest("POST",
+        "https://open.bigmodel.cn/api/anthropic/chat/completions",
+        bytes.NewReader(body))
+    httpReq.Header.Set("Content-Type", "application/json")
+    httpReq.Header.Set("Authorization", "Bearer xxx.xxx")
 
+    resp, err := http.DefaultClient.Do(httpReq)
+    if err != nil {
+        panic(err)
+    }
+    defer resp.Body.Close()
+
+    respBody, _ := io.ReadAll(resp.Body)
+
+    var chatResp ChatResponse
+    json.Unmarshal(respBody, &chatResp)
+
+    fmt.Println(chatResp.Choices[0].Message.Content)
+}
+```
+
+### 8.2 使用 Provider Registry 自动匹配
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+
+    "github.com/lingguard/internal/config"
+    "github.com/lingguard/internal/providers"
+    "github.com/lingguard/pkg/llm"
+)
+
+func main() {
+    // 加载配置
+    cfg, _ := config.Load("configs/config.json")
+
+    // 创建 Provider 注册表
+    registry := providers.NewRegistry()
+    registry.InitFromConfig(cfg)
+
+    // 自动匹配 Provider
+    provider, ok := registry.MatchProvider("glm")
+    if !ok {
+        panic("provider not found")
+    }
+
+    // 调用 LLM
+    req := &llm.Request{
+        Model: provider.Model(),
+        Messages: []llm.Message{
+            {Role: "user", Content: "Hello!"},
+        },
+    }
+
+    resp, err := provider.Complete(context.Background(), req)
     if err != nil {
         panic(err)
     }
 
-    fmt.Println(resp.Choices[0].Message.Content)
-}
-```
-
-### 7.2 流式响应处理
-
-```go
-client := resty.New()
-
-req := ChatRequest{
-    Model:    "gpt-4o",
-    Messages: messages,
-    Stream:   true,
-}
-
-resp, err := client.R().
-    SetHeader("Content-Type", "application/json").
-    SetHeader("Authorization", "Bearer sk-xxx").
-    SetBody(req).
-    SetDoNotParseResponse(true).
-    Post("https://api.openai.com/v1/chat/completions")
-
-if err != nil {
-    return err
-}
-defer resp.RawBody().Close()
-
-// 处理 SSE 流
-scanner := bufio.NewScanner(resp.RawBody())
-for scanner.Scan() {
-    line := scanner.Text()
-    if strings.HasPrefix(line, "data: ") {
-        data := strings.TrimPrefix(line, "data: ")
-        if data == "[DONE]" {
-            break
-        }
-        // 解析 JSON 数据
-        fmt.Println(data)
-    }
+    fmt.Println(resp.GetContent())
 }
 ```
 
 ---
 
-## 8. 配置参考
+## 9. 配置参考
 
-### 8.1 Provider 配置
+### 9.1 Provider 配置
 
 ```json
 {
   "providers": {
-    "openrouter": {
-      "apiKey": "sk-or-v1-xxx",
-      "apiBase": "https://openrouter.ai/api/v1"
-    },
     "glm": {
       "apiKey": "xxx.xxx",
-      "apiBase": "https://open.bigmodel.cn/api/anthropic"
+      "apiBase": "https://open.bigmodel.cn/api/anthropic",
+      "model": "glm-5",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+    "qwen": {
+      "apiKey": "sk-xxx",
+      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen3-max-2026-01-23",
+      "temperature": 0.7,
+      "maxTokens": 4096
     }
   }
 }
 ```
 
-### 8.2 Agent 配置
+### 9.2 Agent 配置（新版结构）
 
 ```json
 {
   "agents": {
-    "defaults": {
-      "model": "glm/glm-4-plus",
-      "systemPrompt": "You are LingGuard...",
-      "maxHistoryMessages": 50,
-      "maxToolCalls": 10
-    }
+    "workspace": "~/.lingguard/workspace",
+    "model": "glm",
+    "maxTokens": 8192,
+    "temperature": 0.7,
+    "maxToolIterations": 20,
+    "memoryWindow": 50,
+    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。"
   }
 }
 ```
 
+### 9.3 配置字段说明
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| workspace | string | 工作空间目录 |
+| model | string | 默认模型/Provider名称，支持自动匹配 |
+| maxTokens | int | 最大输出 tokens |
+| temperature | float64 | 温度参数 (0-2) |
+| maxToolIterations | int | 最大工具调用迭代次数 |
+| memoryWindow | int | 历史消息窗口大小 |
+| systemPrompt | string | 系统提示词 |
+
 ---
 
-## 9. 参考资料
+## 10. 参考资料
 
 - [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
 - [Anthropic API Reference](https://docs.anthropic.com/en/api)
+- [智谱 AI API](https://open.bigmodel.cn/dev/api)
 - [飞书开放平台](https://open.feishu.cn/document/)
-- [go-resty 文档](https://github.com/go-resty/resty)

@@ -29,21 +29,13 @@ type ProviderConfig struct {
 
 // AgentsConfig 代理配置
 type AgentsConfig struct {
-	DefaultProvider    string            `json:"defaultProvider"`
-	SystemPrompt       string            `json:"systemPrompt,omitempty"`
-	MaxHistoryMessages int               `json:"maxHistoryMessages,omitempty"`
-	MaxToolCalls       int               `json:"maxToolCalls,omitempty"`
-	Mapping            map[string]string `json:"mapping,omitempty"`
-}
-
-// GetProviderForAgent 获取指定 agent 使用的 provider，未映射则返回默认
-func (a *AgentsConfig) GetProviderForAgent(agentType string) string {
-	if a.Mapping != nil {
-		if provider, ok := a.Mapping[agentType]; ok {
-			return provider
-		}
-	}
-	return a.DefaultProvider
+	Workspace         string  `json:"workspace"`
+	Model             string  `json:"model"`             // 默认模型/Provider名称
+	MaxTokens         int     `json:"maxTokens"`         // 最大输出 tokens
+	Temperature       float64 `json:"temperature"`       // 温度参数
+	MaxToolIterations int     `json:"maxToolIterations"` // 最大工具迭代次数
+	MemoryWindow      int     `json:"memoryWindow"`      // 历史消息窗口大小
+	SystemPrompt      string  `json:"systemPrompt"`
 }
 
 // ChannelsConfig 渠道配置
@@ -92,9 +84,13 @@ func DefaultConfig() *Config {
 	return &Config{
 		Providers: make(map[string]ProviderConfig),
 		Agents: AgentsConfig{
-			DefaultProvider:    "gpt-4o",
-			MaxHistoryMessages: 50,
-			MaxToolCalls:       10,
+			Workspace:         "~/.lingguard/workspace",
+			Model:             "gpt-4o",
+			MaxTokens:         8192,
+			Temperature:       0.7,
+			MaxToolIterations: 20,
+			MemoryWindow:      50,
+			SystemPrompt:      "You are LingGuard, a helpful AI assistant.",
 		},
 		Channels: ChannelsConfig{},
 		Tools: ToolsConfig{

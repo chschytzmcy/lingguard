@@ -101,17 +101,13 @@
 
   "agents": {
     "_comment": "==================== Agent 代理配置 ====================",
-    "defaultProvider": "qwen",
-    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。",
-    "maxHistoryMessages": 50,
-    "maxToolCalls": 10,
-    "mapping": {
-      "_comment": "Agent 类型到 Provider 的映射，未映射的 agent 使用 defaultProvider",
-      "market_agent": "qwen",
-      "dev_agent": "minimax",
-      "schedule_agent": "qwen",
-      "chat_agent": "qwen"
-    }
+    "workspace": "~/.lingguard/workspace",
+    "model": "glm",
+    "maxTokens": 8192,
+    "temperature": 0.7,
+    "maxToolIterations": 20,
+    "memoryWindow": 50,
+    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。"
   },
 
   "channels": {
