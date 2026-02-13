@@ -2,6 +2,15 @@
   "providers": {
     "_comment": "==================== LLM 提供商配置 ====================",
 
+    "qwen": {
+      "_comment": "阿里云通义千问",
+      "apiKey": "sk-xxx",
+      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen3-max-2026-01-23",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+
     "openrouter": {
       "_comment": "OpenRouter - 推荐使用，可访问所有主流模型",
       "apiKey": "sk-or-v1-xxx",
@@ -36,6 +45,15 @@
       "maxTokens": 4096
     },
 
+    "moonshot": {
+      "_comment": "月之暗面 Kimi",
+      "apiKey": "sk-xxx",
+      "apiBase": "https://api.moonshot.cn/v1",
+      "model": "moonshot-v1-128k",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+
     "groq": {
       "_comment": "Groq - 高速推理平台",
       "apiKey": "gsk_xxx",
@@ -62,20 +80,20 @@
     },
 
     "glm": {
-      "_comment": "智谱 GLM - 智谱 AI 编码模型 (Anthropic 兼容)",
+      "_comment": "智谱 GLM - 智谱 AI (Anthropic 兼容)",
       "apiKey": "xxx.xxx",
       "apiBase": "https://open.bigmodel.cn/api/anthropic",
-      "model": "codegeex-4",
+      "model": "glm-4-plus",
       "temperature": 0.7,
       "maxTokens": 4096
     },
 
     "minimax": {
-      "_comment": "MiniMax - MiniMax AI 编码模型 (Anthropic 兼容)",
+      "_comment": "MiniMax - MiniMax AI (Anthropic 兼容)",
       "apiKey": "xxx",
       "groupId": "xxx",
       "apiBase": "https://api.minimaxi.com/anthropic",
-      "model": "claude-3-5-sonnet-20241022",
+      "model": "MiniMax-M2.5",
       "temperature": 0.7,
       "maxTokens": 4096
     }
@@ -83,12 +101,16 @@
 
   "agents": {
     "_comment": "==================== Agent 代理配置 ====================",
-    "_model_comment": "可选模型: anthropic/claude-opus-4, openai/gpt-4o, deepseek/deepseek-chat, glm/glm-4-plus, minimax/abab6.5s-chat",
-    "defaults": {
-      "model": "glm/glm-4-plus",
-      "systemPrompt": "You are LingGuard, a helpful AI assistant. You can use tools to help users with various tasks.",
-      "maxHistoryMessages": 50,
-      "maxToolCalls": 10
+    "defaultProvider": "qwen",
+    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。",
+    "maxHistoryMessages": 50,
+    "maxToolCalls": 10,
+    "mapping": {
+      "_comment": "Agent 类型到 Provider 的映射，未映射的 agent 使用 defaultProvider",
+      "market_agent": "qwen",
+      "dev_agent": "minimax",
+      "schedule_agent": "qwen",
+      "chat_agent": "qwen"
     }
   },
 

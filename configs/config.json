@@ -1,5 +1,12 @@
 {
   "providers": {
+    "qwen": {
+      "apiKey": "sk-791d6c7cc3094af99290577b709b47e6",
+      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen3-max-2026-01-23",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
     "glm": {
       "apiKey": "bf780a4d27454909ad02ba7c9a0e6d19.LsBBLU4U3bCCdvqm",
       "apiBase": "https://open.bigmodel.cn/api/anthropic",
@@ -7,25 +14,40 @@
       "temperature": 0.7,
       "maxTokens": 4096
     },
-
     "minimax": {
       "apiKey": "sk-cp-mpX09dQEHgHHOva2vEZ89_c-RUNXA4CrmTFViEMUD-f00iTziDBdEtPvEIqHqD1o_LHQFtfMp-EYIf25nYv-wBM34G0XIw1OeSMev1QVUjOR7__GI6lQXv4",
       "groupId": "",
       "apiBase": "https://api.minimaxi.com/anthropic",
-      "model": "MiniMax-M2.1",
+      "model": "MiniMax-M2.5",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+    "moonshot": {
+      "apiKey": "sk-xxx",
+      "apiBase": "https://api.moonshot.cn/v1",
+      "model": "moonshot-v1-128k",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+    "deepseek": {
+      "apiKey": "sk-xxx",
+      "apiBase": "https://api.deepseek.com/v1",
+      "model": "deepseek-chat",
       "temperature": 0.7,
       "maxTokens": 4096
     }
   },
 
   "agents": {
-    "defaults": {
-      "model": "qwen3-max-2026-01-23",
-      "apiKey": "sk-791d6c7cc3094af99290577b709b47e6",
-      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "systemPrompt": "You are LingGuard, a helpful AI assistant. You can use tools to help users with various tasks.",
-      "maxHistoryMessages": 50,
-      "maxToolCalls": 10
+    "defaultProvider": "qwen",
+    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。",
+    "maxHistoryMessages": 50,
+    "maxToolCalls": 10,
+    "mapping": {
+      "market_agent": "qwen",
+      "dev_agent": "minimax",
+      "schedule_agent": "qwen",
+      "chat_agent": "qwen"
     }
   },
 
