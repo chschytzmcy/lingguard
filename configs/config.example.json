@@ -1,0 +1,133 @@
+{
+  "providers": {
+    "_comment": "==================== LLM 提供商配置 ====================",
+
+    "openrouter": {
+      "_comment": "OpenRouter - 推荐使用，可访问所有主流模型",
+      "apiKey": "sk-or-v1-xxx",
+      "apiBase": "https://openrouter.ai/api/v1",
+      "model": "anthropic/claude-opus-4",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+
+    "anthropic": {
+      "_comment": "Anthropic Claude 直连",
+      "apiKey": "sk-ant-xxx",
+      "model": "claude-opus-4",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+
+    "openai": {
+      "_comment": "OpenAI GPT 直连",
+      "apiKey": "sk-xxx",
+      "model": "gpt-4o",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+
+    "deepseek": {
+      "_comment": "DeepSeek 深度求索",
+      "apiKey": "sk-xxx",
+      "apiBase": "https://api.deepseek.com/v1",
+      "model": "deepseek-chat",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+
+    "groq": {
+      "_comment": "Groq - 高速推理平台",
+      "apiKey": "gsk_xxx",
+      "model": "llama-3.3-70b-versatile",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+
+    "gemini": {
+      "_comment": "Google Gemini",
+      "apiKey": "AIza-xxx",
+      "model": "gemini-2.0-flash-exp",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+
+    "vllm": {
+      "_comment": "vLLM - 本地模型服务，需要先启动 vLLM 服务器",
+      "apiKey": "dummy",
+      "apiBase": "http://localhost:8000/v1",
+      "model": "meta-llama/Llama-3.1-8B-Instruct",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+
+    "glm": {
+      "_comment": "智谱 GLM - 智谱 AI 编码模型 (Anthropic 兼容)",
+      "apiKey": "xxx.xxx",
+      "apiBase": "https://open.bigmodel.cn/api/anthropic",
+      "model": "codegeex-4",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    },
+
+    "minimax": {
+      "_comment": "MiniMax - MiniMax AI 编码模型 (Anthropic 兼容)",
+      "apiKey": "xxx",
+      "groupId": "xxx",
+      "apiBase": "https://api.minimaxi.com/anthropic",
+      "model": "claude-3-5-sonnet-20241022",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    }
+  },
+
+  "agents": {
+    "_comment": "==================== Agent 代理配置 ====================",
+    "_model_comment": "可选模型: anthropic/claude-opus-4, openai/gpt-4o, deepseek/deepseek-chat, glm/glm-4-plus, minimax/abab6.5s-chat",
+    "defaults": {
+      "model": "glm/glm-4-plus",
+      "systemPrompt": "You are LingGuard, a helpful AI assistant. You can use tools to help users with various tasks.",
+      "maxHistoryMessages": 50,
+      "maxToolCalls": 10
+    }
+  },
+
+  "channels": {
+    "_comment": "==================== 渠道配置 ====================",
+    "_feishu_comment": "目前只支持飞书渠道",
+
+    "feishu": {
+      "enabled": true,
+      "appId": "cli_xxx",
+      "appSecret": "xxx",
+      "encryptKey": "",
+      "verificationToken": "",
+      "allowFrom": []
+    }
+  },
+
+  "tools": {
+    "_comment": "==================== 工具配置 ====================",
+    "restrictToWorkspace": false,
+    "workspace": "~/.lingguard/workspace"
+  },
+
+  "storage": {
+    "_comment": "==================== 存储配置 ====================",
+    "type": "postgres",
+    "host": "localhost",
+    "port": 5432,
+    "database": "lingguard",
+    "username": "postgres",
+    "password": "postgres",
+    "sslmode": "disable",
+    "vectorDbUrl": "http://localhost:6333"
+  },
+
+  "logging": {
+    "_comment": "==================== 日志配置 ====================",
+    "level": "info",
+    "format": "text",
+    "output": "~/.lingguard/logs/lingguard.log"
+  }
+}
