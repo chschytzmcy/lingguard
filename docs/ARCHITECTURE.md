@@ -36,26 +36,17 @@
 │                    (命令行 & 网关入口)                            │
 └─────────────────────────────────────────────────────────────────┘
                                 │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                           Bus Layer                              │
-│                      (消息路由层)                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │  Router  │  │ Dispatcher│  │  Queue   │  │  Events  │        │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘        │
-└─────────────────────────────────────────────────────────────────┘
-                                │
         ┌───────────────────────┼───────────────────────┐
         ▼                       ▼                       ▼
 ┌───────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   Channels    │     │      Agent      │     │   Scheduler     │
 │  (渠道适配层)  │     │   (核心代理)     │     │   (定时任务)     │
 │ ┌───────────┐ │     │ ┌─────────────┐ │     │ ┌─────────────┐ │
-│ │  Feishu   │ │     │ │   Loop      │ │     │ │    Cron     │ │
+│ │  Feishu   │ │────▶│ │   Loop      │ │     │ │    Cron     │ │
 │ │ (WebSocket)│ │     │ │   Session   │ │     │ │  Heartbeat  │ │
-│ └───────────┘ │     │ │   Context   │ │     │ └─────────────┘ │
-└───────────────┘     │ │   Memory    │ │     └─────────────────┘
-                      │ │   Tools     │ │
+│ │AgentAdapter│ │     │ │   Context   │ │     │ └─────────────┘ │
+│ └───────────┘ │     │ │   Memory    │ │     └─────────────────┘
+└───────────────┘     │ │   Tools     │ │
                       │ └─────────────┘ │
                       └─────────────────┘
                                │
@@ -89,7 +80,7 @@
 ### 2.2 数据流架构
 
 ```
-用户消息 ──▶ Feishu ──▶ Bus ──▶ Agent Loop
+用户消息 ──▶ Feishu WebSocket ──▶ AgentAdapter ──▶ Agent Loop
                                       │
                                       ▼
                               ┌──────────────┐
@@ -142,17 +133,13 @@ lingguard/
 │   └── cli/                # CLI命令
 │       ├── root.go         # 根命令
 │       ├── agent.go        # agent交互命令
-│       ├── gateway.go      # 网关启动命令
-│       ├── cron.go         # 定时任务管理
+│       ├── gateway.go      # 网关启动命令（已实现）
 │       └── status.go       # 状态查看
 ├── internal/
-│   ├── agent/              # 核心代理逻辑
-│   │   ├── agent.go        # Agent主结构
-│   │   ├── loop.go         # Agent执行循环
-│   │   └── context.go      # 上下文构建
+│   ├── agent/              # 核心代理逻辑（已实现）
+│   │   └── agent.go        # Agent主结构
 │   ├── session/            # 会话管理（已实现）
-│   │   ├── manager.go      # 会话管理器
-│   │   └── session.go      # 会话结构
+│   │   └── manager.go      # 会话管理器
 │   ├── tools/              # 内置工具（已实现）
 │   │   ├── registry.go     # 工具注册中心
 │   │   ├── shell.go        # Shell执行
@@ -163,14 +150,11 @@ lingguard/
 │   │   ├── spec.go         # Provider规范（自动匹配）
 │   │   ├── openai.go       # OpenAI兼容
 │   │   └── anthropic.go    # Anthropic兼容
-│   ├── channels/           # 渠道集成
-│   │   ├── channel.go      # Channel接口
-│   │   ├── manager.go      # 渠道管理
-│   │   └── feishu.go       # 飞书
-│   ├── bus/                # 消息总线
-│   │   ├── bus.go          # 总线核心
-│   │   ├── router.go       # 消息路由
-│   │   └── events.go       # 事件系统
+│   ├── channels/           # 渠道集成（已实现）
+│   │   ├── channel.go      # Channel接口定义
+│   │   ├── manager.go      # 渠道管理器
+│   │   ├── feishu.go       # 飞书WebSocket实现
+│   │   └── agent_adapter.go # Agent适配器
 │   ├── skills/             # 技能系统（待实现）
 │   │   ├── loader.go       # 技能加载器
 │   │   └── manager.go      # 技能管理器
@@ -181,18 +165,13 @@ lingguard/
 │       └── config.go       # 配置结构
 ├── pkg/
 │   ├── llm/                # LLM客户端封装（已实现）
-│   │   ├── llm.go          # 通用类型
-│   │   └── stream.go       # 流式响应
+│   │   └── llm.go          # 通用类型
 │   ├── memory/             # 记忆系统（已实现）
 │   │   └── memory.go       # 内存存储
-│   ├── logger/             # 日志（已实现）
-│   │   └── logger.go
-│   └── feishu/             # 飞书SDK封装（待实现）
-│       ├── client.go       # 飞书客户端
-│       └── websocket.go    # WebSocket连接
+│   └── logger/             # 日志（已实现）
+│       └── logger.go
 ├── configs/
-│   ├── config.json         # 实际配置
-│   └── config.example.json # 配置示例
+│   └── config.json         # 配置示例
 ├── docs/
 │   ├── ARCHITECTURE.md     # 架构文档
 │   └── API.md              # API文档
@@ -336,7 +315,38 @@ func (s *Session) GetHistory(window int) []*memory.Message
 func (s *Session) Clear()
 ```
 
-#### 3.2.5 配置结构
+#### 3.2.5 Channel 接口 (消息渠道)
+
+```go
+// internal/channels/channel.go
+
+package channels
+
+import "context"
+
+// Message 表示从消息平台接收的消息
+type Message struct {
+    ID        string         // 消息唯一ID
+    SessionID string         // 会话ID (格式: "feishu-{open_id}")
+    Content   string         // 消息文本内容
+    Metadata  map[string]any // 平台特定元数据
+}
+
+// MessageHandler 处理消息的接口 (由 Agent 适配器实现)
+type MessageHandler interface {
+    HandleMessage(ctx context.Context, msg *Message) (string, error)
+}
+
+// Channel 表示一个消息渠道
+type Channel interface {
+    Name() string
+    Start(ctx context.Context) error
+    Stop() error
+    IsRunning() bool
+}
+```
+
+#### 3.2.6 配置结构
 
 ```go
 // internal/config/config.go
@@ -580,14 +590,19 @@ Channels:
 | CLI 命令 | ✅ | init, agent, status |
 | 内存存储 | ✅ | MemoryStore |
 
-### Phase 2: 渠道集成 (待实现)
+### Phase 2: 渠道集成 ✅ (已完成)
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| 飞书 WebSocket 长连接 | ⏳ | 需要实现 |
-| 消息收发 | ⏳ | 需要实现 |
-| 权限控制 | ⏳ | allowFrom 白名单 |
-| Bus 消息路由 | ⏳ | 需要实现 |
+| Channel 接口定义 | ✅ | channel.go, Message 结构体 |
+| Channel 管理器 | ✅ | manager.go, 注册/启动/停止 |
+| Agent 适配器 | ✅ | agent_adapter.go, 消息转发 |
+| 飞书 WebSocket | ✅ | feishu.go, 使用官方 SDK |
+| 消息去重 | ✅ | sync.Map 缓存已处理消息 |
+| 表情反应 | ✅ | 收到消息添加 👍 |
+| Interactive Card | ✅ | 使用卡片消息格式回复 |
+| 权限控制 | ✅ | allowFrom 白名单 |
+| Gateway 命令 | ✅ | gateway.go CLI 入口 |
 
 ### Phase 3: 高级功能 (待实现)
 
