@@ -15,7 +15,7 @@ AI_BRANCH = os.getenv('AI_BRANCH', 'ai-test')
 MAIN_BRANCH = os.getenv('MAIN_BRANCH', '')  # 留空自动检测
 
 def get_main_branch():
-    """自动检测主分支"""
+    """自动检测主分支（优先 master，其次 main）"""
     # 尝试从远程 HEAD 获取
     result = subprocess.run(
         ['git', 'symbolic-ref', 'refs/remotes/origin/HEAD'],
@@ -24,8 +24,8 @@ def get_main_branch():
     if result.returncode == 0:
         return result.stdout.strip().split('/')[-1]
 
-    # 尝试常见分支名
-    for branch in ['main', 'master', 'develop']:
+    # 优先尝试 master，其次 main
+    for branch in ['master', 'main', 'develop']:
         result = subprocess.run(
             ['git', 'rev-parse', f'origin/{branch}'],
             capture_output=True, cwd=CODE_PATH
@@ -33,7 +33,7 @@ def get_main_branch():
         if result.returncode == 0:
             return branch
 
-    return 'main'
+    return 'master'
 
 class Colors:
     RED = '\033[0;31m'
