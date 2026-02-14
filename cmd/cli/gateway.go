@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/lingguard/internal/agent"
 	"github.com/lingguard/internal/channels"
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/internal/providers"
+	"github.com/lingguard/internal/skills"
 	"github.com/lingguard/internal/tools"
 	"github.com/lingguard/pkg/logger"
 	"github.com/spf13/cobra"
@@ -105,10 +107,29 @@ func createGatewayAgent(cfg *config.Config) (*agent.Agent, error) {
 	// 3. 设置默认 Provider
 	registry.SetDefault(providerName)
 
-	// 4. 创建 Agent
-	ag := agent.NewAgent(&cfg.Agents, provider)
+	// 4. 创建 Skills Loader
+	var skillsLoader *skills.Loader
+	builtinDir := cfg.Agents.SkillsBuiltinDir
+	workspaceSkills := cfg.Agents.SkillsWorkspace
 
-	// 5. 注册工具
+	// 如果没有配置，使用默认路径
+	if builtinDir == "" {
+		// 尝试查找内置技能目录
+		execPath, _ := os.Executable()
+		defaultBuiltin := filepath.Join(filepath.Dir(execPath), "skills", "builtin")
+		if _, err := os.Stat(defaultBuiltin); err == nil {
+			builtinDir = defaultBuiltin
+		}
+	}
+
+	if builtinDir != "" || workspaceSkills != "" {
+		skillsLoader = skills.NewLoader(builtinDir, workspaceSkills)
+	}
+
+	// 5. 创建 Agent
+	ag := agent.NewAgent(&cfg.Agents, provider, skillsLoader)
+
+	// 6. 注册工具
 	workspace := cfg.Agents.Workspace
 	if workspace == "" {
 		workspace = cfg.Tools.Workspace

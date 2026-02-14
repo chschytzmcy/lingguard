@@ -10,6 +10,7 @@ import (
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/internal/providers"
 	"github.com/lingguard/internal/session"
+	"github.com/lingguard/internal/skills"
 	"github.com/lingguard/internal/tools"
 	"github.com/lingguard/pkg/llm"
 	"github.com/lingguard/pkg/logger"
@@ -22,16 +23,23 @@ type Agent struct {
 	provider     providers.Provider
 	toolRegistry *tools.Registry
 	sessions     *session.Manager
+	skillsMgr    *skills.Manager
 	config       *config.AgentsConfig
 }
 
 // NewAgent 创建新代理
-func NewAgent(cfg *config.AgentsConfig, provider providers.Provider) *Agent {
+func NewAgent(cfg *config.AgentsConfig, provider providers.Provider, skillsLoader *skills.Loader) *Agent {
+	var skillsMgr *skills.Manager
+	if skillsLoader != nil {
+		skillsMgr = skills.NewManager(skillsLoader)
+	}
+
 	return &Agent{
 		id:           generateID(),
 		provider:     provider,
 		toolRegistry: tools.NewRegistry(),
 		sessions:     session.NewManager(memory.NewMemoryStore(), cfg.MemoryWindow),
+		skillsMgr:    skillsMgr,
 		config:       cfg,
 	}
 }
@@ -39,6 +47,22 @@ func NewAgent(cfg *config.AgentsConfig, provider providers.Provider) *Agent {
 // RegisterTool 注册工具
 func (a *Agent) RegisterTool(t tools.Tool) {
 	a.toolRegistry.Register(t)
+}
+
+// GetSkillInstruction 获取技能指令
+func (a *Agent) GetSkillInstruction(name string) (string, error) {
+	if a.skillsMgr == nil {
+		return "", fmt.Errorf("skills manager not initialized")
+	}
+	return a.skillsMgr.GetSkillInstruction(name)
+}
+
+// ListSkills 列出可用技能
+func (a *Agent) ListSkills() ([]*skills.Skill, error) {
+	if a.skillsMgr == nil {
+		return nil, fmt.Errorf("skills manager not initialized")
+	}
+	return a.skillsMgr.ListSkills()
 }
 
 // ProcessMessage 处理消息
@@ -61,11 +85,24 @@ func (a *Agent) ProcessMessage(ctx context.Context, sessionID, userMessage strin
 func (a *Agent) buildContext(sessionID string) ([]llm.Message, error) {
 	messages := make([]llm.Message, 0)
 
+	// 构建系统提示
+	systemPrompt := a.config.SystemPrompt
+	if a.skillsMgr != nil {
+		skillsContext := a.skillsMgr.GetSkillsContext()
+		if skillsContext != "" {
+			if systemPrompt != "" {
+				systemPrompt = systemPrompt + "\n\n" + skillsContext
+			} else {
+				systemPrompt = skillsContext
+			}
+		}
+	}
+
 	// 添加系统提示
-	if a.config.SystemPrompt != "" {
+	if systemPrompt != "" {
 		messages = append(messages, llm.Message{
 			Role:    "system",
-			Content: a.config.SystemPrompt,
+			Content: systemPrompt,
 		})
 	}
 

@@ -35,6 +35,8 @@ type AgentsConfig struct {
 	MaxToolIterations int    `json:"maxToolIterations"` // 最大工具迭代次数
 	MemoryWindow      int    `json:"memoryWindow"`      // 历史消息窗口大小
 	SystemPrompt      string `json:"systemPrompt"`
+	SkillsBuiltinDir  string `json:"skillsBuiltinDir,omitempty"` // 内置技能目录
+	SkillsWorkspace   string `json:"skillsWorkspace,omitempty"`  // 工作区技能目录
 	// 注：Temperature 和 MaxTokens 从 Provider 配置中获取，避免重复
 }
 

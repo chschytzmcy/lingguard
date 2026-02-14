@@ -45,7 +45,7 @@ func TestNewAgent(t *testing.T) {
 
 	mockProvider := &MockProvider{}
 
-	agent := NewAgent(cfg, mockProvider)
+	agent := NewAgent(cfg, mockProvider, nil)
 
 	if agent == nil {
 		t.Fatal("NewAgent returned nil")
@@ -60,7 +60,7 @@ func TestAgentRegisterTool(t *testing.T) {
 	cfg := &config.AgentsConfig{Provider: "mock"}
 	mockProvider := &MockProvider{}
 
-	agent := NewAgent(cfg, mockProvider)
+	agent := NewAgent(cfg, mockProvider, nil)
 
 	// 注册工具
 	agent.RegisterTool(tools.NewShellTool("", false))
@@ -101,7 +101,7 @@ func TestAgentProcessMessage(t *testing.T) {
 		},
 	}
 
-	agent := NewAgent(cfg, mockProvider)
+	agent := NewAgent(cfg, mockProvider, nil)
 
 	ctx := context.Background()
 	response, err := agent.ProcessMessage(ctx, "test-session", "Hi")
@@ -159,7 +159,7 @@ func TestAgentToolExecution(t *testing.T) {
 	}
 
 	mockProvider := &MockProvider{response: toolCallResponse}
-	agent := NewAgent(cfg, mockProvider)
+	agent := NewAgent(cfg, mockProvider, nil)
 
 	// 注册一个简单的测试工具
 	agent.RegisterTool(&EchoTool{})
