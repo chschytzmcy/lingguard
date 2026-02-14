@@ -19,16 +19,98 @@
 | 多LLM支持 | OpenAI, Anthropic, DeepSeek, GLM, Qwen 等 |
 | Provider自动匹配 | 根据模型名自动选择合适的 Provider |
 | 会话管理 | 内存会话管理，支持历史消息窗口 |
-| 技能系统 | 可扩展的工具和技能插件 |
+| 技能系统 | 渐进式加载，按需注入技能内容 |
 | 记忆系统 | 持久化对话记忆和上下文管理 |
-| 定时任务 | Cron风格的定时执行 |
 | 安全沙箱 | 工作空间限制和权限控制 |
 
 ---
 
-## 2. 系统架构
+## 2. 与 nanobot 功能对比
 
-### 2.1 整体架构图
+### 2.1 对比概述
+
+| 维度 | LingGuard | nanobot |
+|------|-----------|---------|
+| **编程语言** | Go 1.23+ | Python 3 |
+| **代码量** | ~3,500 行 | ~3,500 行 |
+| **部署方式** | 单二进制文件 | pip/uv 安装 |
+| **并发模型** | Goroutine | asyncio |
+| **内存占用** | 更低 | 较高 |
+
+### 2.2 功能对比详细表
+
+| 功能模块 | LingGuard | nanobot | 说明 |
+|----------|:---------:|:-------:|------|
+| **渠道支持** ||||
+| 飞书 (WebSocket) | ✅ | ✅ | 两者都支持，无需公网IP |
+| Telegram | ❌ | ✅ | nanobot 支持 |
+| Discord | ❌ | ✅ | nanobot 支持 |
+| WhatsApp | ❌ | ✅ | nanobot 支持 |
+| Slack | ❌ | ✅ | nanobot 支持 |
+| Email (IMAP/SMTP) | ❌ | ✅ | nanobot 支持 |
+| QQ | ❌ | ✅ | nanobot 支持 |
+| DingTalk (钉钉) | ❌ | ✅ | nanobot 支持 |
+| Mochat | ❌ | ✅ | nanobot 支持 |
+| **LLM Provider** ||||
+| OpenAI | ✅ | ✅ | 通过 OpenAI 兼容 API |
+| Anthropic | ✅ | ✅ | 通过 Anthropic 兼容 API |
+| DeepSeek | ✅ | ✅ | 两者都支持 |
+| GLM (智谱) | ✅ | ✅ | 两者都支持 |
+| Qwen (通义) | ✅ | ✅ | 两者都支持 |
+| MiniMax | ✅ | ✅ | 两者都支持 |
+| Moonshot (Kimi) | ✅ | ✅ | 两者都支持 |
+| OpenRouter | ❌ | ✅ | nanobot 支持网关模式 |
+| vLLM (本地模型) | ❌ | ✅ | nanobot 支持 |
+| Groq | ❌ | ✅ | nanobot 支持语音转写 |
+| **核心功能** ||||
+| Agent Loop | ✅ | ✅ | 核心处理循环 |
+| 会话管理 | ✅ | ✅ | 多会话支持 |
+| 记忆系统 | ✅ (内存) | ✅ | nanobot 支持持久化 |
+| 工具系统 | ✅ | ✅ | Shell, File 等 |
+| 技能系统 | ✅ (渐进式) | ✅ | LingGuard 支持按需加载 |
+| Provider 自动匹配 | ✅ | ✅ | 根据模型名自动选择 |
+| **高级功能** ||||
+| 定时任务 (Cron) | ❌ | ✅ | nanobot 支持 |
+| 子代理 (Subagent) | ✅ | ✅ | 两者都支持后台任务 |
+| Agent Social Network | ❌ | ✅ | nanobot 支持 Moltbook 等 |
+| 语音转写 | ❌ | ✅ | nanobot 支持 Groq Whisper |
+| Docker 支持 | ❌ | ✅ | nanobot 提供镜像 |
+| 多模态 (Vision) | ⏳ | ⏳ | 两者都在规划中 |
+
+### 2.3 LingGuard 独特优势
+
+1. **Go 语言优势**
+   - 单二进制部署，无运行时依赖
+   - 更低的内存占用和更快的启动速度
+   - 原生并发支持，适合高并发场景
+   - 静态类型安全
+
+2. **渐进式技能加载**
+   - 默认只注入技能摘要，减少上下文占用
+   - LLM 可通过 `skill` 工具按需加载完整技能内容
+   - 支持 `always=true` 配置始终加载
+
+3. **简洁架构**
+   - 清晰的模块划分
+   - 最小化依赖
+   - 易于理解和修改
+
+### 2.4 未来规划对比
+
+| 功能 | LingGuard 规划 | nanobot 现状 |
+|------|---------------|-------------|
+| 多渠道支持 | ⏳ 计划中 | ✅ 已实现 9+ 渠道 |
+| 定时任务 | ⏳ 计划中 | ✅ 已实现 |
+| 持久化存储 | ⏳ 计划中 (PostgreSQL) | ✅ 已实现 |
+| 向量记忆 | ⏳ 计划中 (Qdrant) | ✅ 已实现 |
+| 子代理 | ✅ 已实现 | ✅ 已实现 |
+| 多模态 | ⏳ 计划中 | ⏳ 规划中 |
+
+---
+
+## 3. 系统架构
+
+### 3.1 整体架构图
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -77,7 +159,7 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 数据流架构
+### 3.2 数据流架构
 
 ```
 用户消息 ──▶ Feishu WebSocket ──▶ AgentAdapter ──▶ Agent Loop
@@ -121,9 +203,9 @@
 
 ---
 
-## 3. 核心模块设计
+## 4. 核心模块设计
 
-### 3.1 目录结构
+### 4.1 目录结构
 
 ```
 lingguard/
@@ -133,45 +215,67 @@ lingguard/
 │   └── cli/                # CLI命令
 │       ├── root.go         # 根命令
 │       ├── agent.go        # agent交互命令
-│       ├── gateway.go      # 网关启动命令（已实现）
+│       ├── gateway.go      # 网关启动命令
 │       └── status.go       # 状态查看
 ├── internal/
-│   ├── agent/              # 核心代理逻辑（已实现）
+│   ├── agent/              # 核心代理逻辑 ✅
 │   │   └── agent.go        # Agent主结构
-│   ├── session/            # 会话管理（已实现）
+│   ├── session/            # 会话管理 ✅
 │   │   └── manager.go      # 会话管理器
-│   ├── tools/              # 内置工具（已实现）
+│   ├── tools/              # 内置工具 ✅
 │   │   ├── registry.go     # 工具注册中心
+│   │   ├── registry_manager.go # 工具管理器
 │   │   ├── shell.go        # Shell执行
-│   │   └── file.go         # 文件操作
-│   ├── providers/          # LLM提供商（已实现）
+│   │   ├── file.go         # 文件操作
+│   │   └── skill.go        # 技能加载工具
+│   ├── providers/          # LLM提供商 ✅
 │   │   ├── provider.go     # Provider接口
 │   │   ├── registry.go     # 提供商注册
 │   │   ├── spec.go         # Provider规范（自动匹配）
 │   │   ├── openai.go       # OpenAI兼容
 │   │   └── anthropic.go    # Anthropic兼容
-│   ├── channels/           # 渠道集成（已实现）
+│   ├── channels/           # 渠道集成 ✅
 │   │   ├── channel.go      # Channel接口定义
 │   │   ├── manager.go      # 渠道管理器
 │   │   ├── feishu.go       # 飞书WebSocket实现
 │   │   └── agent_adapter.go # Agent适配器
-│   ├── skills/             # 技能系统（待实现）
-│   │   ├── loader.go       # 技能加载器
+│   ├── skills/             # 技能系统 ✅
+│   │   ├── loader.go       # 技能加载器（渐进式）
 │   │   └── manager.go      # 技能管理器
-│   ├── scheduler/          # 定时任务（待实现）
+│   ├── scheduler/          # 定时任务 ⏳
 │   │   ├── scheduler.go    # 调度器
 │   │   └── cron.go         # Cron解析
-│   └── config/             # 配置管理（已实现）
+│   ├── subagent/           # 子代理系统 ✅
+│   │   ├── config.go       # 子代理配置
+│   │   ├── subagent.go     # 子代理实现
+│   │   ├── manager.go      # 子代理管理器
+│   │   └── tool.go         # Task/TaskStatus 工具
+│   └── config/             # 配置管理 ✅
 │       └── config.go       # 配置结构
 ├── pkg/
-│   ├── llm/                # LLM客户端封装（已实现）
+│   ├── llm/                # LLM客户端封装 ✅
 │   │   └── llm.go          # 通用类型
-│   ├── memory/             # 记忆系统（已实现）
+│   ├── memory/             # 记忆系统 ✅
 │   │   └── memory.go       # 内存存储
-│   └── logger/             # 日志（已实现）
+│   └── logger/             # 日志 ✅
 │       └── logger.go
+├── skills/                 # 内置技能目录 ✅
+│   └── builtin/
+│       ├── git-workflow/   # Git工作流技能
+│       │   ├── SKILL.md
+│       │   ├── examples.md
+│       │   └── reference.md
+│       ├── code-review/    # 代码审查技能
+│       │   └── SKILL.md
+│       ├── file/           # 文件操作技能
+│       │   └── SKILL.md
+│       ├── system/         # 系统操作技能
+│       │   └── SKILL.md
+│       └── weather/        # 天气查询技能
+│           └── SKILL.md
 ├── configs/
-│   └── config.json         # 配置示例
+│   ├── config.json         # 主配置
+│   └── config.example.json # 配置示例
 ├── docs/
 │   ├── ARCHITECTURE.md     # 架构文档
 │   └── API.md              # API文档
@@ -181,9 +285,9 @@ lingguard/
 └── README.md
 ```
 
-### 3.2 核心接口定义
+### 4.2 核心接口定义
 
-#### 3.2.1 Provider接口 (LLM提供商)
+#### 4.2.1 Provider接口 (LLM提供商)
 
 ```go
 // internal/providers/provider.go
@@ -226,7 +330,7 @@ type ProviderConfig struct {
 }
 ```
 
-#### 3.2.2 Provider 自动匹配
+#### 4.2.2 Provider 自动匹配
 
 ```go
 // internal/providers/spec.go
@@ -257,7 +361,7 @@ var BuiltinSpecs = []ProviderSpec{
 func FindSpecByModel(model string) *ProviderSpec
 ```
 
-#### 3.2.3 Registry Provider 注册表
+#### 4.2.3 Registry Provider 注册表
 
 ```go
 // internal/providers/registry.go
@@ -280,7 +384,7 @@ func (r *Registry) MatchProvider(model string) (Provider, bool) {
 func (r *Registry) SetDefault(name string)
 ```
 
-#### 3.2.4 会话管理
+#### 4.2.4 会话管理
 
 ```go
 // internal/session/manager.go
@@ -315,7 +419,7 @@ func (s *Session) GetHistory(window int) []*memory.Message
 func (s *Session) Clear()
 ```
 
-#### 3.2.5 Channel 接口 (消息渠道)
+#### 4.2.5 Channel 接口 (消息渠道)
 
 ```go
 // internal/channels/channel.go
@@ -346,7 +450,7 @@ type Channel interface {
 }
 ```
 
-#### 3.2.6 配置结构
+#### 4.2.6 配置结构
 
 ```go
 // internal/config/config.go
@@ -363,7 +467,7 @@ type AgentsConfig struct {
 }
 ```
 
-### 3.3 Agent核心实现
+### 4.3 Agent核心实现
 
 ```go
 // internal/agent/agent.go
@@ -447,11 +551,197 @@ func (a *Agent) runLoop(ctx context.Context, sessionID string, messages []llm.Me
 }
 ```
 
+### 4.4 子代理系统 (Subagent)
+
+子代理系统允许主 Agent 在后台启动独立的子任务，异步执行复杂操作。
+
+#### 4.4.1 架构概览
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Main Agent                             │
+│                                                             │
+│  1. User 请求 → LLM 决定调用 task 工具                      │
+│  2. TaskTool.Execute() → SubagentManager.Spawn()            │
+│  3. 立即返回 task_id，子代理在 goroutine 中执行              │
+│  4. 子代理完成后 → notify channel → 主 Agent 轮询/回调       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Subagent (goroutine)                     │
+│                                                             │
+│  - 隔离的上下文（task + context 作为初始消息）               │
+│  - 限制的工具集（shell, file, skill，无 task）              │
+│  - 专注的系统提示                                            │
+│  - 最大 15 次迭代                                           │
+│  - 完成后发送结果到 notify channel                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 4.4.2 核心组件
+
+```go
+// internal/subagent/subagent.go
+
+// TaskStatus 任务状态
+type TaskStatus string
+
+const (
+    StatusPending   TaskStatus = "pending"
+    StatusRunning   TaskStatus = "running"
+    StatusCompleted TaskStatus = "completed"
+    StatusFailed    TaskStatus = "failed"
+)
+
+// Subagent 子代理
+type Subagent struct {
+    id          string
+    task        string          // 任务描述
+    context     string          // 额外上下文
+    status      TaskStatus      // 当前状态
+    result      string          // 执行结果
+    error       string          // 错误信息
+    startedAt   time.Time
+    completedAt time.Time
+
+    provider     providers.Provider
+    toolRegistry *tools.Registry
+    config       *SubagentConfig
+}
+```
+
+```go
+// internal/subagent/manager.go
+
+// SubagentManager 子代理管理器
+type SubagentManager struct {
+    provider     providers.Provider
+    toolRegistry *tools.Registry
+    config       *SubagentConfig
+
+    mu    sync.RWMutex
+    tasks map[string]*Subagent
+
+    notify chan *Subagent      // 结果通知通道
+}
+```
+
+#### 4.4.3 工具定义
+
+**Task 工具** - 启动后台任务
+
+```go
+// Parameters
+{
+    "type": "object",
+    "properties": {
+        "task": {
+            "type": "string",
+            "description": "Clear description of the task to perform"
+        },
+        "context": {
+            "type": "string",
+            "description": "Additional context or background information"
+        }
+    },
+    "required": ["task"]
+}
+
+// 返回
+{
+    "task_id": "abc123",
+    "status": "started",
+    "message": "Task started in background. Use 'task_status' tool to check progress."
+}
+```
+
+**TaskStatus 工具** - 查询任务状态
+
+```go
+// Parameters
+{
+    "type": "object",
+    "properties": {
+        "task_id": {
+            "type": "string",
+            "description": "The ID of the task to check"
+        },
+        "list": {
+            "type": "boolean",
+            "description": "If true, list all tasks instead of checking a specific one"
+        }
+    }
+}
+
+// 返回
+{
+    "id": "abc123",
+    "task": "Analyze code structure",
+    "status": "completed",
+    "result": "...",
+    "summary": {
+        "startedAt": "2026-02-14 10:30:00",
+        "completedAt": "2026-02-14 10:30:45",
+        "duration": "45.2s"
+    }
+}
+```
+
+#### 4.4.4 配置选项
+
+```go
+// internal/subagent/config.go
+
+type SubagentConfig struct {
+    MaxIterations int      // 最大迭代次数，默认 15
+    SystemPrompt  string   // 子代理系统提示模板
+    EnabledTools  []string // 允许的工具白名单
+}
+
+// 默认允许的工具（不包含 task/task_status 以防止嵌套）
+func DefaultEnabledTools() []string {
+    return []string{"shell", "read", "write", "edit", "glob", "grep", "skill"}
+}
+```
+
+#### 4.4.5 使用示例
+
+```
+User: 请在后台分析当前目录的代码结构
+
+Agent: 好的，我将在后台启动一个任务来分析代码结构。
+[调用 task 工具]
+{
+    "task_id": "x7k2m9p4",
+    "status": "started"
+}
+
+任务已启动，ID 为 x7k2m9p4。您可以使用 task_status 工具查询进度。
+
+User: 任务完成了吗？
+
+Agent: [调用 task_status 工具]
+{
+    "status": "completed",
+    "result": "代码结构分析完成..."
+}
+```
+
+#### 4.4.6 与 nanobot 的差异
+
+| 特性 | nanobot | LingGuard |
+|------|---------|-----------|
+| 并发模型 | asyncio | goroutine |
+| 通知机制 | MessageBus 回调 | 轮询 (初期) |
+| 工具隔离 | 运行时过滤 | 预配置白名单 |
+| 结果投递 | 自动注入会话 | 主动查询 |
+
 ---
 
-## 4. 配置示例
+## 5. 配置示例
 
-### 4.1 完整配置文件
+### 5.1 完整配置文件
 
 ```json
 {
@@ -519,7 +809,7 @@ func (a *Agent) runLoop(ctx context.Context, sessionID string, messages []llm.Me
 }
 ```
 
-### 4.2 Provider 自动匹配说明
+### 5.2 Provider 自动匹配说明
 
 | model 配置值 | 匹配规则 | 使用的 Provider |
 |-------------|---------|----------------|
@@ -532,9 +822,9 @@ func (a *Agent) runLoop(ctx context.Context, sessionID string, messages []llm.Me
 
 ---
 
-## 5. CLI设计
+## 6. CLI设计
 
-### 5.1 命令列表
+### 6.1 命令列表
 
 ```bash
 # 初始化配置
@@ -551,7 +841,7 @@ lingguard gateway
 lingguard status
 ```
 
-### 5.2 状态显示示例
+### 6.2 状态显示示例
 
 ```
 LingGuard Status
@@ -575,7 +865,7 @@ Channels:
 
 ---
 
-## 6. 开发路线图
+## 7. 开发路线图
 
 ### Phase 1: 核心功能 ✅ (已完成)
 
@@ -604,29 +894,42 @@ Channels:
 | 权限控制 | ✅ | allowFrom 白名单 |
 | Gateway 命令 | ✅ | gateway.go CLI 入口 |
 
-### Phase 3: 高级功能 (待实现)
+### Phase 3: 技能系统 ✅ (已完成)
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| 技能系统 | ⏳ | skills/ 模块 |
+| 技能加载器 | ✅ | loader.go - 加载 SKILL.md 格式技能 |
+| 技能管理器 | ✅ | manager.go - 缓存和获取技能 |
+| 渐进式加载 | ✅ | 默认注入摘要，按需加载完整内容 |
+| 依赖检查 | ✅ | 支持检查二进制和环境变量依赖 |
+| Skill 工具 | ✅ | tools/skill.go - 按需加载技能 |
+| 内置技能 | ✅ | git-workflow, code-review, file, system, weather |
+
+### Phase 4: 高级功能 (进行中)
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 多渠道扩展 | ⏳ | Telegram, Discord, WhatsApp 等 |
 | 持久化存储 | ⏳ | PostgreSQL |
 | 向量记忆 | ⏳ | Qdrant 集成 |
-| 定时任务 | ⏳ | scheduler/ 模块 |
+| 定时任务 | ⏳ | scheduler/ 模块 (Cron) |
 | 多模态支持 | ⏳ | Vision |
-| 子代理 | ⏳ | Subagent |
+| 子代理 | ✅ | Subagent 后台任务 |
+| 流式响应 | ⏳ | SSE 支持 |
+| Docker 支持 | ⏳ | 容器化部署 |
 
-### Phase 4: 优化与扩展 (待实现)
+### Phase 5: 优化与扩展 (待实现)
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
 | 性能优化 | ⏳ | 缓存、并发优化 |
 | 监控指标 | ⏳ | Prometheus |
 | Web 管理界面 | ⏳ | 可选 |
-| 流式响应 | ⏳ | SSE 支持 |
+| Agent Social Network | ⏳ | Moltbook, ClawdChat 集成 |
 
 ---
 
-## 7. 技术选型
+## 8. 技术选型
 
 | 组件 | 技术选型 | 说明 |
 |------|----------|------|
@@ -640,10 +943,78 @@ Channels:
 
 ---
 
-## 8. 参考资料
+## 9. 参考资料
 
 - [nanobot](https://github.com/HKUDS/nanobot) - 参考架构设计
 - [OpenAI API](https://platform.openai.com/docs/api-reference) - LLM API规范
 - [Anthropic API](https://docs.anthropic.com/) - Claude API
 - [飞书开放平台](https://open.feishu.cn/document/) - 飞书开发文档
 - [飞书WebSocket长连接](https://open.feishu.cn/document/ukTMukTMukTM/uYjNwUjL2YDM14iN2ATN) - 长连接模式说明
+
+---
+
+## 10. 项目总结
+
+### 10.1 当前功能亮点
+
+LingGuard 作为参考 nanobot 设计的 Go 语言实现，已实现以下核心功能：
+
+1. **完整的 Agent Loop**
+   - 支持工具调用循环
+   - 可配置最大迭代次数
+   - 上下文窗口管理
+
+2. **多 LLM Provider 支持**
+   - OpenAI 兼容 API
+   - Anthropic 兼容 API
+   - 自动 Provider 匹配
+
+3. **渐进式技能系统**
+   - YAML frontmatter + Markdown 格式
+   - 默认注入摘要，按需加载
+   - 支持 always=true 始终加载
+   - 依赖检查机制
+
+4. **飞书 WebSocket 集成**
+   - 无需公网 IP
+   - 消息去重
+   - Interactive Card 响应
+   - 权限控制
+
+5. **安全沙箱**
+   - 工作空间限制
+   - 危险命令检测
+
+### 10.2 与 nanobot 的主要差异
+
+| 方面 | LingGuard | nanobot |
+|------|-----------|---------|
+| **定位** | Go 语言轻量级实现 | Python 轻量级实现 |
+| **渠道** | 飞书 | 9+ 渠道 (Telegram, Discord, WhatsApp...) |
+| **定时任务** | ⏳ 待实现 | ✅ Cron 支持 |
+| **子代理** | ✅ 已实现 | ✅ 后台任务 |
+| **部署** | 单二进制 | pip/uv 安装 |
+
+### 10.3 适用场景
+
+- 需要低内存占用的边缘部署
+- 飞书企业环境
+- Go 语言技术栈团队
+- 需要自定义扩展的开发者
+
+### 10.4 后续开发建议
+
+1. **优先级高**
+   - 多渠道支持 (Telegram, Discord)
+   - 定时任务 (Cron)
+   - 持久化存储
+
+2. **优先级中**
+   - 子代理支持
+   - 向量记忆
+   - 流式响应
+
+3. **优先级低**
+   - Web 管理界面
+   - 监控指标
+   - Agent Social Network

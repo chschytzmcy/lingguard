@@ -11,6 +11,7 @@ import (
 	"github.com/lingguard/internal/providers"
 	"github.com/lingguard/internal/session"
 	"github.com/lingguard/internal/skills"
+	"github.com/lingguard/internal/subagent"
 	"github.com/lingguard/internal/tools"
 	"github.com/lingguard/pkg/llm"
 	"github.com/lingguard/pkg/logger"
@@ -24,6 +25,7 @@ type Agent struct {
 	toolRegistry *tools.Registry
 	sessions     *session.Manager
 	skillsMgr    *skills.Manager
+	subagentMgr  *subagent.SubagentManager
 	config       *config.AgentsConfig
 }
 
@@ -34,14 +36,21 @@ func NewAgent(cfg *config.AgentsConfig, provider providers.Provider, skillsLoade
 		skillsMgr = skills.NewManager(skillsLoader)
 	}
 
-	return &Agent{
+	toolRegistry := tools.NewRegistry()
+
+	agent := &Agent{
 		id:           generateID(),
 		provider:     provider,
-		toolRegistry: tools.NewRegistry(),
+		toolRegistry: toolRegistry,
 		sessions:     session.NewManager(memory.NewMemoryStore(), cfg.MemoryWindow),
 		skillsMgr:    skillsMgr,
 		config:       cfg,
 	}
+
+	// 初始化子代理管理器
+	agent.subagentMgr = subagent.NewSubagentManager(provider, toolRegistry, nil)
+
+	return agent
 }
 
 // RegisterTool 注册工具
@@ -54,6 +63,19 @@ func (a *Agent) RegisterSkillTool() {
 	if a.skillsMgr != nil {
 		a.toolRegistry.Register(tools.NewSkillTool(a.skillsMgr))
 	}
+}
+
+// RegisterSubagentTools 注册子代理工具
+func (a *Agent) RegisterSubagentTools() {
+	if a.subagentMgr != nil {
+		a.toolRegistry.Register(subagent.NewTaskTool(a.subagentMgr))
+		a.toolRegistry.Register(subagent.NewTaskStatusTool(a.subagentMgr))
+	}
+}
+
+// SubagentManager 返回子代理管理器
+func (a *Agent) SubagentManager() *subagent.SubagentManager {
+	return a.subagentMgr
 }
 
 // GetSkillInstruction 获取技能指令

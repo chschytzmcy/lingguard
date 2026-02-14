@@ -120,6 +120,9 @@ func createAgent(cfg *config.Config) (*agent.Agent, error) {
 	// 7. 注册技能工具（支持按需加载技能）
 	ag.RegisterSkillTool()
 
+	// 8. 注册子代理工具（支持后台任务）
+	ag.RegisterSubagentTools()
+
 	return ag, nil
 }
 
