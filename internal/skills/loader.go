@@ -19,6 +19,7 @@ type Skill struct {
 	Description string                 `json:"description"`
 	Homepage    string                 `json:"homepage,omitempty"`
 	Emoji       string                 `json:"emoji,omitempty"`
+	Always      bool                   `json:"always,omitempty"` // 是否始终加载完整内容
 	Content     string                 `json:"content,omitempty"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 	Requires    *Requirements          `json:"requires,omitempty"`
@@ -199,11 +200,13 @@ func parseSkill(content []byte) (*Skill, error) {
 			var metadata struct {
 				Nanobot struct {
 					Emoji    string        `json:"emoji"`
+					Always   bool          `json:"always"`
 					Requires *Requirements `json:"requires"`
 				} `json:"nanobot"`
 			}
 			if err := json.Unmarshal([]byte(value), &metadata); err == nil {
 				skill.Emoji = metadata.Nanobot.Emoji
+				skill.Always = metadata.Nanobot.Always
 				skill.Requires = metadata.Nanobot.Requires
 			}
 		}
@@ -239,6 +242,7 @@ func (l *Loader) checkRequirements(req *Requirements) (bool, string) {
 }
 
 // BuildSkillsSummary 构建技能摘要（用于注入到系统提示）
+// 这是渐进式加载的默认策略：只注入摘要，LLM 可以通过 skill 工具按需加载完整内容
 func (l *Loader) BuildSkillsSummary() string {
 	skills, err := l.ListSkills()
 	if err != nil || len(skills) == 0 {
@@ -247,11 +251,15 @@ func (l *Loader) BuildSkillsSummary() string {
 
 	var sb strings.Builder
 	sb.WriteString("<skills>\n")
+	sb.WriteString("<!-- 以下是可用技能的摘要。如需使用某个技能，请使用 skill 工具加载完整指令 -->\n\n")
 
 	for _, skill := range skills {
 		sb.WriteString(fmt.Sprintf("  <skill name=\"%s\"", skill.Name))
 		if skill.Emoji != "" {
 			sb.WriteString(fmt.Sprintf(" emoji=\"%s\"", skill.Emoji))
+		}
+		if skill.Always {
+			sb.WriteString(" always=\"true\"")
 		}
 		sb.WriteString(">\n")
 		sb.WriteString(fmt.Sprintf("    <description>%s</description>\n", skill.Description))
@@ -259,6 +267,56 @@ func (l *Loader) BuildSkillsSummary() string {
 			sb.WriteString(fmt.Sprintf("    <unavailable>%s</unavailable>\n", skill.Unavailable))
 		}
 		sb.WriteString("  </skill>\n")
+	}
+
+	sb.WriteString("\n</skills>")
+
+	return sb.String()
+}
+
+// BuildSkillsContext 构建渐进式技能上下文
+// 策略：
+// - always=true 的技能：始终注入完整内容
+// - 其他技能：只注入摘要，LLM 可通过 skill 工具按需加载
+func (l *Loader) BuildSkillsContext() string {
+	skills, err := l.ListSkills()
+	if err != nil || len(skills) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("<skills>\n")
+	sb.WriteString("<!-- always=true 的技能已加载完整内容，其他技能请使用 skill 工具加载 -->\n\n")
+
+	for _, skill := range skills {
+		// 跳过不可用的技能
+		if !skill.Available {
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintf("<skill name=\"%s\"", skill.Name))
+		if skill.Emoji != "" {
+			sb.WriteString(fmt.Sprintf(" emoji=\"%s\"", skill.Emoji))
+		}
+
+		// always=true 的技能加载完整内容
+		if skill.Always {
+			sb.WriteString(" always=\"true\">\n")
+			// 加载完整内容
+			fullSkill, err := l.LoadSkill(skill.Name)
+			if err == nil && fullSkill.Content != "" {
+				sb.WriteString(fullSkill.Content)
+			} else {
+				sb.WriteString(skill.Description)
+			}
+			sb.WriteString("\n</skill>\n\n")
+		} else {
+			// 其他技能只显示摘要
+			sb.WriteString(">\n")
+			sb.WriteString(fmt.Sprintf("<description>%s</description>\n", skill.Description))
+			sb.WriteString("<!-- 使用 skill 工具加载此技能的完整指令 -->\n")
+			sb.WriteString("</skill>\n\n")
+		}
 	}
 
 	sb.WriteString("</skills>")

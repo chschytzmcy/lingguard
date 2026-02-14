@@ -77,18 +77,33 @@ func createAgent(cfg *config.Config) (*agent.Agent, error) {
 	builtinDir := cfg.Agents.SkillsBuiltinDir
 	workspaceSkills := cfg.Agents.SkillsWorkspace
 
-	// 如果没有配置，使用默认路径
+	// 如果没有配置，尝试多个默认路径
 	if builtinDir == "" {
-		// 尝试查找内置技能目录
+		// 尝试1: 相对于可执行文件
 		execPath, _ := os.Executable()
-		defaultBuiltin := filepath.Join(filepath.Dir(execPath), "skills", "builtin")
-		if _, err := os.Stat(defaultBuiltin); err == nil {
-			builtinDir = defaultBuiltin
+		candidatePaths := []string{
+			filepath.Join(filepath.Dir(execPath), "skills", "builtin"),
+			filepath.Join(filepath.Dir(execPath), "..", "skills", "builtin"),
+			filepath.Join(filepath.Dir(execPath), "../skills/builtin"),
+		}
+
+		// 尝试2: 相对于当前工作目录
+		cwd, _ := os.Getwd()
+		candidatePaths = append(candidatePaths,
+			filepath.Join(cwd, "skills", "builtin"),
+		)
+
+		for _, p := range candidatePaths {
+			if _, err := os.Stat(p); err == nil {
+				builtinDir = p
+				break
+			}
 		}
 	}
 
 	if builtinDir != "" || workspaceSkills != "" {
 		skillsLoader = skills.NewLoader(builtinDir, workspaceSkills)
+		fmt.Printf("Skills loaded from: %s\n", builtinDir)
 	}
 
 	// 5. 创建 Agent
@@ -101,6 +116,9 @@ func createAgent(cfg *config.Config) (*agent.Agent, error) {
 	}
 	ag.RegisterTool(tools.NewShellTool(workspace, cfg.Tools.RestrictToWorkspace))
 	ag.RegisterTool(tools.NewFileTool(workspace, cfg.Tools.RestrictToWorkspace))
+
+	// 7. 注册技能工具（支持按需加载技能）
+	ag.RegisterSkillTool()
 
 	return ag, nil
 }

@@ -53,8 +53,14 @@ func (m *Manager) ListSkills() ([]*Skill, error) {
 }
 
 // GetSkillsContext 获取技能上下文（用于注入到系统提示）
+// 默认使用渐进式加载策略：只注入摘要，LLM 可通过 skill 工具按需加载
 func (m *Manager) GetSkillsContext() string {
 	return m.loader.BuildSkillsSummary()
+}
+
+// GetFullSkillsContext 获取完整技能上下文（包含 always=true 技能的完整内容）
+func (m *Manager) GetFullSkillsContext() string {
+	return m.loader.BuildSkillsContext()
 }
 
 // GetSkillInstruction 获取技能的详细指令

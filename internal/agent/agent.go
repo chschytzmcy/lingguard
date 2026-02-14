@@ -49,6 +49,13 @@ func (a *Agent) RegisterTool(t tools.Tool) {
 	a.toolRegistry.Register(t)
 }
 
+// RegisterSkillTool 注册技能加载工具
+func (a *Agent) RegisterSkillTool() {
+	if a.skillsMgr != nil {
+		a.toolRegistry.Register(tools.NewSkillTool(a.skillsMgr))
+	}
+}
+
 // GetSkillInstruction 获取技能指令
 func (a *Agent) GetSkillInstruction(name string) (string, error) {
 	if a.skillsMgr == nil {

@@ -1,7 +1,7 @@
 ---
 name: system
 description: System operations and shell command execution
-metadata: {"nanobot":{"emoji":"💻","requires":{"bins":["bash","sh"]}}}
+metadata: {"nanobot":{"emoji":"💻","always":true,"requires":{"bins":["bash","sh"]}}}
 ---
 # System Operations
 
