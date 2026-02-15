@@ -36,29 +36,41 @@ type Requirements struct {
 
 // Loader 技能加载器
 type Loader struct {
-	builtinDir string
-	workspace  string
+	builtinDirs []string // 支持多个内置技能目录
+	workspace   string
 }
 
 // NewLoader 创建技能加载器
-func NewLoader(builtinDir, workspace string) *Loader {
+// builtinDirs 支持传入多个内置技能目录，按顺序优先级加载
+func NewLoader(builtinDirs []string, workspace string) *Loader {
 	return &Loader{
-		builtinDir: builtinDir,
-		workspace:  workspace,
+		builtinDirs: builtinDirs,
+		workspace:   workspace,
 	}
 }
 
 // ListSkills 列出所有可用技能
 func (l *Loader) ListSkills() ([]*Skill, error) {
 	skills := make([]*Skill, 0)
+	seen := make(map[string]bool) // 用于去重
 
-	// 加载内置技能
-	if l.builtinDir != "" {
-		builtinSkills, err := l.loadFromDir(l.builtinDir)
-		if err != nil {
-			logger.Warn("failed to load builtin skills", "error", err)
+	// 加载所有内置技能目录
+	for _, dir := range l.builtinDirs {
+		if dir == "" {
+			continue
 		}
-		skills = append(skills, builtinSkills...)
+		builtinSkills, err := l.loadFromDir(dir)
+		if err != nil {
+			logger.Warn("failed to load builtin skills from %s: %v", dir, err)
+			continue
+		}
+		// 去重：只添加未 seen 的技能
+		for _, s := range builtinSkills {
+			if !seen[s.Name] {
+				seen[s.Name] = true
+				skills = append(skills, s)
+			}
+		}
 	}
 
 	// 加载工作区技能
@@ -67,7 +79,13 @@ func (l *Loader) ListSkills() ([]*Skill, error) {
 		if err != nil {
 			logger.Warn("failed to load workspace skills", "error", err)
 		}
-		skills = append(skills, workspaceSkills...)
+		// 去重：工作区技能可以覆盖内置技能
+		for _, s := range workspaceSkills {
+			if !seen[s.Name] {
+				seen[s.Name] = true
+				skills = append(skills, s)
+			}
+		}
 	}
 
 	return skills, nil
@@ -75,9 +93,12 @@ func (l *Loader) ListSkills() ([]*Skill, error) {
 
 // LoadSkill 加载指定技能的完整内容
 func (l *Loader) LoadSkill(name string) (*Skill, error) {
-	// 先在 builtin 目录查找
-	if l.builtinDir != "" {
-		skill, err := l.loadSkillByName(l.builtinDir, name)
+	// 先在所有 builtin 目录查找（按顺序）
+	for _, dir := range l.builtinDirs {
+		if dir == "" {
+			continue
+		}
+		skill, err := l.loadSkillByName(dir, name)
 		if err == nil {
 			return skill, nil
 		}

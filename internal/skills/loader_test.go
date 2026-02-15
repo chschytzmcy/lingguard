@@ -76,7 +76,7 @@ This is a test.
 		t.Fatalf("Failed to write SKILL.md: %v", err)
 	}
 
-	loader := NewLoader(tmpDir, "")
+	loader := NewLoader([]string{tmpDir}, "")
 	skills, err := loader.ListSkills()
 	if err != nil {
 		t.Fatalf("ListSkills failed: %v", err)
@@ -110,7 +110,7 @@ Detailed instructions here.
 		t.Fatalf("Failed to write SKILL.md: %v", err)
 	}
 
-	loader := NewLoader(tmpDir, "")
+	loader := NewLoader([]string{tmpDir}, "")
 	skill, err := loader.LoadSkill("my-skill")
 	if err != nil {
 		t.Fatalf("LoadSkill failed: %v", err)
@@ -126,7 +126,7 @@ Detailed instructions here.
 }
 
 func TestLoaderLoadSkillNotFound(t *testing.T) {
-	loader := NewLoader(t.TempDir(), "")
+	loader := NewLoader([]string{t.TempDir()}, "")
 	_, err := loader.LoadSkill("nonexistent")
 	if err == nil {
 		t.Error("Expected error for nonexistent skill")
@@ -152,7 +152,7 @@ metadata: {"nanobot":{"emoji":"🌤️"}}
 		t.Fatalf("Failed to write SKILL.md: %v", err)
 	}
 
-	loader := NewLoader(tmpDir, "")
+	loader := NewLoader([]string{tmpDir}, "")
 	summary := loader.BuildSkillsSummary()
 
 	if summary == "" {

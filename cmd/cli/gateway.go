@@ -109,36 +109,50 @@ func createGatewayAgent(cfg *config.Config) (*agent.Agent, error) {
 
 	// 4. 创建 Skills Loader
 	var skillsLoader *skills.Loader
-	builtinDir := cfg.Agents.SkillsBuiltinDir
-	workspaceSkills := cfg.Agents.SkillsWorkspace
+	var builtinDirs []string
 
-	// 如果没有配置，尝试多个默认路径
-	if builtinDir == "" {
-		// 尝试1: 相对于可执行文件
+	// 如果配置了内置技能目录，使用配置的
+	if cfg.Agents.SkillsBuiltinDir != "" {
+		builtinDirs = append(builtinDirs, cfg.Agents.SkillsBuiltinDir)
+	} else {
+		// 自动发现内置技能目录
 		execPath, _ := os.Executable()
+		home, _ := os.UserHomeDir()
+		cwd, _ := os.Getwd()
+
+		// 候选路径（按优先级排序）
 		candidatePaths := []string{
-			filepath.Join(filepath.Dir(execPath), "skills", "builtin"),
-			filepath.Join(filepath.Dir(execPath), "..", "skills", "builtin"),
-			filepath.Join(filepath.Dir(execPath), "../skills/builtin"),
+			// 1. 相对于可执行文件的 skills 目录
+			filepath.Join(filepath.Dir(execPath), "skills"),
+			// 2. 相对于可执行文件的上级目录
+			filepath.Join(filepath.Dir(execPath), "..", "skills"),
+			// 3. 用户主目录下的 .lingguard/skills
+			filepath.Join(home, ".lingguard", "skills"),
+			// 4. 当前工作目录下的 skills
+			filepath.Join(cwd, "skills"),
 		}
 
-		// 尝试2: 相对于当前工作目录
-		cwd, _ := os.Getwd()
-		candidatePaths = append(candidatePaths,
-			filepath.Join(cwd, "skills", "builtin"),
-		)
-
+		// 去重：使用 map 记录已添加的绝对路径
+		seen := make(map[string]bool)
 		for _, p := range candidatePaths {
-			if _, err := os.Stat(p); err == nil {
-				builtinDir = p
-				break
+			absPath, err := filepath.Abs(p)
+			if err != nil {
+				absPath = p
+			}
+			if _, err := os.Stat(p); err == nil && !seen[absPath] {
+				seen[absPath] = true
+				builtinDirs = append(builtinDirs, p)
 			}
 		}
 	}
 
-	if builtinDir != "" || workspaceSkills != "" {
-		skillsLoader = skills.NewLoader(builtinDir, workspaceSkills)
-		logger.Info("Skills loaded", "path", builtinDir)
+	workspaceSkills := cfg.Agents.SkillsWorkspace
+
+	if len(builtinDirs) > 0 || workspaceSkills != "" {
+		skillsLoader = skills.NewLoader(builtinDirs, workspaceSkills)
+		if len(builtinDirs) > 0 {
+			logger.Info("Skills loaded from: %v", builtinDirs)
+		}
 	}
 
 	// 5. 创建 Agent
