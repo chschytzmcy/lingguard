@@ -50,7 +50,13 @@
   },
   "tools": {
     "restrictToWorkspace": false,
-    "workspace": "~/.lingguard/workspace"
+    "workspace": "~/.lingguard/workspace",
+    "mcpServers": {
+      "filesystem": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/mcp-test"]
+      }
+    }
   },
   "storage": {
     "type": "file",
