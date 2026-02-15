@@ -5,34 +5,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
 
 // ShellTool Shell 执行工具
 type ShellTool struct {
-	workspace string
-	sandboxed bool
+	workspaceMgr *WorkspaceManager
+	sandboxed    bool
 }
 
 // NewShellTool 创建 Shell 工具
-func NewShellTool(workspace string, sandboxed bool) *ShellTool {
+func NewShellTool(workspaceMgr *WorkspaceManager, sandboxed bool) *ShellTool {
 	return &ShellTool{
-		workspace: expandPath(workspace),
-		sandboxed: sandboxed,
+		workspaceMgr: workspaceMgr,
+		sandboxed:    sandboxed,
 	}
-}
-
-// expandPath 展开 ~ 为用户主目录
-func expandPath(path string) string {
-	if len(path) > 0 && path[0] == '~' {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, path[1:])
-	}
-	return path
 }
 
 func (t *ShellTool) Name() string { return "shell" }
@@ -85,8 +74,8 @@ func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (string
 
 	// 执行命令
 	cmd := exec.CommandContext(ctx, "bash", "-c", p.Command)
-	if t.workspace != "" {
-		cmd.Dir = t.workspace
+	if t.workspaceMgr != nil {
+		cmd.Dir = t.workspaceMgr.Get()
 	}
 
 	var stdout, stderr bytes.Buffer

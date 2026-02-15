@@ -300,7 +300,28 @@ config.json 中的配置会覆盖 spec.go 中的默认值：
 | file_edit | 编辑文件 | `path`, `old_string`, `new_string` |
 | file_list | 列出目录 | `path`: 目录路径 |
 
-### 5.3 网页工具
+### 5.3 工作目录工具
+
+运行时更改工作目录，所有后续 shell 和文件操作都会在新目录下执行。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| operation | string | 是 | 操作类型: `pwd`, `cd`, `ls` |
+| path | string | 否 | 路径（cd 操作必填）|
+
+**操作说明**：
+- `pwd`: 显示当前工作目录
+- `cd`: 切换工作目录（支持相对/绝对路径）
+- `ls`: 列出当前目录内容
+
+**示例**：
+```json
+{"operation": "cd", "path": "/home/user/project"}
+{"operation": "pwd"}
+{"operation": "ls"}
+```
+
+### 5.4 网页工具
 
 #### 5.3.1 web_search
 
@@ -349,7 +370,7 @@ Results for: Go programming language
 }
 ```
 
-### 5.4 Spawn 工具
+### 5.5 Spawn 工具
 
 生成子任务并行处理。
 
