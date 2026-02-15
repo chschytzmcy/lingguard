@@ -148,16 +148,31 @@ func computeNextRun(schedule *CronSchedule, nowMs int64) int64 {
 
 // parseCronNextRun 解析 cron 表达式并计算下次执行时间
 func parseCronNextRun(expr, tz string, nowMs int64) int64 {
+	// 解析时区
+	loc := time.Local // 默认使用本地时区
+	if tz != "" {
+		var err error
+		loc, err = time.LoadLocation(tz)
+		if err != nil {
+			logger.Warn("Invalid timezone '%s': %v, using local time", tz, err)
+			loc = time.Local
+		}
+	}
+
 	// 使用 robfig/cron 库解析表达式
+	// 使用 WithSeconds 支持可选的秒字段，或使用标准5字段
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	schedule, err := parser.Parse(expr)
+
+	// 创建带时区的 cron 调度器
+	cronSchedule, err := parser.Parse(expr)
 	if err != nil {
 		logger.Warn("Invalid cron expression '%s': %v", expr, err)
 		return 0
 	}
 
-	now := time.UnixMilli(nowMs)
-	next := schedule.Next(now)
+	// 将当前时间转换到目标时区
+	now := time.UnixMilli(nowMs).In(loc)
+	next := cronSchedule.Next(now)
 	return next.UnixMilli()
 }
 
@@ -515,11 +530,21 @@ func (s *Service) AddEveryJob(name string, interval time.Duration, message strin
 	return s.AddJob(name, schedule, message, opts...)
 }
 
-// AddCronJob 添加 cron 表达式任务
+// AddCronJob 添加 cron 表达式任务（带时区）
 func (s *Service) AddCronJob(name string, expr string, message string, opts ...JobOption) (*CronJob, error) {
 	schedule := CronSchedule{
 		Kind: ScheduleKindCron,
 		Expr: expr,
+	}
+	return s.AddJob(name, schedule, message, opts...)
+}
+
+// AddCronJobWithTZ 添加 cron 表达式任务（指定时区）
+func (s *Service) AddCronJobWithTZ(name string, expr string, tz string, message string, opts ...JobOption) (*CronJob, error) {
+	schedule := CronSchedule{
+		Kind: ScheduleKindCron,
+		Expr: expr,
+		TZ:   tz,
 	}
 	return s.AddJob(name, schedule, message, opts...)
 }

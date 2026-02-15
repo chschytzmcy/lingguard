@@ -696,7 +696,33 @@ lingguard cron status
 0 18 * * 1-5   # 周一到周五 18:00
 ```
 
-### 10.3 任务投递选项
+### 10.3 时区支持
+
+使用 `--tz` 参数指定 cron 任务的时区：
+
+```bash
+# 纽约时间每天 9:00
+lingguard cron add "NYC Morning" "cron:0 9 * * *" "Good morning!" --tz "America/New_York"
+
+# 东京时间每天 18:00
+lingguard cron add "Tokyo Evening" "cron:0 18 * * *" "Good evening!" --tz "Asia/Tokyo"
+
+# 上海时间每周一 9:30
+lingguard cron add "周一例会" "cron:30 9 * * 1" "周一例会提醒" --tz "Asia/Shanghai"
+```
+
+**常用时区：**
+
+| 时区 | 标识符 |
+|------|--------|
+| 中国 | `Asia/Shanghai` 或 `Asia/Chongqing` |
+| 日本 | `Asia/Tokyo` |
+| 纽约 | `America/New_York` |
+| 洛杉矶 | `America/Los_Angeles` |
+| 伦敦 | `Europe/London` |
+| UTC | `UTC` |
+
+### 10.4 任务投递选项
 
 添加任务时可以指定将响应投递到消息渠道：
 
@@ -704,9 +730,13 @@ lingguard cron status
 # 投递到飞书
 lingguard cron add "Daily Report" "cron:0 9 * * *" "Generate daily report" \
   --deliver --channel feishu --to ou_xxx
+
+# 带时区投递
+lingguard cron add "NYC Report" "cron:0 9 * * *" "Morning report" \
+  --tz "America/New_York" --deliver --channel feishu --to ou_xxx
 ```
 
-### 10.4 任务存储
+### 10.5 任务存储
 
 任务数据存储在 JSON 文件中：
 
@@ -726,7 +756,8 @@ lingguard cron add "Daily Report" "cron:0 9 * * *" "Generate daily report" \
       "enabled": true,
       "schedule": {
         "kind": "cron",
-        "expr": "0 9 * * *"
+        "expr": "0 9 * * *",
+        "tz": "America/New_York"
       },
       "payload": {
         "kind": "agent_turn",
@@ -745,7 +776,7 @@ lingguard cron add "Daily Report" "cron:0 9 * * *" "Generate daily report" \
 }
 ```
 
-### 10.5 配置
+### 10.6 配置
 
 在 `config.json` 中配置定时任务：
 

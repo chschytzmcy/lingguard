@@ -69,7 +69,11 @@ var cronAddCmd = &cobra.Command{
 Schedule formats:
   - every:<duration>  - Repeat every duration (e.g., "every:1h", "every:30m")
   - at:<datetime>     - Run once at specific time (e.g., "at:2024-12-25 09:00")
-  - cron:<expr>       - Cron expression (e.g., "cron:0 9 * * *")`,
+  - cron:<expr>       - Cron expression (e.g., "cron:0 9 * * *")
+
+Timezone:
+  Use --tz flag to specify timezone for cron expressions (e.g., "America/New_York", "Asia/Shanghai")
+  Default is local timezone.`,
 	Args: cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
 		_, service, err := initCronService()
@@ -83,7 +87,10 @@ Schedule formats:
 		scheduleStr := args[1]
 		message := args[2]
 
-		schedule, err := parseSchedule(scheduleStr)
+		// 获取时区参数
+		tz, _ := cmd.Flags().GetString("tz")
+
+		schedule, err := parseScheduleWithTZ(scheduleStr, tz)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing schedule: %v\n", err)
 			os.Exit(1)
@@ -115,6 +122,9 @@ Schedule formats:
 		fmt.Printf("  ID: %s\n", job.ID)
 		fmt.Printf("  Name: %s\n", job.Name)
 		fmt.Printf("  Schedule: %s\n", formatSchedule(job.Schedule))
+		if job.Schedule.TZ != "" {
+			fmt.Printf("  Timezone: %s\n", job.Schedule.TZ)
+		}
 		fmt.Printf("  Next Run: %s\n", formatNextRun(job.State.NextRunAtMs))
 	},
 }
@@ -255,6 +265,7 @@ func init() {
 	cronAddCmd.Flags().StringP("channel", "c", "", "Target channel (e.g., feishu)")
 	cronAddCmd.Flags().StringP("to", "t", "", "Target user/group ID")
 	cronAddCmd.Flags().BoolP("delete-after", "", false, "Delete after execution (for one-shot tasks)")
+	cronAddCmd.Flags().StringP("tz", "z", "", "Timezone for cron expression (e.g., America/New_York, Asia/Shanghai)")
 
 	// cron run flags
 	cronRunCmd.Flags().BoolP("force", "f", false, "Force run even if disabled")
@@ -285,6 +296,11 @@ func initCronService() (*config.Config, *cron.Service, error) {
 
 // parseSchedule 解析调度字符串
 func parseSchedule(s string) (*cron.CronSchedule, error) {
+	return parseScheduleWithTZ(s, "")
+}
+
+// parseScheduleWithTZ 解析调度字符串（支持时区）
+func parseScheduleWithTZ(s string, tz string) (*cron.CronSchedule, error) {
 	parts := strings.SplitN(s, ":", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid schedule format, use: every:<duration>, at:<datetime>, or cron:<expr>")
@@ -319,6 +335,7 @@ func parseSchedule(s string) (*cron.CronSchedule, error) {
 		return &cron.CronSchedule{
 			Kind: cron.ScheduleKindCron,
 			Expr: value,
+			TZ:   tz,
 		}, nil
 
 	default:
@@ -352,6 +369,9 @@ func formatSchedule(s cron.CronSchedule) string {
 	case cron.ScheduleKindAt:
 		return fmt.Sprintf("at %s", time.UnixMilli(s.AtMs).Format("2006-01-02 15:04:05"))
 	case cron.ScheduleKindCron:
+		if s.TZ != "" {
+			return fmt.Sprintf("cron: %s (TZ: %s)", s.Expr, s.TZ)
+		}
 		return fmt.Sprintf("cron: %s", s.Expr)
 	default:
 		return string(s.Kind)
