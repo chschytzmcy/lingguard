@@ -355,35 +355,87 @@ type ProviderConfig struct {
 }
 ```
 
-#### 4.2.2 Provider 自动匹配
+#### 4.2.2 Provider 自动匹配（参考 nanobot Provider Registry）
 
 ```go
 // internal/providers/spec.go
 
 package providers
 
-// ProviderSpec 定义 Provider 的匹配规则
+// ProviderSpec 定义 Provider 的完整规范（参考 nanobot Provider Registry）
+// 这是 Provider 匹配和自动配置的单一真实来源
 type ProviderSpec struct {
-    Name         string   // 配置中的 provider 名称
-    Keywords     []string // 模型名关键词（用于自动匹配）
-    APIKeyPrefix string   // API Key 前缀
+    // Name 配置中的 provider 名称（如 "openai", "deepseek"）
+    Name string
+
+    // Keywords 模型名关键词，用于自动匹配 provider
+    // 例如：gpt -> openai, claude -> anthropic
+    Keywords []string
+
+    // DisplayName 显示名称，用于 status 命令输出
+    DisplayName string
+
+    // APIKeyPrefix API Key 前缀，用于通过 key 检测 provider
+    // 例如："sk-or-" for OpenRouter, "gsk_" for Groq
+    APIKeyPrefix string
+
+    // APIBaseKeyword API Base URL 关键词，用于通过 apiBase 检测 provider
+    APIBaseKeyword string
+
+    // DefaultAPIBase 默认 API Base URL
+    DefaultAPIBase string
+
+    // DefaultModel 默认模型
+    DefaultModel string
+
+    // IsAnthropic 是否使用 Anthropic API 格式（而非 OpenAI 格式）
+    IsAnthropic bool
+
+    // IsGateway 是否是网关类型（如 OpenRouter），可以路由到任意模型
+    IsGateway bool
+
+    // LiteLLMPrefix 自动为模型名添加前缀（model -> prefix/model）
+    LiteLLMPrefix string
+
+    // SkipPrefixes 如果模型名已包含这些前缀，不再重复添加
+    SkipPrefixes []string
+
+    // StripModelPrefix 是否在添加前缀前先去除已有前缀
+    StripModelPrefix bool
 }
 
-// BuiltinSpecs 内置 Provider 规范
-var BuiltinSpecs = []ProviderSpec{
-    {Name: "openai", Keywords: []string{"gpt", "o1", "o3"}},
-    {Name: "anthropic", Keywords: []string{"claude"}},
-    {Name: "deepseek", Keywords: []string{"deepseek"}},
-    {Name: "qwen", Keywords: []string{"qwen", "tongyi", "dashscope"}},
-    {Name: "glm", Keywords: []string{"glm", "chatglm", "codegeex"}},
-    {Name: "minimax", Keywords: []string{"minimax"}},
-    {Name: "moonshot", Keywords: []string{"moonshot", "kimi"}},
-    {Name: "gemini", Keywords: []string{"gemini"}},
-    {Name: "groq", Keywords: []string{"llama", "mixtral", "gemma"}, APIKeyPrefix: "gsk_"},
+// PROVIDERS 内置 Provider 规范注册表（参考 nanobot providers/registry.py）
+// 添加新 Provider 只需在此添加一个条目
+var PROVIDERS = []ProviderSpec{
+    {Name: "openai", Keywords: []string{"gpt", "o1", "o3"}, DisplayName: "OpenAI",
+     DefaultAPIBase: "https://api.openai.com/v1", DefaultModel: "gpt-4o"},
+    {Name: "anthropic", Keywords: []string{"claude"}, DisplayName: "Anthropic",
+     DefaultAPIBase: "https://api.anthropic.com", DefaultModel: "claude-3-5-sonnet-20241022", IsAnthropic: true},
+    {Name: "deepseek", Keywords: []string{"deepseek"}, DisplayName: "DeepSeek",
+     DefaultAPIBase: "https://api.deepseek.com/v1", DefaultModel: "deepseek-chat"},
+    {Name: "openrouter", Keywords: []string{"openrouter"}, DisplayName: "OpenRouter",
+     DefaultAPIBase: "https://openrouter.ai/api/v1", IsGateway: true, APIKeyPrefix: "sk-or-"},
+    {Name: "qwen", Keywords: []string{"qwen", "tongyi"}, DisplayName: "Qwen (通义千问)",
+     DefaultAPIBase: "https://dashscope.aliyuncs.com/compatible-mode/v1", DefaultModel: "qwen-max"},
+    {Name: "glm", Keywords: []string{"glm", "chatglm"}, DisplayName: "Zhipu GLM (智谱)",
+     DefaultAPIBase: "https://open.bigmodel.cn/api/paas/v4", DefaultModel: "glm-4"},
+    {Name: "minimax", Keywords: []string{"minimax"}, DisplayName: "MiniMax",
+     DefaultAPIBase: "https://api.minimax.chat/v1", DefaultModel: "abab6.5s-chat"},
+    {Name: "moonshot", Keywords: []string{"moonshot", "kimi"}, DisplayName: "Moonshot (Kimi)",
+     DefaultAPIBase: "https://api.moonshot.cn/v1", DefaultModel: "moonshot-v1-8k"},
+    {Name: "gemini", Keywords: []string{"gemini"}, DisplayName: "Google Gemini",
+     DefaultAPIBase: "https://generativelanguage.googleapis.com/v1beta", DefaultModel: "gemini-1.5-pro"},
+    {Name: "groq", Keywords: []string{"groq", "llama"}, DisplayName: "Groq",
+     DefaultAPIBase: "https://api.groq.com/openai/v1", APIKeyPrefix: "gsk_"},
+    {Name: "vllm", Keywords: []string{"vllm"}, DisplayName: "vLLM (Local)",
+     DefaultAPIBase: "http://localhost:8000/v1", IsGateway: true},
 }
 
-// FindSpecByModel 根据模型名查找 Provider 规范
-func FindSpecByModel(model string) *ProviderSpec
+// 查找方法
+func FindSpecByName(name string) *ProviderSpec    // 按名称查找
+func FindSpecByModel(model string) *ProviderSpec  // 按模型关键词查找
+func FindSpecByAPIKey(apiKey string) *ProviderSpec // 按 API Key 前缀查找（最长匹配）
+func FindSpecByAPIBase(apiBase string) *ProviderSpec // 按 API Base URL 查找
 ```
 
 #### 4.2.3 Registry Provider 注册表
@@ -391,22 +443,32 @@ func FindSpecByModel(model string) *ProviderSpec
 ```go
 // internal/providers/registry.go
 
-// Registry 提供商注册表
+// Registry 提供商注册表（参考 nanobot Provider Registry）
+// 作为 Provider 管理的单一真实来源
 type Registry struct {
     providers   map[string]Provider
+    specs       map[string]*ProviderSpec // 缓存每个 provider 的规范
     defaultName string
 }
 
-// MatchProvider 根据模型名自动匹配 Provider
-func (r *Registry) MatchProvider(model string) (Provider, bool) {
-    // 1. 尝试解析 "provider/model" 格式
-    // 2. 检查 model 是否是已注册的 provider 名称
-    // 3. 通过关键词匹配
-    // 4. 返回默认 Provider
-}
+// MatchProvider 根据模型名自动匹配 Provider（参考 nanobot）
+// 匹配优先级：
+// 1. "provider/model" 格式 -> 直接匹配 provider
+// 2. model 是已注册的 provider 名称 -> 返回该 provider
+// 3. 通过关键词匹配（gpt -> openai, claude -> anthropic）
+// 4. 返回默认 Provider
+func (r *Registry) MatchProvider(model string) (Provider, *ProviderSpec)
 
 // SetDefault 设置默认 Provider
 func (r *Registry) SetDefault(name string)
+
+// InitFromConfig 从配置初始化提供商
+// 配置优先级：config.json 配置 > spec.go 默认值
+// Provider 类型判断：config.json 的 apiBase > spec.IsAnthropic
+func (r *Registry) InitFromConfig(cfg *config.Config) error
+
+// ListWithSpecs 列出所有提供商及其规范（用于 status 命令）
+func (r *Registry) ListWithSpecs() []ProviderInfo
 ```
 
 #### 4.2.4 会话管理
@@ -730,24 +792,105 @@ err := ag.ProcessMessageStream(ctx, sessionID, input, func(event stream.StreamEv
 ```go
 // cmd/lingguard/main.go
 
+// 配置路径（按优先级）
 configPath := os.Getenv("LINGGUARD_CONFIG")
 if configPath == "" {
-    // 1. 优先从本地 configs 目录加载
-    localConfig := filepath.Join("configs", "config.json")
-    if _, err := os.Stat(localConfig); err == nil {
-        configPath = localConfig
+    // 1. 优先检查当前工作目录下的 config.json
+    if _, err := os.Stat("config.json"); err == nil {
+        configPath = "config.json"
     } else {
-        // 2. 如果本地不存在，从用户主目录加载
+        // 2. 默认使用 ~/.lingguard/config.json
         home, _ := os.UserHomeDir()
         configPath = filepath.Join(home, ".lingguard", "config.json")
     }
 }
 ```
 
-**配置文件查找顺序：**
-1. 环境变量 `LINGGUARD_CONFIG`
-2. `./configs/config.json`（本地）
-3. `~/.lingguard/config.json`（用户主目录）
+**配置文件查找顺序（从高到低）：**
+
+| 优先级 | 来源 | 路径 | 说明 |
+|--------|------|------|------|
+| 1 | 环境变量 | `$LINGGUARD_CONFIG` | 最高优先级，直接指定配置文件路径 |
+| 2 | 当前目录 | `./config.json` | 工作目录下的配置文件 |
+| 3 | 用户目录 | `~/.lingguard/config.json` | 默认位置 |
+
+#### 4.6.2 配置覆盖机制
+
+config.json 中的配置会覆盖 spec.go 中的默认值：
+
+| 配置项 | config.json | spec.go 默认值 |
+|--------|-------------|----------------|
+| apiBase | ✅ 覆盖 | 仅在 config 为空时使用 |
+| model | ✅ 覆盖 | 仅在 config 为空时使用 |
+| IsAnthropic | 根据 apiBase 判断 | 仅在 config.json 未配置 apiBase 时使用 |
+
+**Provider 类型判断逻辑：**
+```go
+// 如果 config.json 配置了 apiBase，根据 apiBase 判断
+if pc.APIBase != "" {
+    if IsAnthropicEndpoint(pc.APIBase) {
+        // 使用 Anthropic 格式
+    }
+} else {
+    // 使用 spec.IsAnthropic
+}
+```
+
+#### 4.6.3 配置示例
+
+**简化配置（使用默认值）：**
+```json
+{
+  "providers": {
+    "deepseek": {
+      "apiKey": "sk-xxx"
+    },
+    "qwen": {
+      "apiKey": "sk-xxx"
+    }
+  }
+}
+```
+
+**完整配置（覆盖默认值）：**
+```json
+{
+  "providers": {
+    "glm": {
+      "apiKey": "xxx.xxx",
+      "apiBase": "https://open.bigmodel.cn/api/anthropic",
+      "model": "glm-5"
+    },
+    "minimax": {
+      "apiKey": "xxx",
+      "apiBase": "https://api.minimaxi.com/anthropic",
+      "model": "MiniMax-M2.5"
+    }
+  }
+}
+```
+
+**添加新 Provider（只需 2 步）：**
+
+步骤 1: 在 `spec.go` 的 `PROVIDERS` 中添加条目：
+```go
+{
+    Name:           "myprovider",
+    Keywords:       []string{"mymodel"},
+    DisplayName:    "My Provider",
+    DefaultAPIBase: "https://api.myprovider.com/v1",
+    DefaultModel:   "my-model-v1",
+}
+```
+
+步骤 2: 在 `config.json` 中配置：
+```json
+"providers": {
+    "myprovider": {
+        "apiKey": "sk-xxx"
+    }
+}
+```
 
 ### 4.7 技能目录加载
 
@@ -764,29 +907,57 @@ type Loader struct {
 func NewLoader(builtinDirs []string, workspace string) *Loader
 ```
 
-#### 4.7.2 自动发现技能目录
+#### 4.7.2 技能目录查找顺序
 
 ```go
 // cmd/cli/agent.go
 
-// 候选路径（按优先级排序）
-candidatePaths := []string{
-    // 1. 相对于可执行文件的 skills 目录
-    filepath.Join(filepath.Dir(execPath), "skills"),
-    // 2. 相对于可执行文件的上级目录
-    filepath.Join(filepath.Dir(execPath), "..", "skills"),
-    // 3. 用户主目录下的 .lingguard/skills
-    filepath.Join(home, ".lingguard", "skills"),
-    // 4. 当前工作目录下的 skills
-    filepath.Join(cwd, "skills"),
+// 支持从多个目录加载技能：
+// 1. 程序执行目录的 skills/builtin/（内置技能）
+// 2. ~/.lingguard/skills/（用户技能）
+
+var skillDirs []string
+
+// 内置技能目录：程序执行目录的 skills/builtin/
+execPath, _ := os.Executable()
+execDir := filepath.Dir(execPath)
+builtinDir := filepath.Join(execDir, "skills", "builtin")
+if _, err := os.Stat(builtinDir); err == nil {
+    skillDirs = append(skillDirs, builtinDir)
+}
+
+// 用户技能目录：~/.lingguard/skills/
+userSkillsDir := filepath.Join(home, ".lingguard", "skills")
+if _, err := os.Stat(userSkillsDir); err == nil {
+    skillDirs = append(skillDirs, userSkillsDir)
 }
 ```
 
 **技能目录查找顺序：**
-1. 可执行文件所在目录的 `skills/`
-2. 可执行文件上级目录的 `skills/`
-3. `~/.lingguard/skills/`
-4. 当前工作目录的 `skills/`
+
+| 优先级 | 目录 | 说明 |
+|--------|------|------|
+| 1 | `{程序执行目录}/skills/builtin/` | 内置技能 |
+| 2 | `~/.lingguard/skills/` | 用户自定义技能 |
+
+**目录结构示例：**
+```
+skills/
+├── builtin/                    # 内置技能
+│   ├── code-review/
+│   │   └── SKILL.md
+│   ├── file/
+│   │   └── SKILL.md
+│   ├── git-workflow/
+│   │   └── SKILL.md
+│   ├── system/
+│   │   └── SKILL.md
+│   └── weather/
+│       └── SKILL.md
+└── (用户技能)                   # ~/.lingguard/skills/
+    └── my-custom-skill/
+        └── SKILL.md
+```
 
 ### 4.4 子代理系统 (Subagent)
 
@@ -1080,31 +1251,70 @@ Agent 可以使用 `memory` 工具主动记忆和回忆信息：
 
 ## 5. 配置示例
 
-### 5.1 完整配置文件
+### 5.1 简化配置（推荐）
+
+使用 ProviderSpec 默认值，只需配置 apiKey：
 
 ```json
 {
   "providers": {
-    "qwen": {
-      "apiKey": "sk-xxx",
-      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "model": "qwen3-max-2026-01-23",
-      "temperature": 0.7,
-      "maxTokens": 4096
+    "openrouter": {
+      "apiKey": "sk-or-v1-xxx",
+      "model": "anthropic/claude-opus-4"
     },
+    "deepseek": {
+      "apiKey": "sk-xxx"
+    },
+    "qwen": {
+      "apiKey": "sk-xxx"
+    }
+  },
+  "agents": {
+    "workspace": "~/.lingguard/workspace",
+    "provider": "openrouter",
+    "maxToolIterations": 20,
+    "memoryWindow": 50,
+    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。",
+    "memory": {
+      "enabled": true,
+      "recentDays": 3
+    }
+  },
+  "channels": {
+    "feishu": {
+      "enabled": false,
+      "appId": "cli_xxx",
+      "appSecret": "xxx"
+    }
+  },
+  "tools": {
+    "restrictToWorkspace": false
+  },
+  "storage": {
+    "type": "file",
+    "path": "~/.lingguard/memory"
+  },
+  "logging": {
+    "level": "info",
+    "format": "text"
+  }
+}
+```
+
+### 5.2 完整配置（覆盖默认值）
+
+```json
+{
+  "providers": {
     "glm": {
       "apiKey": "xxx.xxx",
       "apiBase": "https://open.bigmodel.cn/api/anthropic",
-      "model": "glm-5",
-      "temperature": 0.7,
-      "maxTokens": 4096
+      "model": "glm-5"
     },
     "minimax": {
       "apiKey": "xxx",
       "apiBase": "https://api.minimaxi.com/anthropic",
-      "model": "MiniMax-M2.5",
-      "temperature": 0.7,
-      "maxTokens": 4096
+      "model": "MiniMax-M2.5"
     }
   },
   "agents": {
@@ -1115,7 +1325,6 @@ Agent 可以使用 `memory` 工具主动记忆和回忆信息：
     "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。",
     "memory": {
       "enabled": true,
-      "memoryDir": "~/.lingguard/memory",
       "recentDays": 3,
       "maxHistoryLines": 1000
     }
@@ -1135,14 +1344,8 @@ Agent 可以使用 `memory` 工具主动记忆和回忆信息：
     "workspace": "~/.lingguard/workspace"
   },
   "storage": {
-    "type": "postgres",
-    "host": "localhost",
-    "port": 5432,
-    "database": "lingguard",
-    "username": "postgres",
-    "password": "postgres",
-    "sslmode": "disable",
-    "vectorDbUrl": "http://localhost:6333"
+    "type": "file",
+    "path": "~/.lingguard/memory"
   },
   "logging": {
     "level": "info",
@@ -1189,15 +1392,18 @@ lingguard status
 ```
 LingGuard Status
 ================
-Config: configs/config.json
+Config: /home/user/.lingguard/config.json
 
 Providers:
-  - glm: glm-5 (configured)
-  - qwen: qwen3-max-2026-01-23 (configured)
-  - minimax: MiniMax-M2.5 (configured)
+  - OpenRouter (openrouter): anthropic/claude-3.5-sonnet [configured]
+  - DeepSeek (deepseek): deepseek-chat [not configured]
+  - Zhipu GLM (智谱) (glm): glm-5 [configured]
+  - MiniMax (minimax): MiniMax-M2.5 [configured]
+  - Qwen (通义千问) (qwen): qwen-max [configured]
+  - OpenAI (openai): gpt-4o [not configured]
 
 Agent:
-  Model: glm
+  Provider: Zhipu GLM (智谱) (glm)
   Workspace: ~/.lingguard/workspace
   Max Iterations: 20
   Memory Window: 50
@@ -1307,17 +1513,19 @@ LingGuard 作为参考 nanobot 设计的 Go 语言实现，已实现以下核心
    - 可配置最大迭代次数
    - 上下文窗口管理
 
-2. **多 LLM Provider 支持**
+2. **多 LLM Provider 支持（参考 nanobot Provider Registry）**
    - OpenAI 兼容 API
    - Anthropic 兼容 API
-   - 自动 Provider 匹配
+   - 自动 Provider 匹配（关键词、API Key 前缀、API Base URL）
+   - ProviderSpec 作为单一真实来源
+   - 添加新 Provider 只需 2 步
 
 3. **渐进式技能系统**
    - YAML frontmatter + Markdown 格式
    - 默认注入摘要，按需加载
    - 支持 always=true 始终加载
    - 依赖检查机制
-   - 多目录加载（可执行文件目录 + ~/.lingguard/skills）
+   - 内置技能 + 用户技能目录
 
 4. **流式响应支持**
    - 实时文本输出
@@ -1338,13 +1546,14 @@ LingGuard 作为参考 nanobot 设计的 Go 语言实现，已实现以下核心
    - Interactive Card 响应
    - 权限控制
 
-6. **安全沙箱**
+7. **安全沙箱**
    - 工作空间限制
    - 危险命令检测
 
-7. **配置管理**
-   - 多路径配置加载（本地 configs/ + ~/.lingguard/）
+8. **配置管理**
+   - 多路径配置加载（当前目录 + ~/.lingguard/）
    - 环境变量覆盖
+   - config.json 配置覆盖 spec.go 默认值
 
 ### 10.2 与 nanobot 的主要差异
 

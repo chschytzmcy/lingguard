@@ -101,48 +101,115 @@ data: [DONE]
 
 ---
 
-## 3. Provider 自动匹配
+## 3. Provider 自动匹配（参考 nanobot Provider Registry）
 
-LingGuard 支持根据模型名自动选择 Provider：
+LingGuard 支持根据模型名自动选择 Provider，使用 ProviderSpec 作为单一真实来源。
 
-### 3.1 匹配规则
+### 3.1 匹配规则（优先级从高到低）
 
-1. **直接匹配 Provider 名称**: 如果 model 值是已注册的 provider 名称，直接使用该 provider
-2. **解析 `provider/model` 格式**: 支持 `glm/glm-4-plus` 格式
-3. **关键词匹配**: 根据模型名中的关键词自动匹配
-4. **默认 Provider**: 如果以上都不匹配，使用默认 provider
+1. **解析 `provider/model` 格式**: 支持 `glm/glm-4-plus` 格式，直接使用指定 provider
+2. **直接匹配 Provider 名称**: 如果 model 值是已注册的 provider 名称，直接使用
+3. **关键词匹配**: 根据模型名中的关键词自动匹配（gpt → openai, claude → anthropic）
+4. **API Key 前缀匹配**: 根据 API Key 前缀检测（sk-or- → openrouter, gsk_ → groq）
+5. **API Base URL 匹配**: 根据 API Base URL 关键词检测
+6. **默认 Provider**: 如果以上都不匹配，使用默认 provider
 
-### 3.2 内置关键词
+### 3.2 ProviderSpec 规范
 
-| Provider | 关键词 |
-|----------|--------|
-| openai | gpt, o1, o3 |
-| anthropic | claude |
-| deepseek | deepseek |
-| qwen | qwen, tongyi, dashscope |
-| glm | glm, chatglm, codegeex |
-| minimax | minimax |
-| moonshot | moonshot, kimi |
-| gemini | gemini |
-| groq | llama, mixtral, gemma |
+```go
+type ProviderSpec struct {
+    Name             string   // provider 名称
+    Keywords         []string // 模型名关键词
+    DisplayName      string   // 显示名称
+    APIKeyPrefix     string   // API Key 前缀
+    APIBaseKeyword   string   // API Base URL 关键词
+    DefaultAPIBase   string   // 默认 API Base
+    DefaultModel     string   // 默认模型
+    IsAnthropic      bool     // 是否使用 Anthropic 格式
+    IsGateway        bool     // 是否是网关类型
+    LiteLLMPrefix    string   // 模型前缀
+    SkipPrefixes     []string // 跳过已有前缀
+}
+```
 
-### 3.3 配置示例
+### 3.3 内置 Provider 规范
 
+| Provider | Keywords | DefaultModel | APIKeyPrefix |
+|----------|----------|--------------|--------------|
+| openai | gpt, o1, o3 | gpt-4o | sk- |
+| anthropic | claude | claude-3-5-sonnet | sk-ant- |
+| deepseek | deepseek | deepseek-chat | sk- |
+| openrouter | openrouter | - | sk-or- |
+| qwen | qwen, tongyi | qwen-max | - |
+| glm | glm, chatglm | glm-4 | - |
+| minimax | minimax | abab6.5s-chat | - |
+| moonshot | moonshot, kimi | moonshot-v1-8k | - |
+| gemini | gemini | gemini-1.5-pro | - |
+| groq | groq, llama | llama-3.1-70b | gsk_ |
+
+### 3.4 配置覆盖机制
+
+config.json 中的配置会覆盖 spec.go 中的默认值：
+
+| 配置项 | config.json | spec.go |
+|--------|-------------|---------|
+| apiBase | ✅ 覆盖 | 默认值 |
+| model | ✅ 覆盖 | 默认值 |
+| IsAnthropic | 根据 apiBase 判断 | 默认值 |
+
+**Provider 类型判断：**
+- 如果 config.json 配置了 apiBase，根据 apiBase 是否包含 `/anthropic` 判断
+- 否则，使用 spec.go 中的 IsAnthropic
+
+### 3.5 配置示例
+
+**简化配置（使用默认值）：**
 ```json
 {
-  "agents": {
-    "model": "glm"  // 直接使用 glm provider
+  "providers": {
+    "deepseek": {
+      "apiKey": "sk-xxx"
+    }
   }
 }
 ```
 
-或使用 `provider/model` 格式：
-
+**覆盖默认值：**
 ```json
 {
-  "agents": {
-    "model": "glm/glm-4-plus"  // 解析为 glm provider
+  "providers": {
+    "glm": {
+      "apiKey": "xxx.xxx",
+      "apiBase": "https://open.bigmodel.cn/api/anthropic",
+      "model": "glm-5"
+    }
   }
+}
+```
+
+### 3.6 添加新 Provider
+
+只需 2 步：
+
+**步骤 1**: 在 `internal/providers/spec.go` 的 `PROVIDERS` 中添加：
+
+```go
+{
+    Name:           "myprovider",
+    Keywords:       []string{"mymodel"},
+    DisplayName:    "My Provider",
+    DefaultAPIBase: "https://api.myprovider.com/v1",
+    DefaultModel:   "my-model-v1",
+}
+```
+
+**步骤 2**: 在 `config.json` 中配置：
+
+```json
+"providers": {
+    "myprovider": {
+        "apiKey": "sk-xxx"
+    }
 }
 ```
 
@@ -448,11 +515,13 @@ func main() {
     registry := providers.NewRegistry()
     registry.InitFromConfig(cfg)
 
-    // 自动匹配 Provider
-    provider, ok := registry.MatchProvider("glm")
-    if !ok {
+    // 自动匹配 Provider（返回 Provider 和 Spec）
+    provider, spec := registry.MatchProvider("glm")
+    if provider == nil {
         panic("provider not found")
     }
+
+    fmt.Printf("Provider: %s (%s)\n", spec.DisplayName, spec.Name)
 
     // 调用 LLM
     req := &llm.Request{
@@ -475,7 +544,39 @@ func main() {
 
 ## 9. 配置参考
 
-### 9.1 Provider 配置
+### 9.1 简化配置（推荐）
+
+使用 ProviderSpec 默认值，只需配置 apiKey：
+
+```json
+{
+  "providers": {
+    "deepseek": {
+      "apiKey": "sk-xxx"
+    },
+    "qwen": {
+      "apiKey": "sk-xxx"
+    },
+    "openrouter": {
+      "apiKey": "sk-or-v1-xxx",
+      "model": "anthropic/claude-opus-4"
+    }
+  },
+  "agents": {
+    "workspace": "~/.lingguard/workspace",
+    "provider": "openrouter",
+    "maxToolIterations": 20,
+    "memoryWindow": 50,
+    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。",
+    "memory": {
+      "enabled": true,
+      "recentDays": 3
+    }
+  }
+}
+```
+
+### 9.2 完整配置（覆盖默认值）
 
 ```json
 {
@@ -483,48 +584,59 @@ func main() {
     "glm": {
       "apiKey": "xxx.xxx",
       "apiBase": "https://open.bigmodel.cn/api/anthropic",
-      "model": "glm-5",
-      "temperature": 0.7,
-      "maxTokens": 4096
+      "model": "glm-5"
     },
-    "qwen": {
-      "apiKey": "sk-xxx",
-      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "model": "qwen3-max-2026-01-23",
-      "temperature": 0.7,
-      "maxTokens": 4096
+    "minimax": {
+      "apiKey": "xxx",
+      "apiBase": "https://api.minimaxi.com/anthropic",
+      "model": "MiniMax-M2.5"
     }
-  }
-}
-```
-
-### 9.2 Agent 配置（新版结构）
-
-```json
-{
+  },
   "agents": {
     "workspace": "~/.lingguard/workspace",
-    "model": "glm",
-    "maxTokens": 8192,
-    "temperature": 0.7,
+    "provider": "glm",
     "maxToolIterations": 20,
     "memoryWindow": 50,
-    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。"
+    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。",
+    "memory": {
+      "enabled": true,
+      "recentDays": 3,
+      "maxHistoryLines": 1000
+    }
   }
 }
 ```
 
 ### 9.3 配置字段说明
 
+**Provider 配置：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| apiKey | string | ✅ | API 密钥 |
+| apiBase | string | 否 | 覆盖默认 API Base（支持 Anthropic 兼容端点） |
+| model | string | 否 | 覆盖默认模型 |
+
+**Agent 配置：**
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | workspace | string | 工作空间目录 |
-| model | string | 默认模型/Provider名称，支持自动匹配 |
-| maxTokens | int | 最大输出 tokens |
-| temperature | float64 | 温度参数 (0-2) |
+| provider | string | 默认 Provider 名称 |
 | maxToolIterations | int | 最大工具调用迭代次数 |
 | memoryWindow | int | 历史消息窗口大小 |
 | systemPrompt | string | 系统提示词 |
+| memory.enabled | bool | 是否启用持久化记忆 |
+| memory.recentDays | int | 加载最近几天的日志 |
+| memory.maxHistoryLines | int | 历史记录最大行数 |
+
+### 9.4 配置加载优先级
+
+| 优先级 | 来源 | 路径 |
+|--------|------|------|
+| 1 | 环境变量 | `$LINGGUARD_CONFIG` |
+| 2 | 当前目录 | `./config.json` |
+| 3 | 用户目录 | `~/.lingguard/config.json` |
 
 ---
 
