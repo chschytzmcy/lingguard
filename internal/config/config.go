@@ -15,6 +15,7 @@ type Config struct {
 	Tools     ToolsConfig               `json:"tools"`
 	Storage   StorageConfig             `json:"storage"`
 	Logging   LoggingConfig             `json:"logging"`
+	Cron      *CronConfig               `json:"cron,omitempty"` // 定时任务配置
 }
 
 // ProviderConfig 提供商配置
@@ -89,6 +90,12 @@ type LoggingConfig struct {
 	Output string `json:"output,omitempty"`
 }
 
+// CronConfig 定时任务配置
+type CronConfig struct {
+	Enabled   bool   `json:"enabled"`             // 是否启用定时任务
+	StorePath string `json:"storePath,omitempty"` // 任务存储路径，默认 ~/.lingguard/cron/jobs.json
+}
+
 // DefaultConfig 默认配置
 func DefaultConfig() *Config {
 	return &Config{
@@ -117,6 +124,10 @@ func DefaultConfig() *Config {
 		Logging: LoggingConfig{
 			Level:  "info",
 			Format: "text",
+		},
+		Cron: &CronConfig{
+			Enabled:   true,
+			StorePath: "~/.lingguard/cron/jobs.json",
 		},
 	}
 }

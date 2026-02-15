@@ -58,3 +58,21 @@ func (m *Manager) StopAll() error {
 	}
 	return lastErr
 }
+
+// SendMessage 发送消息到指定渠道
+func (m *Manager) SendMessage(channelName string, to string, content string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	c, ok := m.channels[channelName]
+	if !ok {
+		return fmt.Errorf("channel not found: %s", channelName)
+	}
+
+	sendable, ok := c.(SendableChannel)
+	if !ok {
+		return fmt.Errorf("channel %s does not support sending messages", channelName)
+	}
+
+	return sendable.Send(context.Background(), to, content)
+}

@@ -70,7 +70,7 @@
 | 技能系统 | ✅ (渐进式) | ✅ | LingGuard 支持按需加载 |
 | Provider 自动匹配 | ✅ | ✅ | 根据模型名自动选择 |
 | **高级功能** ||||
-| 定时任务 (Cron) | ❌ | ✅ | nanobot 支持 |
+| 定时任务 (Cron) | ✅ | ✅ | 两者都支持 |
 | 子代理 (Subagent) | ✅ | ✅ | 两者都支持后台任务 |
 | 流式响应 | ✅ | ✅ | 两者都支持实时输出 |
 | Agent Social Network | ❌ | ✅ | nanobot 支持 Moltbook 等 |
@@ -101,7 +101,7 @@
 | 功能 | LingGuard 规划 | nanobot 现状 |
 |------|---------------|-------------|
 | 多渠道支持 | ⏳ 计划中 | ✅ 已实现 9+ 渠道 |
-| 定时任务 | ⏳ 计划中 | ✅ 已实现 |
+| 定时任务 | ✅ 已实现 | ✅ 已实现 |
 | 持久化存储 | ⏳ 计划中 (PostgreSQL) | ✅ 已实现 |
 | 向量记忆 | ⏳ 计划中 (Qdrant) | ✅ 已实现 |
 | 子代理 | ✅ 已实现 | ✅ 已实现 |
@@ -238,6 +238,7 @@ lingguard/
 │       ├── root.go         # 根命令
 │       ├── agent.go        # agent交互命令
 │       ├── gateway.go      # 网关启动命令
+│       ├── cron.go         # 定时任务管理命令
 │       └── status.go       # 状态查看
 ├── internal/
 │   ├── agent/              # 核心代理逻辑 ✅
@@ -264,9 +265,9 @@ lingguard/
 │   ├── skills/             # 技能系统 ✅
 │   │   ├── loader.go       # 技能加载器（渐进式）
 │   │   └── manager.go      # 技能管理器
-│   ├── scheduler/          # 定时任务 ⏳
-│   │   ├── scheduler.go    # 调度器
-│   │   └── cron.go         # Cron解析
+│   ├── cron/               # 定时任务 ✅
+│   │   ├── types.go        # 任务类型定义
+│   │   └── service.go      # 调度服务
 │   ├── subagent/           # 子代理系统 ✅
 │   │   ├── config.go       # 子代理配置
 │   │   ├── subagent.go     # 子代理实现
@@ -1144,6 +1145,122 @@ Agent: [调用 task_status 工具]
 | 通知机制 | MessageBus 回调 | 轮询 (初期) |
 | 工具隔离 | 运行时过滤 | 预配置白名单 |
 | 结果投递 | 自动注入会话 | 主动查询 |
+
+### 4.5 定时任务系统 (Cron)
+
+定时任务系统允许用户创建按计划自动执行的 Agent 任务。
+
+#### 4.5.1 架构概览
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Cron Service                           │
+│                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │   CLI       │  │   Config    │  │   Job Callback      │  │
+│  │  Commands   │  │   Loader    │  │   (Agent.Process)   │  │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
+│         │                │                     │            │
+│         └────────────────┼─────────────────────┘            │
+│                          ▼                                  │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │                    Cron Service                        │  │
+│  │  - Load/Save jobs to JSON                              │  │
+│  │  - Compute next run times                              │  │
+│  │  - Timer-based execution                               │  │
+│  │  - Job state management                                │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                          │                                  │
+│                          ▼                                  │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │                    Job Store (JSON)                    │  │
+│  │  ~/.lingguard/cron/jobs.json                           │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 4.5.2 核心类型
+
+```go
+// internal/cron/types.go
+
+// ScheduleKind 调度类型
+type ScheduleKind string
+
+const (
+    ScheduleKindAt    ScheduleKind = "at"    // 一次性任务
+    ScheduleKindEvery ScheduleKind = "every" // 重复任务
+    ScheduleKindCron  ScheduleKind = "cron"  // cron 表达式
+)
+
+// CronSchedule 调度定义
+type CronSchedule struct {
+    Kind    ScheduleKind
+    AtMs    int64  // 执行时间戳（毫秒）
+    EveryMs int64  // 间隔时间（毫秒）
+    Expr    string // cron 表达式
+    TZ      string // 时区
+}
+
+// CronJob 定时任务
+type CronJob struct {
+    ID             string
+    Name           string
+    Enabled        bool
+    Schedule       CronSchedule
+    Payload        CronPayload
+    State          CronJobState
+    CreatedAtMs    int64
+    UpdatedAtMs    int64
+    DeleteAfterRun bool
+}
+```
+
+#### 4.5.3 调度格式
+
+| 格式 | 示例 | 说明 |
+|------|------|------|
+| `every:<duration>` | `every:1h` | 重复执行 |
+| `at:<datetime>` | `at:2024-12-25 09:00` | 一次性任务 |
+| `cron:<expr>` | `cron:0 9 * * *` | Cron 表达式 |
+
+#### 4.5.4 CLI 命令
+
+```bash
+# 任务管理
+lingguard cron add "Daily Report" "cron:0 9 * * *" "Generate report"
+lingguard cron list
+lingguard cron remove <job-id>
+lingguard cron enable <job-id>
+lingguard cron disable <job-id>
+lingguard cron run <job-id> --force
+
+# 带投递选项
+lingguard cron add "Morning Greeting" "every:24h" "Good morning!" \
+  --deliver --channel feishu --to ou_xxx
+```
+
+#### 4.5.5 与 Gateway 集成
+
+```go
+// cmd/cli/gateway.go
+
+// 创建任务执行回调
+onJob := func(job *cron.CronJob) (string, error) {
+    // 执行 Agent 处理消息
+    response, err := ag.ProcessMessage(ctx, sessionID, job.Payload.Message)
+
+    // 如果需要投递到渠道
+    if job.Payload.Deliver && job.Payload.Channel != "" {
+        mgr.SendMessage(job.Payload.Channel, job.Payload.To, response)
+    }
+
+    return response, err
+}
+
+cronService := cron.NewService(storePath, onJob)
+cronService.Start()
+```
 
 ### 4.8 文件持久化记忆系统（参考 nanobot）
 

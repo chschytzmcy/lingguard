@@ -11,6 +11,7 @@ import (
 	"github.com/lingguard/internal/agent"
 	"github.com/lingguard/internal/channels"
 	"github.com/lingguard/internal/config"
+	"github.com/lingguard/internal/cron"
 	"github.com/lingguard/internal/providers"
 	"github.com/lingguard/internal/skills"
 	"github.com/lingguard/internal/tools"
@@ -69,6 +70,24 @@ func runGateway() error {
 		return fmt.Errorf("no channels enabled, please configure at least one channel")
 	}
 
+	// 启动定时任务服务
+	var cronService *cron.Service
+	if cfg.Cron != nil && cfg.Cron.Enabled {
+		storePath := expandHomePath(cfg.Cron.StorePath)
+		if storePath == "" {
+			storePath = expandHomePath("~/.lingguard/cron/jobs.json")
+		}
+
+		// 创建任务执行回调
+		onJob := createCronJobCallback(ag, mgr)
+
+		cronService = cron.NewService(storePath, onJob)
+		if err := cronService.Start(); err != nil {
+			return fmt.Errorf("start cron service: %w", err)
+		}
+		logger.Info("Cron service started")
+	}
+
 	// 启动
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -87,6 +106,12 @@ func runGateway() error {
 
 	fmt.Println("\nShutting down...")
 	logger.Info("Gateway shutting down")
+
+	// 停止定时任务服务
+	if cronService != nil {
+		cronService.Stop()
+	}
+
 	return mgr.StopAll()
 }
 
@@ -157,4 +182,36 @@ func createGatewayAgent(cfg *config.Config) (*agent.Agent, error) {
 	ag.RegisterMemoryTool()
 
 	return ag, nil
+}
+
+// createCronJobCallback 创建定时任务执行回调
+func createCronJobCallback(ag *agent.Agent, mgr *channels.Manager) cron.JobCallback {
+	return func(job *cron.CronJob) (string, error) {
+		ctx := context.Background()
+		sessionID := fmt.Sprintf("cron-%s", job.ID)
+
+		// 执行 Agent 处理消息
+		response, err := ag.ProcessMessage(ctx, sessionID, job.Payload.Message)
+		if err != nil {
+			return "", err
+		}
+
+		// 如果需要投递到渠道
+		if job.Payload.Deliver && job.Payload.Channel != "" && job.Payload.To != "" {
+			if err := mgr.SendMessage(job.Payload.Channel, job.Payload.To, response); err != nil {
+				logger.Error("Failed to deliver cron job response: %v", err)
+			}
+		}
+
+		return response, nil
+	}
+}
+
+// expandHomePath 展开路径中的 ~ 为用户主目录
+func expandHomePath(path string) string {
+	if len(path) > 0 && path[0] == '~' {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, path[1:])
+	}
+	return path
 }

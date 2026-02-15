@@ -60,5 +60,9 @@
     "level": "info",
     "format": "text",
     "output": "~/.lingguard/logs/lingguard.log"
+  },
+  "cron": {
+    "enabled": true,
+    "storePath": "~/.lingguard/cron/jobs.json"
   }
 }

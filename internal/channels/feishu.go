@@ -137,6 +137,11 @@ func (f *FeishuChannel) IsRunning() bool {
 	return f.running
 }
 
+// Send 主动发送消息（实现 SendableChannel 接口）
+func (f *FeishuChannel) Send(ctx context.Context, to string, content string) error {
+	return f.sendReply(ctx, to, content)
+}
+
 // handleMessage 处理接收到的消息
 func (f *FeishuChannel) handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event.Event == nil || event.Event.Message == nil {

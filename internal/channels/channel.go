@@ -34,3 +34,10 @@ type Channel interface {
 	Stop() error
 	IsRunning() bool
 }
+
+// SendableChannel 支持主动发送消息的渠道
+type SendableChannel interface {
+	Channel
+	// Send 发送消息到指定目标
+	Send(ctx context.Context, to string, content string) error
+}

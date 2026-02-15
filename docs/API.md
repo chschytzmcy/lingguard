@@ -640,7 +640,132 @@ func main() {
 
 ---
 
-## 10. 参考资料
+## 10. 定时任务 (Cron)
+
+LingGuard 支持定时任务功能，可以按计划自动执行 Agent 任务。
+
+### 10.1 CLI 命令
+
+```bash
+# 列出所有任务
+lingguard cron list
+lingguard cron list --all  # 包含已禁用的任务
+
+# 添加任务
+lingguard cron add <name> <schedule> <message>
+
+# 删除任务
+lingguard cron remove <job-id>
+
+# 启用/禁用任务
+lingguard cron enable <job-id>
+lingguard cron disable <job-id>
+
+# 手动执行任务
+lingguard cron run <job-id>
+lingguard cron run <job-id> --force  # 强制执行已禁用的任务
+
+# 查看服务状态
+lingguard cron status
+```
+
+### 10.2 调度格式
+
+支持三种调度格式：
+
+| 格式 | 示例 | 说明 |
+|------|------|------|
+| `every:<duration>` | `every:1h` | 重复执行，间隔 1 小时 |
+| `at:<datetime>` | `at:2024-12-25 09:00` | 一次性任务，指定时间执行 |
+| `cron:<expr>` | `cron:0 9 * * *` | Cron 表达式，每天 9:00 执行 |
+
+**持续时间格式：**
+- `30s` - 30 秒
+- `5m` - 5 分钟
+- `1h` - 1 小时
+- `24h` - 24 小时
+
+**Cron 表达式：**
+```
+分 时 日 月 周
+*  *  *  *  *
+
+示例:
+0 9 * * *      # 每天 9:00
+*/30 * * * *   # 每 30 分钟
+0 18 * * 1-5   # 周一到周五 18:00
+```
+
+### 10.3 任务投递选项
+
+添加任务时可以指定将响应投递到消息渠道：
+
+```bash
+# 投递到飞书
+lingguard cron add "Daily Report" "cron:0 9 * * *" "Generate daily report" \
+  --deliver --channel feishu --to ou_xxx
+```
+
+### 10.4 任务存储
+
+任务数据存储在 JSON 文件中：
+
+```
+~/.lingguard/cron/jobs.json
+```
+
+存储格式：
+
+```json
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "abc123",
+      "name": "Daily Report",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * *"
+      },
+      "payload": {
+        "kind": "agent_turn",
+        "message": "Generate daily report",
+        "deliver": true,
+        "channel": "feishu",
+        "to": "ou_xxx"
+      },
+      "state": {
+        "nextRunAtMs": 1704067200000,
+        "lastRunAtMs": 1703980800000,
+        "lastStatus": "ok"
+      }
+    }
+  ]
+}
+```
+
+### 10.5 配置
+
+在 `config.json` 中配置定时任务：
+
+```json
+{
+  "cron": {
+    "enabled": true,
+    "storePath": "~/.lingguard/cron/jobs.json"
+  }
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| enabled | bool | 是否启用定时任务服务 |
+| storePath | string | 任务存储文件路径 |
+
+---
+
+## 11. 参考资料
 
 - [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
 - [Anthropic API Reference](https://docs.anthropic.com/en/api)
