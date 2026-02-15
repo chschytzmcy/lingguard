@@ -2,7 +2,7 @@
 
 # 项目名称
 PROJECT_NAME := lingguard
-BUILD_DIR := bin
+BUILD_DIR := .
 CMD_DIR := cmd/lingguard
 
 # Go 参数
