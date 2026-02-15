@@ -6,7 +6,8 @@
     "glm": {
       "apiKey": "aa1d0dc2e27c4eaa80a9772536d2031c.BGqk7a4NgHcCPxXR",
       "apiBase": "https://open.bigmodel.cn/api/anthropic",
-      "model": "glm-5"
+      "model": "glm-5",
+      "timeout": 120
     },
     "minimax": {
       "apiKey": "sk-cp-mpX09dQEHgHHOva2vEZ89_c-RUNXA4CrmTFViEMUD-f00iTziDBdEtPvEIqHqD1o_LHQFtfMp-EYIf25nYv-wBM34G0XIw1OeSMev1QVUjOR7__GI6lQXv4",
