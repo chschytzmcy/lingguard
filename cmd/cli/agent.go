@@ -89,14 +89,31 @@ func createAgent(cfg *config.Config) (*agent.Agent, error) {
 	registry.SetDefault(providerName)
 
 	// 4. 创建 Skills Loader
-	// 技能目录固定在 ~/.lingguard/skills/
-	var skillsLoader *skills.Loader
+	// 支持从多个目录加载技能：
+	// 1. 程序执行目录的 skills/builtin/（内置技能）
+	// 2. ~/.lingguard/skills/（用户技能）
+	var skillDirs []string
 	home, _ := os.UserHomeDir()
-	skillsDir := filepath.Join(home, ".lingguard", "skills")
 
-	if _, err := os.Stat(skillsDir); err == nil {
-		skillsLoader = skills.NewLoader([]string{skillsDir}, "")
-		fmt.Printf("Skills loaded from: %s\n", skillsDir)
+	// 内置技能目录：程序执行目录的 skills/builtin/
+	execPath, _ := os.Executable()
+	execDir := filepath.Dir(execPath)
+	builtinDir := filepath.Join(execDir, "skills", "builtin")
+	if _, err := os.Stat(builtinDir); err == nil {
+		skillDirs = append(skillDirs, builtinDir)
+		fmt.Printf("Built-in skills: %s\n", builtinDir)
+	}
+
+	// 用户技能目录：~/.lingguard/skills/
+	userSkillsDir := filepath.Join(home, ".lingguard", "skills")
+	if _, err := os.Stat(userSkillsDir); err == nil {
+		skillDirs = append(skillDirs, userSkillsDir)
+		fmt.Printf("User skills: %s\n", userSkillsDir)
+	}
+
+	var skillsLoader *skills.Loader
+	if len(skillDirs) > 0 {
+		skillsLoader = skills.NewLoader(skillDirs, "")
 	}
 
 	// 5. 创建 Agent
