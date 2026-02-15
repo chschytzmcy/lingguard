@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/lingguard/internal/config"
+	"github.com/lingguard/internal/providers"
 	"github.com/lingguard/pkg/logger"
 	"github.com/spf13/cobra"
 )
@@ -102,7 +103,7 @@ func runStatus() {
 		return
 	}
 
-	// 显示 Provider 信息
+	// 显示 Provider 信息（使用 ProviderSpec 显示友好名称）
 	fmt.Println("\nProviders:")
 	for name, pc := range cfg.Providers {
 		status := "not configured"
@@ -111,14 +112,31 @@ func runStatus() {
 		}
 		model := pc.Model
 		if model == "" {
-			model = "default"
+			// 使用规范中的默认模型
+			if spec := providers.FindSpecByName(name); spec != nil {
+				model = spec.DefaultModel
+			}
+			if model == "" {
+				model = "default"
+			}
 		}
-		fmt.Printf("  - %s: %s (%s)\n", name, model, status)
+
+		// 获取显示名称
+		displayName := name
+		if spec := providers.FindSpecByName(name); spec != nil {
+			displayName = spec.DisplayName
+		}
+
+		fmt.Printf("  - %s (%s): %s [%s]\n", displayName, name, model, status)
 	}
 
 	// 显示 Agent 信息
 	fmt.Println("\nAgent:")
-	fmt.Printf("  Provider: %s\n", cfg.Agents.Provider)
+	providerDisplayName := cfg.Agents.Provider
+	if spec := providers.FindSpecByName(cfg.Agents.Provider); spec != nil {
+		providerDisplayName = fmt.Sprintf("%s (%s)", spec.DisplayName, cfg.Agents.Provider)
+	}
+	fmt.Printf("  Provider: %s\n", providerDisplayName)
 	fmt.Printf("  Workspace: %s\n", cfg.Agents.Workspace)
 	fmt.Printf("  Max Iterations: %d\n", cfg.Agents.MaxToolIterations)
 	fmt.Printf("  Memory Window: %d\n", cfg.Agents.MemoryWindow)

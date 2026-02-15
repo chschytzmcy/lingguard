@@ -1,130 +1,93 @@
 {
+  "_comment": "LingGuard 配置文件 - 参考 nanobot Provider Registry 机制",
+  "_docs": "https://github.com/HKUDS/nanobot",
+
   "providers": {
     "_comment": "==================== LLM 提供商配置 ====================",
-
-    "qwen": {
-      "_comment": "阿里云通义千问",
-      "apiKey": "sk-xxx",
-      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "model": "qwen3-max-2026-01-23",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
-    },
+    "_note": "apiBase 和 model 使用 ProviderSpec 默认值，只需配置 apiKey 即可",
 
     "openrouter": {
-      "_comment": "OpenRouter - 推荐使用，可访问所有主流模型",
+      "_comment": "OpenRouter - 推荐！可访问所有主流模型",
+      "_docs": "https://openrouter.ai",
       "apiKey": "sk-or-v1-xxx",
-      "apiBase": "https://openrouter.ai/api/v1",
-      "model": "anthropic/claude-opus-4",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
+      "model": "anthropic/claude-opus-4"
     },
 
     "anthropic": {
       "_comment": "Anthropic Claude 直连",
-      "apiKey": "sk-ant-xxx",
-      "model": "claude-opus-4",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
+      "apiKey": "sk-ant-xxx"
     },
 
     "openai": {
       "_comment": "OpenAI GPT 直连",
-      "apiKey": "sk-xxx",
-      "model": "gpt-4o",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
+      "apiKey": "sk-xxx"
     },
 
     "deepseek": {
       "_comment": "DeepSeek 深度求索",
-      "apiKey": "sk-xxx",
-      "apiBase": "https://api.deepseek.com/v1",
-      "model": "deepseek-chat",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
+      "apiKey": "sk-xxx"
+    },
+
+    "qwen": {
+      "_comment": "阿里云通义千问",
+      "apiKey": "sk-xxx"
+    },
+
+    "glm": {
+      "_comment": "智谱 GLM - 智谱 AI",
+      "apiKey": "xxx.xxx",
+      "apiBase": "https://open.bigmodel.cn/api/anthropic"
     },
 
     "moonshot": {
       "_comment": "月之暗面 Kimi",
-      "apiKey": "sk-xxx",
-      "apiBase": "https://api.moonshot.cn/v1",
-      "model": "moonshot-v1-128k",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
+      "apiKey": "sk-xxx"
     },
 
     "groq": {
       "_comment": "Groq - 高速推理平台",
-      "apiKey": "gsk_xxx",
-      "model": "llama-3.3-70b-versatile",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
+      "apiKey": "gsk_xxx"
     },
 
     "gemini": {
       "_comment": "Google Gemini",
-      "apiKey": "AIza-xxx",
-      "model": "gemini-2.0-flash-exp",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
-    },
-
-    "vllm": {
-      "_comment": "vLLM - 本地模型服务，需要先启动 vLLM 服务器",
-      "apiKey": "dummy",
-      "apiBase": "http://localhost:8000/v1",
-      "model": "meta-llama/Llama-3.1-8B-Instruct",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
-    },
-
-    "glm": {
-      "_comment": "智谱 GLM - 智谱 AI (Anthropic 兼容)",
-      "apiKey": "xxx.xxx",
-      "apiBase": "https://open.bigmodel.cn/api/anthropic",
-      "model": "glm-4-plus",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
+      "apiKey": "AIza-xxx"
     },
 
     "minimax": {
-      "_comment": "MiniMax - MiniMax AI (Anthropic 兼容)",
+      "_comment": "MiniMax AI",
       "apiKey": "xxx",
-      "groupId": "xxx",
-      "apiBase": "https://api.minimaxi.com/anthropic",
-      "model": "MiniMax-M2.5",
-      "temperature": 0.7,
-      "maxTokens": 4096,
-      "timeout": 60
+      "apiBase": "https://api.minimaxi.com/anthropic"
+    },
+
+    "vllm": {
+      "_comment": "vLLM - 本地模型服务（需先启动 vLLM 服务器）",
+      "apiKey": "dummy",
+      "apiBase": "http://localhost:8000/v1",
+      "model": "meta-llama/Llama-3.1-8B-Instruct"
     }
   },
 
   "agents": {
     "_comment": "==================== Agent 代理配置 ====================",
     "workspace": "~/.lingguard/workspace",
-    "provider": "glm",
+    "provider": "openrouter",
     "maxToolIterations": 20,
     "memoryWindow": 50,
-    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。"
+    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。",
+    "memory": {
+      "enabled": true,
+      "recentDays": 3,
+      "maxHistoryLines": 1000
+    }
   },
 
   "channels": {
     "_comment": "==================== 渠道配置 ====================",
-    "_feishu_comment": "目前只支持飞书渠道",
 
     "feishu": {
-      "enabled": true,
+      "_comment": "飞书机器人 - WebSocket 长连接，无需公网 IP",
+      "enabled": false,
       "appId": "cli_xxx",
       "appSecret": "xxx",
       "encryptKey": "",
@@ -141,14 +104,8 @@
 
   "storage": {
     "_comment": "==================== 存储配置 ====================",
-    "type": "postgres",
-    "host": "localhost",
-    "port": 5432,
-    "database": "lingguard",
-    "username": "postgres",
-    "password": "postgres",
-    "sslmode": "disable",
-    "vectorDbUrl": "http://localhost:6333"
+    "type": "file",
+    "path": "~/.lingguard/memory"
   },
 
   "logging": {

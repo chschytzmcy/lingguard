@@ -99,10 +99,11 @@ func createGatewayAgent(cfg *config.Config) (*agent.Agent, error) {
 
 	// 2. 通过 provider 配置获取 Provider
 	providerName := cfg.Agents.Provider
-	provider, ok := registry.MatchProvider(providerName)
-	if !ok {
+	provider, spec := registry.MatchProvider(providerName)
+	if provider == nil {
 		return nil, fmt.Errorf("provider not found: %s", providerName)
 	}
+	_ = spec // spec 可用于获取 DisplayName 等信息
 
 	// 3. 设置默认 Provider
 	registry.SetDefault(providerName)
