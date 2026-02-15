@@ -97,9 +97,21 @@ func runGateway() error {
 		logger.Info("Feishu channel registered")
 	}
 
+	// 注册 QQ 渠道
+	if cfg.Channels.QQ != nil && cfg.Channels.QQ.Enabled {
+		if cfg.Channels.QQ.AppID == "" || cfg.Channels.QQ.Secret == "" {
+			return fmt.Errorf("qq channel enabled but appId or secret not configured")
+		}
+		qc := channels.NewQQChannel(cfg.Channels.QQ, adapter)
+		mgr.RegisterChannel(qc)
+		logger.Info("QQ channel registered")
+	}
+
 	// 检查是否有渠道注册
-	if cfg.Channels.Feishu == nil || !cfg.Channels.Feishu.Enabled {
-		return fmt.Errorf("no channels enabled, please configure at least one channel")
+	hasChannel := (cfg.Channels.Feishu != nil && cfg.Channels.Feishu.Enabled) ||
+		(cfg.Channels.QQ != nil && cfg.Channels.QQ.Enabled)
+	if !hasChannel {
+		return fmt.Errorf("no channels enabled, please configure at least one channel (feishu, qq)")
 	}
 
 	// 启动

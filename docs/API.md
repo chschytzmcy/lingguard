@@ -403,9 +403,116 @@ Content-Type: application/json
 
 ---
 
-## 7. 错误处理
+## 7. QQ Channel API
 
-### 7.1 错误响应格式
+### 7.1 概述
+
+QQ Channel 使用 WebSocket Gateway 连接，支持私聊消息（C2C）和频道消息。
+
+- **网关地址**: `wss://api.sgroup.qq.com/websocket`
+- **无需公网 IP**: 使用 WebSocket 长连接接收事件
+
+### 7.2 配置
+
+```json
+{
+  "channels": {
+    "qq": {
+      "enabled": true,
+      "appId": "xxx",
+      "secret": "xxx",
+      "allowFrom": []
+    }
+  }
+}
+```
+
+### 7.3 WebSocket Gateway 协议
+
+#### 7.3.1 连接流程
+
+1. 建立 WebSocket 连接到 `wss://api.sgroup.qq.com/websocket`
+2. 收到 `OP 10 Hello` 后发送 `OP 2 Identify` 进行身份认证
+3. 开始心跳（间隔由服务器指定）
+4. 接收 `OP 0 Dispatch` 事件
+
+#### 7.3.2 Opcode 定义
+
+| Op | 名称 | 说明 |
+|----|------|------|
+| 0 | Dispatch | 服务器推送事件 |
+| 1 | Heartbeat | 客户端发送心跳 |
+| 2 | Identify | 客户端身份认证 |
+| 7 | Reconnect | 服务器要求重连 |
+| 9 | Invalid Session | 会话失效 |
+| 10 | Hello | 服务器欢迎消息 |
+| 11 | Heartbeat ACK | 心跳确认 |
+
+#### 7.3.3 Identify Payload
+
+```json
+{
+  "op": 2,
+  "d": {
+    "token": {
+      "appId": "xxx",
+      "token": "secret"
+    },
+    "intents": 4096,
+    "properties": {
+      "$os": "linux",
+      "$browser": "lingguard",
+      "$device": "lingguard"
+    }
+  }
+}
+```
+
+### 7.4 发送私聊消息
+
+```
+POST https://api.sgroup.qq.com/v2/users/{openid}/messages
+Authorization: Bot {appId}.{secret}
+Content-Type: application/json
+
+{
+  "content": "Hello!",
+  "msg_type": 0
+}
+```
+
+### 7.5 接收消息事件
+
+```json
+{
+  "op": 0,
+  "s": 1,
+  "t": "C2C_MESSAGE_CREATE",
+  "d": {
+    "id": "xxx",
+    "content": "你好",
+    "timestamp": "2024-01-01T00:00:00+08:00",
+    "author": {
+      "id": "user_openid",
+      "username": "用户名"
+    }
+  }
+}
+```
+
+### 7.6 Intents 说明
+
+| Intent | 值 | 说明 |
+|--------|-----|------|
+| GUILD_MESSAGES | 1 << 9 | 频道消息 |
+| DIRECT_MESSAGE | 1 << 12 | 私聊消息 |
+| PUBLIC_MESSAGES | 1 << 30 | 公域消息 |
+
+---
+
+## 8. 错误处理
+
+### 8.1 错误响应格式
 
 ```json
 {
@@ -417,7 +524,7 @@ Content-Type: application/json
 }
 ```
 
-### 7.2 常见错误码
+### 8.2 常见错误码
 
 | HTTP 状态码 | 错误类型 | 说明 |
 |-------------|----------|------|
@@ -431,9 +538,9 @@ Content-Type: application/json
 
 ---
 
-## 8. Go SDK 使用示例
+## 9. Go SDK 使用示例
 
-### 8.1 使用 net/http 发送请求
+### 9.1 使用 net/http 发送请求
 
 ```go
 package main
@@ -497,7 +604,7 @@ func main() {
 }
 ```
 
-### 8.2 使用 Provider Registry 自动匹配
+### 9.2 使用 Provider Registry 自动匹配
 
 ```go
 package main
@@ -546,9 +653,9 @@ func main() {
 
 ---
 
-## 9. 配置参考
+## 10. 配置参考
 
-### 9.1 简化配置（推荐）
+### 10.1 简化配置（推荐）
 
 使用 ProviderSpec 默认值，只需配置 apiKey：
 
@@ -580,7 +687,7 @@ func main() {
 }
 ```
 
-### 9.2 完整配置（覆盖默认值）
+### 10.2 完整配置（覆盖默认值）
 
 ```json
 {
@@ -611,7 +718,7 @@ func main() {
 }
 ```
 
-### 9.3 配置字段说明
+### 10.3 配置字段说明
 
 **Provider 配置：**
 
@@ -634,7 +741,7 @@ func main() {
 | memory.recentDays | int | 加载最近几天的日志 |
 | memory.maxHistoryLines | int | 历史记录最大行数 |
 
-### 9.4 配置加载优先级
+### 10.4 配置加载优先级
 
 | 优先级 | 来源 | 路径 |
 |--------|------|------|
@@ -644,11 +751,11 @@ func main() {
 
 ---
 
-## 10. 定时任务 (Cron)
+## 11. 定时任务 (Cron)
 
 LingGuard 支持定时任务功能，可以按计划自动执行 Agent 任务。
 
-### 10.1 CLI 命令
+### 11.1 CLI 命令
 
 ```bash
 # 列出所有任务
@@ -673,7 +780,7 @@ lingguard cron run <job-id> --force  # 强制执行已禁用的任务
 lingguard cron status
 ```
 
-### 10.2 调度格式
+### 11.2 调度格式
 
 支持三种调度格式：
 
@@ -700,7 +807,7 @@ lingguard cron status
 0 18 * * 1-5   # 周一到周五 18:00
 ```
 
-### 10.3 时区支持
+### 11.3 时区支持
 
 使用 `--tz` 参数指定 cron 任务的时区：
 
@@ -726,7 +833,7 @@ lingguard cron add "周一例会" "cron:30 9 * * 1" "周一例会提醒" --tz "A
 | 伦敦 | `Europe/London` |
 | UTC | `UTC` |
 
-### 10.4 任务投递选项
+### 11.4 任务投递选项
 
 添加任务时可以指定将响应投递到消息渠道：
 
@@ -740,7 +847,7 @@ lingguard cron add "NYC Report" "cron:0 9 * * *" "Morning report" \
   --tz "America/New_York" --deliver --channel feishu --to ou_xxx
 ```
 
-### 10.5 任务存储
+### 11.5 任务存储
 
 任务数据存储在 JSON 文件中：
 
@@ -780,7 +887,7 @@ lingguard cron add "NYC Report" "cron:0 9 * * *" "Morning report" \
 }
 ```
 
-### 10.6 配置
+### 11.6 配置
 
 在 `config.json` 中配置定时任务：
 
@@ -800,9 +907,10 @@ lingguard cron add "NYC Report" "cron:0 9 * * *" "Morning report" \
 
 ---
 
-## 11. 参考资料
+## 12. 参考资料
 
 - [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
 - [Anthropic API Reference](https://docs.anthropic.com/en/api)
 - [智谱 AI API](https://open.bigmodel.cn/dev/api)
 - [飞书开放平台](https://open.feishu.cn/document/)
+- [QQ 机器人开放平台](https://bot.q.qq.com/wiki/)

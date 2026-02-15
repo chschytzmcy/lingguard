@@ -93,6 +93,15 @@
       "encryptKey": "",
       "verificationToken": "",
       "allowFrom": []
+    },
+
+    "qq": {
+      "_comment": "QQ机器人 - WebSocket Gateway，支持私聊消息",
+      "_docs": "https://bot.q.qq.com",
+      "enabled": false,
+      "appId": "xxx",
+      "secret": "xxx",
+      "allowFrom": []
     }
   },
 

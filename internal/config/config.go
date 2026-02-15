@@ -52,6 +52,7 @@ type MemoryConfig struct {
 // ChannelsConfig 渠道配置
 type ChannelsConfig struct {
 	Feishu *FeishuConfig `json:"feishu,omitempty"`
+	QQ     *QQConfig     `json:"qq,omitempty"`
 }
 
 // FeishuConfig 飞书配置
@@ -62,6 +63,14 @@ type FeishuConfig struct {
 	EncryptKey        string   `json:"encryptKey,omitempty"`
 	VerificationToken string   `json:"verificationToken,omitempty"`
 	AllowFrom         []string `json:"allowFrom,omitempty"`
+}
+
+// QQConfig QQ机器人配置
+type QQConfig struct {
+	Enabled   bool     `json:"enabled"`
+	AppID     string   `json:"appId"`  // QQ机器人 AppID
+	Secret    string   `json:"secret"` // QQ机器人 Secret
+	AllowFrom []string `json:"allowFrom,omitempty"`
 }
 
 // ToolsConfig 工具配置

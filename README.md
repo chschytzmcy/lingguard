@@ -6,7 +6,7 @@
 
 - **多 LLM 支持** - OpenAI, Anthropic, DeepSeek, GLM, Qwen, MiniMax 等
 - **Provider 自动匹配** - 根据模型名自动选择合适的 Provider
-- **飞书集成** - WebSocket 长连接，无需公网 IP
+- **多渠道支持** - 飞书、QQ 机器人，WebSocket 长连接，无需公网 IP
 - **流式响应** - 实时输出，飞书消息实时更新
 - **技能系统** - 渐进式加载，按需注入
 - **持久化记忆** - MEMORY.md + HISTORY.md 方案
@@ -199,6 +199,11 @@ go mod tidy
       "enabled": true,
       "appId": "cli_xxx",
       "appSecret": "xxx"
+    },
+    "qq": {
+      "enabled": false,
+      "appId": "xxx",
+      "secret": "xxx"
     }
   },
   "cron": {
@@ -254,7 +259,7 @@ lingguard/
 | 语言 | Go | Python |
 | 部署 | 单二进制 | pip/uv |
 | 内存 | ~20MB | ~100MB+ |
-| 渠道 | 飞书 | 9+ 渠道 |
+| 渠道 | 飞书、QQ | 9+ 渠道 |
 | 定时任务 | ✅ | ✅ |
 | 时区支持 | ✅ | ✅ |
 
