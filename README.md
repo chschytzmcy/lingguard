@@ -222,17 +222,22 @@ lingguard/
 ├── internal/
 │   ├── agent/           # 核心代理
 │   ├── providers/       # LLM 提供商
-│   ├── channels/        # 消息渠道
+│   ├── channels/        # 消息渠道（飞书）
+│   ├── tools/           # 内置工具
 │   ├── skills/          # 技能系统
 │   ├── cron/            # 定时任务
 │   ├── subagent/        # 子代理
-│   └── config/          # 配置管理
+│   ├── session/         # 会话管理
+│   ├── config/          # 配置管理
+│   ├── bus/             # 消息总线（预留）
+│   └── scheduler/       # 调度器（预留）
 ├── pkg/
 │   ├── llm/             # LLM 类型
 │   ├── stream/          # 流式响应
 │   ├── memory/          # 记忆系统
 │   └── logger/          # 日志
 ├── skills/              # 技能目录
+│   └── builtin/         # 内置技能
 ├── configs/             # 配置文件
 └── docs/                # 文档
 ```

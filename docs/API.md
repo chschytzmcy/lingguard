@@ -95,9 +95,11 @@ data: [DONE]
 | Groq | `https://api.groq.com/openai/v1` | 高速推理 |
 | Gemini | `https://generativelanguage.googleapis.com/v1beta` | Google Gemini |
 | vLLM | `http://localhost:8000/v1` | 本地模型 |
-| GLM | `https://open.bigmodel.cn/api/anthropic` | 智谱 AI |
-| MiniMax | `https://api.minimaxi.com/anthropic` | MiniMax AI |
-| DashScope | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 阿里云通义 |
+| GLM | `https://open.bigmodel.cn/api/paas/v4` | 智谱 AI |
+| MiniMax | `https://api.minimax.chat/v1` | MiniMax AI |
+| Moonshot | `https://api.moonshot.cn/v1` | 月之暗面 Kimi |
+| Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 阿里云通义 |
+| AiHubMix | `https://aihubmix.com/v1` | 多模型网关 |
 
 ---
 
@@ -136,16 +138,18 @@ type ProviderSpec struct {
 
 | Provider | Keywords | DefaultModel | APIKeyPrefix |
 |----------|----------|--------------|--------------|
-| openai | gpt, o1, o3 | gpt-4o | sk- |
-| anthropic | claude | claude-3-5-sonnet | sk-ant- |
+| openai | gpt, o1, o3, chatgpt | gpt-4o | sk- |
+| anthropic | claude | claude-3-5-sonnet-20241022 | sk-ant- |
 | deepseek | deepseek | deepseek-chat | sk- |
-| openrouter | openrouter | - | sk-or- |
-| qwen | qwen, tongyi | qwen-max | - |
-| glm | glm, chatglm | glm-4 | - |
+| openrouter | openrouter | anthropic/claude-3.5-sonnet | sk-or- |
+| qwen | qwen, tongyi, dashscope | qwen-max | - |
+| glm | glm, chatglm, codegeex, zhipu | glm-4 | - |
 | minimax | minimax | abab6.5s-chat | - |
 | moonshot | moonshot, kimi | moonshot-v1-8k | - |
 | gemini | gemini | gemini-1.5-pro | - |
-| groq | groq, llama | llama-3.1-70b | gsk_ |
+| groq | groq, llama, mixtral, gemma | llama-3.1-70b-versatile | gsk_ |
+| vllm | vllm | (需配置) | - |
+| aihubmix | aihubmix | (需配置) | - |
 
 ### 3.4 配置覆盖机制
 

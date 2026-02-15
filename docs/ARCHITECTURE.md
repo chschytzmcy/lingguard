@@ -35,7 +35,7 @@
 | 维度 | LingGuard (Go) | nanobot (Python) |
 |------|----------------|------------------|
 | **编程语言** | Go 1.23+ | Python 3 |
-| **代码量** | ~4,000 行 | ~3,500 行 |
+| **代码量** | ~8,000 行 | ~3,500 行 |
 | **部署方式** | 单二进制文件 | pip/uv 安装 |
 | **并发模型** | Goroutine | asyncio |
 | **内存占用** | ~20MB | ~100MB+ |
@@ -234,7 +234,7 @@ lingguard/
 │       ├── agent.go        # agent交互命令
 │       ├── gateway.go      # 网关启动命令
 │       ├── cron.go         # 定时任务管理命令
-│       └── status.go       # 状态查看
+│       └── config_cmd.go   # 配置命令
 ├── internal/
 │   ├── agent/              # 核心代理逻辑
 │   │   └── agent.go
@@ -242,9 +242,13 @@ lingguard/
 │   │   └── manager.go
 │   ├── tools/              # 内置工具
 │   │   ├── registry.go
+│   │   ├── registry_manager.go
 │   │   ├── shell.go
 │   │   ├── file.go
-│   │   └── skill.go
+│   │   ├── skill.go
+│   │   ├── memory_tool.go
+│   │   ├── cron.go
+│   │   └── cron_wrapper.go
 │   ├── providers/          # LLM提供商
 │   │   ├── provider.go
 │   │   ├── registry.go
@@ -255,7 +259,8 @@ lingguard/
 │   │   ├── channel.go
 │   │   ├── manager.go
 │   │   ├── feishu.go
-│   │   └── agent_adapter.go
+│   │   ├── agent_adapter.go
+│   │   └── context_adapter.go
 │   ├── skills/             # 技能系统
 │   │   ├── loader.go
 │   │   └── manager.go
@@ -267,16 +272,33 @@ lingguard/
 │   │   ├── subagent.go
 │   │   ├── manager.go
 │   │   └── tool.go
-│   └── config/             # 配置管理
-│       └── config.go
+│   ├── config/             # 配置管理
+│   │   └── config.go
+│   ├── bus/                # 消息总线（预留）
+│   └── scheduler/          # 调度器（预留）
 ├── pkg/
 │   ├── llm/                # LLM客户端封装
+│   │   ├── llm.go
+│   │   └── llm_test.go
 │   ├── stream/             # 流式响应类型
+│   │   └── stream.go
 │   ├── memory/             # 记忆系统
+│   │   ├── memory.go
+│   │   ├── file_store.go
+│   │   ├── context_builder.go
+│   │   └── file_store_test.go
 │   └── logger/             # 日志
+│       └── logger.go
 ├── skills/                 # 技能目录
+│   └── builtin/            # 内置技能
+│       ├── code-review/    # 代码审查
+│       ├── file/           # 文件操作
+│       ├── git-workflow/   # Git工作流
+│       ├── system/         # 系统操作
+│       └── weather/        # 天气查询
 ├── configs/
-│   └── config.json
+│   ├── config.json
+│   └── config.example.json
 └── docs/
     ├── ARCHITECTURE.md
     └── API.md
