@@ -27,6 +27,13 @@ func (r *Registry) Register(t Tool) {
 	r.tools[t.Name()] = t
 }
 
+// Unregister 注销工具
+func (r *Registry) Unregister(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.tools, name)
+}
+
 // Get 获取工具
 func (r *Registry) Get(name string) (Tool, bool) {
 	r.mu.RLock()

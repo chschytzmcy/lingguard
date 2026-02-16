@@ -107,7 +107,7 @@
 
   "tools": {
     "_comment": "==================== 工具配置 ====================",
-    "restrictToWorkspace": false,
+    "restrictToWorkspace": true,
     "workspace": "~/.lingguard/workspace",
     "tavilyApiKey": "",
     "webMaxChars": 50000,

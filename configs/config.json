@@ -50,16 +50,13 @@
     }
   },
   "tools": {
-    "restrictToWorkspace": false,
+    "restrictToWorkspace": true,
     "workspace": "~/.lingguard/workspace",
     "tavilyApiKey": "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",
     "mcpServers": {
       "filesystem": {
         "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/mcp-test"]
-      },
-      "http-test": {
-        "url": "http://localhost:8765/mcp"
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workspace}"]
       }
     }
   },

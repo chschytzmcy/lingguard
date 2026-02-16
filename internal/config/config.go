@@ -143,7 +143,7 @@ func DefaultConfig() *Config {
 		},
 		Channels: ChannelsConfig{},
 		Tools: ToolsConfig{
-			RestrictToWorkspace: false,
+			RestrictToWorkspace: true,
 			Workspace:           "~/.lingguard/workspace",
 		},
 		Storage: StorageConfig{

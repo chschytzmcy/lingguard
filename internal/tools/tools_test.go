@@ -294,21 +294,9 @@ func TestWorkspaceTool(t *testing.T) {
 	}
 	t.Logf("pwd result: %s", result)
 
-	// Create a subdirectory
-	subDir := filepath.Join(tmpDir, "subdir")
-	os.Mkdir(subDir, 0755)
-
-	// Test cd
-	cdParams := json.RawMessage(`{"operation":"cd","path":"subdir"}`)
-	result, err = tool.Execute(ctx, cdParams)
-	if err != nil {
-		t.Fatalf("cd failed: %v", err)
-	}
-	t.Logf("cd result: %s", result)
-
-	// Verify workspace changed
-	if mgr.Get() != subDir {
-		t.Errorf("Expected workspace=%s, got %s", subDir, mgr.Get())
+	// Verify workspace
+	if mgr.Get() != tmpDir {
+		t.Errorf("Expected workspace=%s, got %s", tmpDir, mgr.Get())
 	}
 
 	// Test ls
@@ -318,4 +306,12 @@ func TestWorkspaceTool(t *testing.T) {
 		t.Fatalf("ls failed: %v", err)
 	}
 	t.Logf("ls result: %s", result)
+
+	// Test cd should fail (no longer supported)
+	cdParams := json.RawMessage(`{"operation":"cd","path":"subdir"}`)
+	_, err = tool.Execute(ctx, cdParams)
+	if err == nil {
+		t.Error("Expected cd to fail, but it succeeded")
+	}
+	t.Logf("cd error (expected): %v", err)
 }

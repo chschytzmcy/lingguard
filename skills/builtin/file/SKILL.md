@@ -7,6 +7,15 @@ metadata: {"nanobot":{"emoji":"📁"}}
 
 Use the `file` tool to work with files and directories.
 
+## ⚠️ 重要限制
+
+**所有文件操作都严格限制在工作目录内：**
+- 只能访问配置文件中指定的工作目录
+- 不能访问工作目录之外的任何路径
+- 不能切换到其他目录
+- 不能修改 LingGuard 的配置文件
+- 如果用户请求访问工作目录外的文件，必须明确告知用户这个限制
+
 ## Operations
 
 ### Read a File
@@ -14,18 +23,18 @@ Use the `file` tool to work with files and directories.
 ```json
 {
   "operation": "read",
-  "path": "/path/to/file.txt"
+  "path": "relative/path/to/file.txt"
 }
 ```
 
-Returns the file contents as a string.
+Returns the file contents as a string. Path can be relative to workspace.
 
 ### Write a File
 
 ```json
 {
   "operation": "write",
-  "path": "/path/to/file.txt",
+  "path": "relative/path/to/file.txt",
   "content": "File contents here"
 }
 ```
@@ -37,7 +46,7 @@ Creates the file (and parent directories) if it doesn't exist.
 ```json
 {
   "operation": "edit",
-  "path": "/path/to/file.txt",
+  "path": "relative/path/to/file.txt",
   "old_string": "text to replace",
   "new_string": "replacement text"
 }
@@ -50,7 +59,7 @@ Replaces all occurrences of `old_string` with `new_string`.
 ```json
 {
   "operation": "list",
-  "path": "/path/to/directory"
+  "path": "relative/path/to/directory"
 }
 ```
 
@@ -60,9 +69,5 @@ Returns entries with type prefix: `dir: dirname` or `file: filename`.
 
 1. **Read before edit**: Always read a file first to understand its structure
 2. **Precise old_string**: Make `old_string` unique to avoid unintended replacements
-3. **Check paths**: Verify paths exist before operations
+3. **Use relative paths**: Paths are relative to workspace directory
 4. **Backup important files**: Consider copying before major edits
-
-## Safety
-
-When sandbox mode is enabled, operations are restricted to the configured workspace directory.

@@ -104,6 +104,20 @@ func NewMCPClient(serverName string, cfg config.MCPServerConfig) *MCPClient {
 	}
 }
 
+// expandArgs expands placeholders in args with actual values
+func expandArgs(args []string, workspace string) []string {
+	result := make([]string, len(args))
+	for i, arg := range args {
+		// Replace ${workspace} placeholder
+		if arg == "${workspace}" {
+			result[i] = workspace
+		} else {
+			result[i] = arg
+		}
+	}
+	return result
+}
+
 // Connect connects to the MCP server
 func (c *MCPClient) Connect(ctx context.Context) error {
 	if c.config.Command == "" {
@@ -401,8 +415,12 @@ func NewMCPManager() *MCPManager {
 }
 
 // ConnectServers connects to all configured MCP servers
-func (m *MCPManager) ConnectServers(ctx context.Context, servers map[string]config.MCPServerConfig) error {
+// workspace is used to expand ${workspace} placeholder in args
+func (m *MCPManager) ConnectServers(ctx context.Context, servers map[string]config.MCPServerConfig, workspace string) error {
 	for name, cfg := range servers {
+		// Expand ${workspace} placeholder in args
+		cfg.Args = expandArgs(cfg.Args, workspace)
+
 		var client MCPClientInterface
 
 		// Determine transport type based on config

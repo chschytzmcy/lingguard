@@ -95,6 +95,11 @@ func (a *Agent) RegisterTool(t tools.Tool) {
 	a.toolRegistry.Register(t)
 }
 
+// UnregisterTool 注销工具
+func (a *Agent) UnregisterTool(name string) {
+	a.toolRegistry.Unregister(name)
+}
+
 // RegisterSkillTool 注册技能加载工具
 func (a *Agent) RegisterSkillTool() {
 	if a.skillsMgr != nil {

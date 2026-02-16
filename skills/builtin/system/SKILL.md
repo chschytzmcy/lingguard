@@ -7,6 +7,15 @@ metadata: {"nanobot":{"emoji":"💻","always":true,"requires":{"bins":["bash","s
 
 Execute shell commands to interact with the operating system.
 
+## ⚠️ 重要限制
+
+**所有操作都严格限制在工作目录内：**
+- Shell 命令在工作目录下执行
+- 只能访问工作目录内的文件
+- 不能访问工作目录之外的路径
+- 不能切换到其他目录
+- 不能修改 LingGuard 的配置文件
+
 ## Shell Tool
 
 Use the `shell` tool to run commands:
@@ -26,8 +35,8 @@ Use the `shell` tool to run commands:
 
 ### File System
 - `ls -la` - List files with details
-- `find . -name "*.go"` - Find Go files
-- `grep -r "pattern" .` - Search for pattern
+- `find . -name "*.go"` - Find Go files in current directory
+- `grep -r "pattern" .` - Search for pattern in current directory
 
 ### Process Management
 - `ps aux` - List processes

@@ -101,7 +101,7 @@ func TestMCPManager_EmptyServers(t *testing.T) {
 	manager := NewMCPManager()
 
 	// Connect with empty servers should succeed
-	err := manager.ConnectServers(context.Background(), nil)
+	err := manager.ConnectServers(context.Background(), nil, "/tmp/workspace")
 	if err != nil {
 		t.Errorf("Expected no error with empty servers, got: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestMCPManager_SkipInvalidServers(t *testing.T) {
 		"no_config": {}, // No command or URL
 	}
 
-	err := manager.ConnectServers(context.Background(), servers)
+	err := manager.ConnectServers(context.Background(), servers, "/tmp/workspace")
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}

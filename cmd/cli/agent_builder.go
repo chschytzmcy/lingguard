@@ -170,9 +170,15 @@ func (b *AgentBuilder) ConnectMCP(ag *agent.Agent) (*tools.MCPManager, error) {
 		return nil, nil
 	}
 
+	// 确保工作空间已初始化
+	if b.workspaceMgr == nil {
+		b.InitWorkspace()
+	}
+
 	mcpManager := tools.NewMCPManager()
 	ctx := context.Background()
-	if err := mcpManager.ConnectServers(ctx, b.cfg.Tools.MCPServers); err != nil {
+	workspace := b.workspaceMgr.Get()
+	if err := mcpManager.ConnectServers(ctx, b.cfg.Tools.MCPServers, workspace); err != nil {
 		return nil, err
 	}
 
