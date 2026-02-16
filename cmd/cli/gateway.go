@@ -36,6 +36,13 @@ func init() {
 }
 
 func runGateway() error {
+	// 单实例检查
+	lock, err := utils.NewSingletonLock("gateway")
+	if err != nil {
+		return fmt.Errorf("singleton check failed: %w", err)
+	}
+	defer lock.Release()
+
 	// 加载配置
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
