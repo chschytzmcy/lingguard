@@ -41,12 +41,11 @@ mkdir -p "${CONFIG_DIR}/locks"
 rm -f "${CONFIG_DIR}/locks/"*.lock 2>/dev/null || true
 echo "  ✓ 已创建 ${CONFIG_DIR}"
 
-# 3. 安装配置文件（如果不存在）
+# 3. 安装配置文件
 echo "[3/5] 安装配置文件..."
 if [ ! -f "${CONFIG_DIR}/config.json" ]; then
     # 使用 configs/config.json 作为模板
     if [ -f "configs/config.json" ]; then
-        # 复制并调整配置
         cat configs/config.json | \
             sed "s|\"workspace\": *\"[^\"]*\"|\"workspace\": \"${CONFIG_DIR}/workspace\"|g" | \
             sed "s|\"storePath\": *\"[^\"]*\"|\"storePath\": \"${CONFIG_DIR}/cron/jobs.json\"|g" | \
@@ -58,10 +57,30 @@ if [ ! -f "${CONFIG_DIR}/config.json" ]; then
         echo "  ! configs/config.json 不存在，跳过"
     fi
 else
-    echo "  ! ${CONFIG_DIR}/config.json 已存在，保留现有配置"
-    # 检查是否需要更新 opencode 配置
+    echo "  ! ${CONFIG_DIR}/config.json 已存在，合并新配置项..."
+
+    # 合并 opencode 配置（如果不存在）
     if ! grep -q '"opencode"' "${CONFIG_DIR}/config.json" 2>/dev/null; then
-        echo "  ! 建议手动添加 opencode 配置到 tools 部分"
+        if command -v jq &>/dev/null; then
+            tmp_file=$(mktemp)
+            jq '.tools.opencode = {"enabled": true, "baseURL": "http://127.0.0.1:4096", "timeout": 600}' \
+                "${CONFIG_DIR}/config.json" > "$tmp_file" && mv "$tmp_file" "${CONFIG_DIR}/config.json"
+            echo "  ✓ 已添加 opencode 配置"
+        fi
+    fi
+
+    # 合并 tavilyApiKey（如果模板中有但配置中没有）
+    if [ -f "configs/config.json" ]; then
+        template_key=$(cat configs/config.json | jq -r '.tools.tavilyApiKey // empty' 2>/dev/null)
+        current_key=$(cat "${CONFIG_DIR}/config.json" | jq -r '.tools.tavilyApiKey // empty' 2>/dev/null)
+        if [ -n "$template_key" ] && [ -z "$current_key" ]; then
+            if command -v jq &>/dev/null; then
+                tmp_file=$(mktemp)
+                jq ".tools.tavilyApiKey = \"$template_key\"" \
+                    "${CONFIG_DIR}/config.json" > "$tmp_file" && mv "$tmp_file" "${CONFIG_DIR}/config.json"
+                echo "  ✓ 已添加 tavilyApiKey 配置"
+            fi
+        fi
     fi
 fi
 
