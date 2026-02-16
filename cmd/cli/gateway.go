@@ -7,11 +7,13 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/lingguard/internal/agent"
 	"github.com/lingguard/internal/channels"
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/internal/cron"
+	"github.com/lingguard/internal/heartbeat"
 	"github.com/lingguard/internal/providers"
 	"github.com/lingguard/internal/skills"
 	"github.com/lingguard/internal/tools"
@@ -100,6 +102,37 @@ func runGateway() error {
 		ag.RegisterCronTool(cronWrapper)
 	}
 
+	// 启动心跳服务
+	var heartbeatService *heartbeat.Service
+	if cfg.Heartbeat != nil && cfg.Heartbeat.Enabled {
+		// 计算心跳间隔
+		interval := time.Duration(cfg.Heartbeat.Interval) * time.Minute
+		if interval <= 0 {
+			interval = 30 * time.Minute // 默认 30 分钟
+		}
+
+		heartbeatConfig := &heartbeat.Config{
+			Enabled:  true,
+			Interval: interval,
+		}
+
+		// 创建心跳回调
+		onHeartbeat := createHeartbeatCallback(ag)
+
+		heartbeatService = heartbeat.NewService(heartbeatConfig, onHeartbeat)
+
+		// 设置工作空间路径
+		workspace := cfg.Agents.Workspace
+		if workspace == "" {
+			workspace = cfg.Tools.Workspace
+		}
+		heartbeatService.SetWorkspace(expandHomePath(workspace))
+
+		// 启动服务
+		heartbeatService.Start()
+		logger.Info("Heartbeat service started (interval: %v)", interval)
+	}
+
 	// 使用 ContextAdapter 包装 AgentAdapter
 	// 始终使用 ContextAdapter 以支持 MessageTool 上下文
 	contextAdapter := channels.NewContextAdapter(baseAdapter, cronWrapper)
@@ -161,6 +194,11 @@ func runGateway() error {
 	// 停止定时任务服务
 	if cronService != nil {
 		cronService.Stop()
+	}
+
+	// 停止心跳服务
+	if heartbeatService != nil {
+		heartbeatService.Stop()
 	}
 
 	return mgr.StopAll()
@@ -264,6 +302,22 @@ func createCronJobCallback(ag *agent.Agent, mgr *channels.Manager) cron.JobCallb
 			if err := mgr.SendMessage(job.Payload.Channel, job.Payload.To, response); err != nil {
 				logger.Error("Failed to deliver cron job response: %v", err)
 			}
+		}
+
+		return response, nil
+	}
+}
+
+// createHeartbeatCallback 创建心跳回调
+func createHeartbeatCallback(ag *agent.Agent) heartbeat.AgentCallback {
+	return func(ctx context.Context, prompt string) (string, error) {
+		// 使用固定的心跳会话 ID
+		sessionID := "heartbeat-main"
+
+		// 执行 Agent 处理消息
+		response, err := ag.ProcessMessage(ctx, sessionID, prompt)
+		if err != nil {
+			return "", err
 		}
 
 		return response, nil

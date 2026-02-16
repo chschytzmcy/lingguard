@@ -138,5 +138,18 @@
     "level": "info",
     "format": "text",
     "output": "~/.lingguard/logs/lingguard.log"
+  },
+
+  "cron": {
+    "_comment": "==================== 定时任务配置 ====================",
+    "enabled": true,
+    "storePath": "~/.lingguard/cron/jobs.json"
+  },
+
+  "heartbeat": {
+    "_comment": "==================== 心跳服务配置 ====================",
+    "_desc": "定期唤醒 Agent 检查 HEARTBEAT.md 中的任务",
+    "enabled": true,
+    "interval": 30
   }
 }

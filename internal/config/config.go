@@ -15,7 +15,8 @@ type Config struct {
 	Tools     ToolsConfig               `json:"tools"`
 	Storage   StorageConfig             `json:"storage"`
 	Logging   LoggingConfig             `json:"logging"`
-	Cron      *CronConfig               `json:"cron,omitempty"` // 定时任务配置
+	Cron      *CronConfig               `json:"cron,omitempty"`      // 定时任务配置
+	Heartbeat *HeartbeatConfig          `json:"heartbeat,omitempty"` // 心跳服务配置
 }
 
 // ProviderConfig 提供商配置
@@ -118,6 +119,12 @@ type CronConfig struct {
 	StorePath string `json:"storePath,omitempty"` // 任务存储路径，默认 ~/.lingguard/cron/jobs.json
 }
 
+// HeartbeatConfig 心跳服务配置
+type HeartbeatConfig struct {
+	Enabled  bool `json:"enabled"`            // 是否启用心跳服务
+	Interval int  `json:"interval,omitempty"` // 心跳间隔（分钟），默认 30
+}
+
 // DefaultConfig 默认配置
 func DefaultConfig() *Config {
 	return &Config{
@@ -150,6 +157,10 @@ func DefaultConfig() *Config {
 		Cron: &CronConfig{
 			Enabled:   true,
 			StorePath: "~/.lingguard/cron/jobs.json",
+		},
+		Heartbeat: &HeartbeatConfig{
+			Enabled:  true,
+			Interval: 30, // 30 分钟
 		},
 	}
 }
