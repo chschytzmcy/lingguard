@@ -52,6 +52,7 @@
   "tools": {
     "restrictToWorkspace": false,
     "workspace": "~/.lingguard/workspace",
+    "tavilyApiKey": "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",
     "mcpServers": {
       "filesystem": {
         "command": "npx",

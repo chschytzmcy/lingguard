@@ -263,7 +263,7 @@ MCP 工具命名格式: `mcp_{serverName}_{toolName}`
 
 | 技能 | 描述 |
 |------|------|
-| `weather` | 天气查询 (wttr.in) |
+| `weather` | 天气查询 (心知天气) |
 | `git-workflow` | Git 工作流自动化 |
 | `code-review` | 代码审查指南 |
 | `file` | 文件操作指南 |

@@ -325,26 +325,30 @@ config.json 中的配置会覆盖 spec.go 中的默认值：
 
 #### 5.3.1 web_search
 
-使用 Brave Search API 搜索网页。
+使用 Tavily AI 搜索网页，专为 AI 应用优化的搜索 API。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | query | string | 是 | 搜索关键词 |
 | count | integer | 否 | 返回结果数量 (1-10)，默认 5 |
+| searchDepth | string | 否 | 搜索深度: `basic` (快速) 或 `advanced` (全面)，默认 `basic` |
+| includeAnswer | boolean | 否 | 是否包含 AI 生成的答案，默认 true |
 
-**配置要求**：需要设置 `braveApiKey` 配置或 `BRAVE_API_KEY` 环境变量。
+**配置要求**：需要设置 `tavilyApiKey` 配置或 `TAVILY_API_KEY` 环境变量。
 
 **返回示例**：
 ```
-Results for: Go programming language
+Search results for: Go programming language
+
+📋 Answer: Go is an open source programming language developed by Google...
 
 1. The Go Programming Language
-   https://go.dev/
-   Go is an open source programming language that makes it easy to build simple, reliable, and efficient software.
+   🔗 https://go.dev/
+   📄 Go is an open source programming language that makes it easy to build simple, reliable, and efficient software.
 
 2. GitHub - golang/go
-   https://github.com/golang/go
-   The Go programming language. Contribute to golang/go development by creating an account on GitHub.
+   🔗 https://github.com/golang/go
+   📄 The Go programming language. Contribute to golang/go development by creating an account on GitHub.
 ```
 
 #### 5.3.2 web_fetch

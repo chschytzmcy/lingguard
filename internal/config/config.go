@@ -79,8 +79,8 @@ type ToolsConfig struct {
 	RestrictToWorkspace bool   `json:"restrictToWorkspace"`
 	Workspace           string `json:"workspace,omitempty"`
 	// Web tools
-	BraveAPIKey string `json:"braveApiKey,omitempty"` // Brave Search API Key
-	WebMaxChars int    `json:"webMaxChars,omitempty"` // 网页抓取最大字符数，默认 50000
+	TavilyAPIKey string `json:"tavilyApiKey,omitempty"` // Tavily Search API Key
+	WebMaxChars  int    `json:"webMaxChars,omitempty"`  // 网页抓取最大字符数，默认 50000
 	// MCP (Model Context Protocol) servers
 	MCPServers map[string]MCPServerConfig `json:"mcpServers,omitempty"` // MCP 服务器配置
 }

@@ -136,11 +136,11 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 	ag.RegisterTool(tools.NewWorkspaceTool(b.workspaceMgr))
 
 	// 注册 Web 工具
-	braveAPIKey := b.cfg.Tools.BraveAPIKey
-	if braveAPIKey == "" {
-		braveAPIKey = os.Getenv("BRAVE_API_KEY")
+	tavilyAPIKey := b.cfg.Tools.TavilyAPIKey
+	if tavilyAPIKey == "" {
+		tavilyAPIKey = os.Getenv("TAVILY_API_KEY")
 	}
-	ag.RegisterTool(tools.NewWebSearchTool(braveAPIKey, 5))
+	ag.RegisterTool(tools.NewWebSearchTool(tavilyAPIKey, 5))
 	ag.RegisterTool(tools.NewWebFetchTool(b.cfg.Tools.WebMaxChars))
 
 	// 注册技能工具

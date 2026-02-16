@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,7 @@ import (
 	"time"
 )
 
-// WebSearchTool 网页搜索工具 (使用 Brave Search API)
+// WebSearchTool 网页搜索工具 (使用 Tavily API)
 type WebSearchTool struct {
 	apiKey     string
 	maxResults int
@@ -27,14 +28,14 @@ func NewWebSearchTool(apiKey string, maxResults int) *WebSearchTool {
 	return &WebSearchTool{
 		apiKey:     apiKey,
 		maxResults: maxResults,
-		httpClient: &http.Client{Timeout: 15 * time.Second},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 func (t *WebSearchTool) Name() string { return "web_search" }
 
 func (t *WebSearchTool) Description() string {
-	return "Search the web. Returns titles, URLs, and snippets."
+	return "Search the web using Tavily AI. Returns titles, URLs, and content snippets optimized for AI applications."
 }
 
 func (t *WebSearchTool) Parameters() map[string]interface{} {
@@ -51,6 +52,17 @@ func (t *WebSearchTool) Parameters() map[string]interface{} {
 				"minimum":     1,
 				"maximum":     10,
 			},
+			"searchDepth": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"basic", "advanced"},
+				"default":     "basic",
+				"description": "Search depth: 'basic' for fast results, 'advanced' for more comprehensive results",
+			},
+			"includeAnswer": map[string]interface{}{
+				"type":        "boolean",
+				"default":     true,
+				"description": "Include AI-generated answer in results",
+			},
 		},
 		"required": []string{"query"},
 	}
@@ -58,12 +70,14 @@ func (t *WebSearchTool) Parameters() map[string]interface{} {
 
 func (t *WebSearchTool) Execute(ctx context.Context, params json.RawMessage) (string, error) {
 	if t.apiKey == "" {
-		return "Error: BRAVE_API_KEY not configured. Set it in config or environment variable.", nil
+		return "Error: TAVILY_API_KEY not configured. Set it in config (tools.tavilyApiKey) or environment variable.", nil
 	}
 
 	var p struct {
-		Query string `json:"query"`
-		Count int    `json:"count"`
+		Query         string `json:"query"`
+		Count         int    `json:"count"`
+		SearchDepth   string `json:"searchDepth"`
+		IncludeAnswer bool   `json:"includeAnswer"`
 	}
 
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -76,18 +90,31 @@ func (t *WebSearchTool) Execute(ctx context.Context, params json.RawMessage) (st
 	if p.Count > 10 {
 		p.Count = 10
 	}
+	if p.SearchDepth == "" {
+		p.SearchDepth = "basic"
+	}
 
-	// Build request URL
-	reqURL := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d",
-		url.QueryEscape(p.Query), p.Count)
+	// Build Tavily API request
+	reqBody := map[string]interface{}{
+		"api_key":        t.apiKey,
+		"query":          p.Query,
+		"max_results":    p.Count,
+		"search_depth":   p.SearchDepth,
+		"include_answer": p.IncludeAnswer,
+	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.tavily.com/search", bytes.NewReader(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
 
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Subscription-Token", t.apiKey)
 
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
@@ -97,39 +124,44 @@ func (t *WebSearchTool) Execute(ctx context.Context, params json.RawMessage) (st
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Sprintf("Error: Search API returned status %d: %s", resp.StatusCode, string(body)), nil
+		return fmt.Sprintf("Error: Tavily API returned status %d: %s", resp.StatusCode, string(body)), nil
 	}
 
 	var result struct {
-		Web struct {
-			Results []struct {
-				Title       string `json:"title"`
-				URL         string `json:"url"`
-				Description string `json:"description"`
-			} `json:"results"`
-		} `json:"web"`
+		Answer  string `json:"answer"`
+		Results []struct {
+			Title   string  `json:"title"`
+			URL     string  `json:"url"`
+			Content string  `json:"content"`
+			Score   float64 `json:"score"`
+		} `json:"results"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", fmt.Errorf("decode response: %w", err)
 	}
 
-	if len(result.Web.Results) == 0 {
+	if len(result.Results) == 0 {
 		return fmt.Sprintf("No results for: %s", p.Query), nil
 	}
 
 	// Format results
 	var lines []string
-	lines = append(lines, fmt.Sprintf("Results for: %s\n", p.Query))
+	lines = append(lines, fmt.Sprintf("Search results for: %s\n", p.Query))
 
-	for i, item := range result.Web.Results {
+	// Include AI answer if available
+	if result.Answer != "" {
+		lines = append(lines, fmt.Sprintf("📋 Answer: %s\n", result.Answer))
+	}
+
+	for i, item := range result.Results {
 		if i >= p.Count {
 			break
 		}
 		lines = append(lines, fmt.Sprintf("%d. %s", i+1, item.Title))
-		lines = append(lines, fmt.Sprintf("   %s", item.URL))
-		if item.Description != "" {
-			lines = append(lines, fmt.Sprintf("   %s", item.Description))
+		lines = append(lines, fmt.Sprintf("   🔗 %s", item.URL))
+		if item.Content != "" {
+			lines = append(lines, fmt.Sprintf("   📄 %s", item.Content))
 		}
 	}
 

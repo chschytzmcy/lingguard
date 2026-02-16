@@ -874,7 +874,7 @@ curl -X POST https://www.moltbook.com/api/v1/posts \
 
 | 技能 | 目录 | 描述 |
 |------|------|------|
-| weather | `skills/builtin/weather/` | 天气查询 (wttr.in) |
+| weather | `skills/builtin/weather/` | 天气查询 (心知天气) |
 | git-workflow | `skills/builtin/git-workflow/` | Git 工作流自动化 |
 | code-review | `skills/builtin/code-review/` | 代码审查指南 |
 | file | `skills/builtin/file/` | 文件操作指南 |

@@ -1,67 +1,54 @@
-.PHONY: build run clean test
+.PHONY: all build run clean test deps install docker dev fmt lint help
 
-# 项目名称
-PROJECT_NAME := lingguard
-BUILD_DIR := .
+# 项目配置
+PROJECT := lingguard
 CMD_DIR := cmd/lingguard
 
-# Go 参数
-GOCMD := go
-GOBUILD := $(GOCMD) build
-GOCLEAN := $(GOCMD) clean
-GOTEST := $(GOCMD) test
-GOGET := $(GOCMD) get
-GOMOD := $(GOCMD) mod
-
-# 主程序
-MAIN := ./
-
-# 构建参数
+# 构建信息
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-LDFLAGS := -ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
+LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
 
 # 默认目标
-all: clean deps build
+all: build
 
 # 下载依赖
 deps:
-	$(GOMOD) download
-	$(GOMOD) tidy
+	go mod download
+	go mod tidy
 
-# 构建
+# 构建 - 输出到当前目录
 build:
-	@mkdir -p $(BUILD_DIR)
-	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(PROJECT_NAME) ./$(CMD_DIR)
+	go build $(LDFLAGS) -o $(PROJECT) ./$(CMD_DIR)
 
-# 运行
+# 构建并运行
 run: build
-	./$(BUILD_DIR)/$(PROJECT_NAME)
+	./$(PROJECT)
 
 # 清理
 clean:
-	$(GOCLEAN)
-	rm -rf $(BUILD_DIR)
+	go clean
+	rm -f $(PROJECT)
 
 # 测试
 test:
-	$(GOTEST) -v ./...
+	go test -v ./...
 
-# 安装
+# 安装到系统
 install: build
-	cp $(BUILD_DIR)/$(PROJECT_NAME) /usr/local/bin/
+	cp $(PROJECT) /usr/local/bin/
 
 # Docker 构建
 docker:
-	docker build -t $(PROJECT_NAME):$(VERSION) .
+	docker build -t $(PROJECT):$(VERSION) .
 
-# 开发模式
+# 开发模式（直接运行，不构建）
 dev:
-	$(GOCMD) run ./$(CMD_DIR)
+	go run ./$(CMD_DIR)
 
 # 格式化代码
 fmt:
-	$(GOCMD) fmt ./...
+	go fmt ./...
 
 # 静态检查
 lint:
@@ -69,13 +56,13 @@ lint:
 
 # 帮助
 help:
-	@echo "可用目标:"
-	@echo "  make build    - 构建项目"
+	@echo "可用命令:"
+	@echo "  make build    - 构建项目（输出到当前目录）"
 	@echo "  make run      - 构建并运行"
 	@echo "  make clean    - 清理构建产物"
 	@echo "  make test     - 运行测试"
 	@echo "  make deps     - 下载依赖"
-	@echo "  make install  - 安装到系统"
+	@echo "  make install  - 安装到 /usr/local/bin"
 	@echo "  make docker   - 构建 Docker 镜像"
 	@echo "  make dev      - 开发模式运行"
 	@echo "  make fmt      - 格式化代码"

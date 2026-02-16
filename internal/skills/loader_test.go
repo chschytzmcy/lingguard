@@ -9,13 +9,13 @@ import (
 func TestParseSkill(t *testing.T) {
 	content := `---
 name: weather
-description: Get current weather and forecasts (no API key required).
-homepage: https://wttr.in/:help
-metadata: {"nanobot":{"emoji":"🌤️","requires":{"bins":["curl"]}}}
+description: Get current weather and forecasts for Chinese cities (心知天气 API).
+homepage: https://www.seniverse.com/api
+metadata: {"nanobot":{"emoji":"🌤️","always":true,"requires":{"bins":["curl"]}}}
 ---
 # Weather
 
-Two free services, no API keys needed.
+使用心知天气 API 查询中国城市天气。
 `
 
 	skill, err := parseSkill([]byte(content))
@@ -27,11 +27,11 @@ Two free services, no API keys needed.
 		t.Errorf("Expected name=weather, got %s", skill.Name)
 	}
 
-	if skill.Description != "Get current weather and forecasts (no API key required)." {
+	if skill.Description != "Get current weather and forecasts for Chinese cities (心知天气 API)." {
 		t.Errorf("Unexpected description: %s", skill.Description)
 	}
 
-	if skill.Homepage != "https://wttr.in/:help" {
+	if skill.Homepage != "https://www.seniverse.com/api" {
 		t.Errorf("Unexpected homepage: %s", skill.Homepage)
 	}
 
