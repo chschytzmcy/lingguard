@@ -2,6 +2,7 @@
 package tools
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -22,6 +23,12 @@ type OpenCodeClient struct {
 	client    *http.Client
 	sessions  map[string]*OpenCodeSession
 	sessionID string
+}
+
+// SSEEvent SSE event from OpenCode
+type SSEEvent struct {
+	Type       string                 `json:"type"`
+	Properties map[string]interface{} `json:"properties"`
 }
 
 // OpenCodeSession OpenCode session info
@@ -327,6 +334,125 @@ func (c *OpenCodeClient) Grep(ctx context.Context, pattern, directory string) ([
 	return result, nil
 }
 
+// SubscribeEvents subscribes to OpenCode SSE event stream
+// Returns a channel for events and a cancel function
+func (c *OpenCodeClient) SubscribeEvents(ctx context.Context, sessionID string) (<-chan SSEEvent, context.CancelFunc, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	eventChan := make(chan SSEEvent, 100)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/event", nil)
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("connect SSE: %w", err)
+	}
+
+	go func() {
+		defer close(eventChan)
+		defer resp.Body.Close()
+		defer cancel()
+
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				line := scanner.Text()
+				if strings.HasPrefix(line, "data: ") {
+					data := strings.TrimPrefix(line, "data: ")
+					var event SSEEvent
+					if err := json.Unmarshal([]byte(data), &event); err == nil {
+						// Filter to session-specific events if sessionID provided
+						if sessionID != "" {
+							if props, ok := event.Properties["sessionID"].(string); ok && props != sessionID {
+								continue
+							}
+						}
+						select {
+						case eventChan <- event:
+						default:
+							// Channel full, skip event
+						}
+					}
+				}
+			}
+		}
+	}()
+
+	return eventChan, cancel, nil
+}
+
+// FormatEvent formats an SSE event for display
+func FormatEvent(event SSEEvent) string {
+	switch event.Type {
+	case "message.part.updated":
+		// Get part object
+		part, ok := event.Properties["part"].(map[string]interface{})
+		if !ok {
+			return ""
+		}
+
+		partType, _ := part["type"].(string)
+		switch partType {
+		case "tool":
+			// Tool execution event
+			toolName, _ := part["tool"].(string)
+			state, _ := part["state"].(map[string]interface{})
+			if state == nil {
+				return ""
+			}
+			status, _ := state["status"].(string)
+
+			switch status {
+			case "running":
+				if input, ok := state["input"].(map[string]interface{}); ok {
+					if desc, ok := input["description"].(string); ok && desc != "" {
+						return fmt.Sprintf("  ⚙️ %s: %s", toolName, desc)
+					}
+				}
+				return fmt.Sprintf("  ⚙️ 执行: %s", toolName)
+			case "completed":
+				return fmt.Sprintf("  ✓ 完成: %s", toolName)
+			}
+
+		case "step-start":
+			return "  🔄 开始处理..."
+
+		case "step-finish":
+			return "  📝 步骤完成"
+
+		case "text", "reasoning":
+			// Skip text/reasoning updates - too noisy
+			return ""
+		}
+
+	case "session.status":
+		status, ok := event.Properties["status"].(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		statusType, _ := status["type"].(string)
+		if statusType == "busy" {
+			return "" // Skip busy status, too noisy
+		}
+
+	case "session.idle":
+		return "  ✅ 任务完成"
+
+	case "server.connected":
+		return "  🔗 已连接 OpenCode"
+	}
+
+	return ""
+}
+
 // doRequest performs HTTP request
 func (c *OpenCodeClient) doRequest(ctx context.Context, method, path string, body interface{}) (json.RawMessage, error) {
 	var reqBody io.Reader
@@ -484,6 +610,50 @@ func (t *OpenCodeTool) Execute(ctx context.Context, params json.RawMessage) (str
 		sessionID = session.ID
 	}
 
+	// Subscribe to SSE events for real-time logs (no session filter, collect all)
+	eventChan, cancelEvents, err := t.client.SubscribeEvents(ctx, "")
+	if err != nil {
+		logger.Warn("Failed to subscribe OpenCode events", "error", err)
+		// Continue without events
+	}
+
+	// Collect events in background
+	var eventLogs []string
+	var eventMu sync.Mutex
+	done := make(chan struct{})
+	if eventChan != nil {
+		go func() {
+			defer close(done)
+			for event := range eventChan {
+				// Filter for session-specific events
+				// sessionID can be at top level or in part/session
+				eventSessionID := ""
+				if sid, ok := event.Properties["sessionID"].(string); ok {
+					eventSessionID = sid
+				} else if part, ok := event.Properties["part"].(map[string]interface{}); ok {
+					if sid, ok := part["sessionID"].(string); ok {
+						eventSessionID = sid
+					}
+				}
+
+				// Skip events from other sessions
+				if eventSessionID != "" && eventSessionID != sessionID {
+					continue
+				}
+
+				if formatted := FormatEvent(event); formatted != "" {
+					eventMu.Lock()
+					eventLogs = append(eventLogs, formatted)
+					eventMu.Unlock()
+					logger.Info("OpenCode event", "type", event.Type, "log", formatted)
+				}
+			}
+		}()
+	} else {
+		// Close done channel if no event subscription
+		close(done)
+	}
+
 	var result string
 
 	switch p.Action {
@@ -497,7 +667,24 @@ func (t *OpenCodeTool) Execute(ctx context.Context, params json.RawMessage) (str
 		}
 		resp, err := t.client.SendMessage(ctx, sessionID, opts)
 		if err != nil {
+			if cancelEvents != nil {
+				cancelEvents()
+			}
 			return "", fmt.Errorf("send message: %w", err)
+		}
+
+		// Wait a bit for remaining events to be collected
+		time.Sleep(100 * time.Millisecond)
+
+		// Stop event collection
+		if cancelEvents != nil {
+			cancelEvents()
+		}
+
+		// Wait for goroutine to finish
+		select {
+		case <-done:
+		case <-time.After(500 * time.Millisecond):
 		}
 
 		// Extract text from response
@@ -516,7 +703,20 @@ func (t *OpenCodeTool) Execute(ctx context.Context, params json.RawMessage) (str
 	case "command":
 		resp, err := t.client.ExecuteCommand(ctx, sessionID, p.Task)
 		if err != nil {
+			if cancelEvents != nil {
+				cancelEvents()
+			}
 			return "", fmt.Errorf("execute command: %w", err)
+		}
+
+		// Wait for events
+		time.Sleep(100 * time.Millisecond)
+		if cancelEvents != nil {
+			cancelEvents()
+		}
+		select {
+		case <-done:
+		case <-time.After(500 * time.Millisecond):
 		}
 
 		var texts []string
@@ -530,7 +730,20 @@ func (t *OpenCodeTool) Execute(ctx context.Context, params json.RawMessage) (str
 	case "shell":
 		resp, err := t.client.ExecuteShell(ctx, sessionID, p.Task)
 		if err != nil {
+			if cancelEvents != nil {
+				cancelEvents()
+			}
 			return "", fmt.Errorf("execute shell: %w", err)
+		}
+
+		// Wait for events
+		time.Sleep(100 * time.Millisecond)
+		if cancelEvents != nil {
+			cancelEvents()
+		}
+		select {
+		case <-done:
+		case <-time.After(500 * time.Millisecond):
 		}
 
 		var sb strings.Builder
@@ -550,8 +763,24 @@ func (t *OpenCodeTool) Execute(ctx context.Context, params json.RawMessage) (str
 		return "", fmt.Errorf("unknown action: %s", p.Action)
 	}
 
-	// Prepend session info
-	return fmt.Sprintf("[OpenCode v%s, Session: %s]\n\n%s", version, sessionID[:12]+"...", result), nil
+	// Build result with event logs
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[OpenCode v%s, Session: %s]\n", version, sessionID[:12]+"..."))
+
+	// Add event logs if any
+	eventMu.Lock()
+	if len(eventLogs) > 0 {
+		sb.WriteString("\n执行过程:\n")
+		for _, log := range eventLogs {
+			sb.WriteString(log + "\n")
+		}
+	}
+	eventMu.Unlock()
+
+	sb.WriteString("\n")
+	sb.WriteString(result)
+
+	return sb.String(), nil
 }
 
 func (t *OpenCodeTool) IsDangerous() bool {
