@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/lingguard/pkg/logger"
@@ -23,6 +25,7 @@ type OpenCodeClient struct {
 	client    *http.Client
 	sessions  map[string]*OpenCodeSession
 	sessionID string
+	workspace string
 }
 
 // SSEEvent SSE event from OpenCode
@@ -42,15 +45,17 @@ type OpenCodeSession struct {
 
 // OpenCodeConfig OpenCode client configuration
 type OpenCodeConfig struct {
-	BaseURL string
-	Timeout time.Duration
+	BaseURL   string
+	Timeout   time.Duration
+	Workspace string // Working directory for OpenCode operations
 }
 
 // DefaultOpenCodeConfig returns default configuration
 func DefaultOpenCodeConfig() *OpenCodeConfig {
 	return &OpenCodeConfig{
-		BaseURL: "http://127.0.0.1:4096",
-		Timeout: 300 * time.Second,
+		BaseURL:   "http://127.0.0.1:4096",
+		Timeout:   300 * time.Second,
+		Workspace: "",
 	}
 }
 
@@ -60,10 +65,54 @@ func NewOpenCodeClient(cfg *OpenCodeConfig) *OpenCodeClient {
 		cfg = DefaultOpenCodeConfig()
 	}
 	return &OpenCodeClient{
-		baseURL:  strings.TrimSuffix(cfg.BaseURL, "/"),
-		client:   &http.Client{Timeout: cfg.Timeout},
-		sessions: make(map[string]*OpenCodeSession),
+		baseURL:   strings.TrimSuffix(cfg.BaseURL, "/"),
+		client:    &http.Client{Timeout: cfg.Timeout},
+		sessions:  make(map[string]*OpenCodeSession),
+		workspace: cfg.Workspace,
 	}
+}
+
+// StartServer starts OpenCode server in workspace directory
+func (c *OpenCodeClient) StartServer(ctx context.Context) error {
+	// Check if already running
+	healthy, _, err := c.Health(ctx)
+	if err == nil && healthy {
+		logger.Debug("OpenCode server already running")
+		return nil
+	}
+
+	// Extract port from baseURL
+	port := "4096"
+	if parts := strings.Split(c.baseURL, ":"); len(parts) == 3 {
+		port = parts[2]
+	}
+
+	// Start opencode serve in workspace directory
+	cmd := exec.CommandContext(ctx, "opencode", "serve", "--port", port)
+	cmd.Dir = c.workspace
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start opencode server: %w", err)
+	}
+
+	logger.Info("OpenCode server starting", "port", port, "workspace", c.workspace)
+
+	// Wait for server to be ready
+	for i := 0; i < 30; i++ {
+		time.Sleep(500 * time.Millisecond)
+		healthy, _, _ = c.Health(ctx)
+		if healthy {
+			logger.Info("OpenCode server ready")
+			return nil
+		}
+	}
+
+	return fmt.Errorf("OpenCode server failed to start within 15 seconds")
 }
 
 // Health checks server health
@@ -798,13 +847,19 @@ func (t *OpenCodeTool) Execute(ctx context.Context, params json.RawMessage) (str
 		p.Agent = "build"
 	}
 
-	// Check server health first
+	// Check server health, try to start if not available
 	healthy, version, err := t.client.Health(ctx)
-	if err != nil {
-		return "", fmt.Errorf("OpenCode server not available: %w", err)
-	}
-	if !healthy {
-		return "", fmt.Errorf("OpenCode server unhealthy")
+	if err != nil || !healthy {
+		// Try to start OpenCode server
+		logger.Info("OpenCode server not available, attempting to start...")
+		if startErr := t.client.StartServer(ctx); startErr != nil {
+			return "", fmt.Errorf("OpenCode server not available and failed to start: %w", startErr)
+		}
+		// Re-check health after starting
+		healthy, version, err = t.client.Health(ctx)
+		if err != nil || !healthy {
+			return "", fmt.Errorf("OpenCode server unhealthy after start attempt")
+		}
 	}
 
 	// Get or create session
@@ -865,6 +920,17 @@ func (t *OpenCodeTool) Execute(ctx context.Context, params json.RawMessage) (str
 
 	switch p.Action {
 	case "prompt":
+		// If workspace is configured and different from OpenCode's default, change directory first
+		if t.config.Workspace != "" {
+			// Send a shell command to change directory
+			_, shellErr := t.client.ExecuteShell(ctx, sessionID, fmt.Sprintf("cd %s && pwd", t.config.Workspace))
+			if shellErr != nil {
+				logger.Warn("Failed to change OpenCode directory", "error", shellErr, "workspace", t.config.Workspace)
+			} else {
+				logger.Debug("Changed OpenCode working directory", "workspace", t.config.Workspace)
+			}
+		}
+
 		opts := SendMessageOptions{
 			Agent: p.Agent,
 			Model: p.Model,
