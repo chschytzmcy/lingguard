@@ -412,14 +412,35 @@ func FormatEvent(event SSEEvent) string {
 
 			switch status {
 			case "running":
+				var details string
 				if input, ok := state["input"].(map[string]interface{}); ok {
+					// Try to get description
 					if desc, ok := input["description"].(string); ok && desc != "" {
-						return fmt.Sprintf("  ⚙️ %s: %s", toolName, desc)
+						details = desc
+					} else {
+						// Extract key parameters based on tool type
+						details = extractToolDetails(toolName, input)
 					}
+				}
+				if details != "" {
+					return fmt.Sprintf("  ⚙️ %s: %s", toolName, details)
 				}
 				return fmt.Sprintf("  ⚙️ 执行: %s", toolName)
 			case "completed":
+				// Try to get result summary
+				var resultSummary string
+				if output, ok := state["output"].(map[string]interface{}); ok {
+					resultSummary = extractResultSummary(toolName, output)
+				}
+				if resultSummary != "" {
+					return fmt.Sprintf("  ✓ 完成: %s (%s)", toolName, resultSummary)
+				}
 				return fmt.Sprintf("  ✓ 完成: %s", toolName)
+			case "error":
+				if errMsg, ok := state["error"].(string); ok && errMsg != "" {
+					return fmt.Sprintf("  ✗ 错误: %s - %s", toolName, truncateString(errMsg, 100))
+				}
+				return fmt.Sprintf("  ✗ 错误: %s", toolName)
 			}
 
 		case "step-start":
@@ -451,6 +472,104 @@ func FormatEvent(event SSEEvent) string {
 	}
 
 	return ""
+}
+
+// extractToolDetails extracts relevant details from tool input
+func extractToolDetails(toolName string, input map[string]interface{}) string {
+	switch toolName {
+	case "bash":
+		if cmd, ok := input["command"].(string); ok {
+			return truncateString(cmd, 80)
+		}
+		if cmds, ok := input["command"].([]interface{}); ok && len(cmds) > 0 {
+			if first, ok := cmds[0].(string); ok {
+				return truncateString(first, 80)
+			}
+		}
+	case "read":
+		if path, ok := input["file_path"].(string); ok {
+			return path
+		}
+		if path, ok := input["path"].(string); ok {
+			return path
+		}
+	case "write":
+		if path, ok := input["file_path"].(string); ok {
+			return path
+		}
+		if path, ok := input["path"].(string); ok {
+			return path
+		}
+	case "edit":
+		if path, ok := input["file_path"].(string); ok {
+			return path
+		}
+		if path, ok := input["path"].(string); ok {
+			return path
+		}
+	case "glob":
+		if pattern, ok := input["pattern"].(string); ok {
+			return pattern
+		}
+	case "grep":
+		if pattern, ok := input["pattern"].(string); ok {
+			return pattern
+		}
+	case "web_search", "webSearch":
+		if query, ok := input["query"].(string); ok {
+			return query
+		}
+	default:
+		// Generic: try common field names
+		for _, key := range []string{"file_path", "path", "command", "query", "pattern", "message"} {
+			if val, ok := input[key].(string); ok && val != "" {
+				return truncateString(val, 80)
+			}
+		}
+	}
+	return ""
+}
+
+// extractResultSummary extracts a summary from tool output
+func extractResultSummary(toolName string, output map[string]interface{}) string {
+	switch toolName {
+	case "bash":
+		if stdout, ok := output["stdout"].(string); ok && stdout != "" {
+			lines := strings.Count(stdout, "\n") + 1
+			return fmt.Sprintf("%d行输出", lines)
+		}
+	case "read":
+		if content, ok := output["content"].(string); ok {
+			lines := strings.Count(content, "\n") + 1
+			return fmt.Sprintf("%d行", lines)
+		}
+	case "glob":
+		if files, ok := output["files"].([]interface{}); ok {
+			return fmt.Sprintf("%d个文件", len(files))
+		}
+	case "grep":
+		if matches, ok := output["matches"].([]interface{}); ok {
+			return fmt.Sprintf("%d个匹配", len(matches))
+		}
+	case "write", "edit":
+		return "已保存"
+	}
+
+	// Check for generic result indicator
+	if result, ok := output["result"].(string); ok && result != "" {
+		return truncateString(result, 50)
+	}
+
+	return ""
+}
+
+// truncateString truncates a string to maxLen
+func truncateString(s string, maxLen int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // doRequest performs HTTP request
