@@ -74,17 +74,34 @@ func NewOpenCodeClient(cfg *OpenCodeConfig) *OpenCodeClient {
 
 // StartServer starts OpenCode server in workspace directory
 func (c *OpenCodeClient) StartServer(ctx context.Context) error {
-	// Check if already running
-	healthy, _, err := c.Health(ctx)
-	if err == nil && healthy {
-		logger.Debug("OpenCode server already running")
-		return nil
-	}
-
 	// Extract port from baseURL
 	port := "4096"
 	if parts := strings.Split(c.baseURL, ":"); len(parts) == 3 {
 		port = parts[2]
+	}
+
+	// Check if already running with correct workspace
+	healthy, _, err := c.Health(ctx)
+	if err == nil && healthy {
+		// Check if workspace matches by creating a test session
+		resp, sessErr := c.doRequest(ctx, "POST", "/session", map[string]string{"title": "workspace-check"})
+		if sessErr == nil {
+			var session struct {
+				Directory string `json:"directory"`
+			}
+			if json.Unmarshal(resp, &session) == nil {
+				if session.Directory == c.workspace {
+					logger.Debug("OpenCode server already running with correct workspace")
+					return nil
+				}
+				// Workspace mismatch, need to restart
+				logger.Warn("OpenCode workspace mismatch, restarting server",
+					"expected", c.workspace, "current", session.Directory)
+				// Kill existing server
+				exec.Command("pkill", "-f", "opencode serve").Run()
+				time.Sleep(2 * time.Second)
+			}
+		}
 	}
 
 	// Start opencode serve in workspace directory

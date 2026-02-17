@@ -162,9 +162,9 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 		if b.cfg.Tools.OpenCode.Timeout > 0 {
 			openCodeCfg.Timeout = time.Duration(b.cfg.Tools.OpenCode.Timeout) * time.Second
 		}
-		// Set workspace from tools config
-		if b.cfg.Tools.Workspace != "" {
-			openCodeCfg.Workspace = b.cfg.Tools.Workspace
+		// Set workspace from agents config (统一使用 agents.workspace)
+		if b.cfg.Agents.Workspace != "" {
+			openCodeCfg.Workspace = b.cfg.Agents.Workspace
 		}
 		ag.RegisterTool(tools.NewOpenCodeTool(openCodeCfg))
 		logger.Info("OpenCode tool enabled", "baseURL", openCodeCfg.BaseURL, "workspace", openCodeCfg.Workspace)

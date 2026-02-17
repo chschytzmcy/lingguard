@@ -51,7 +51,6 @@
   },
   "tools": {
     "restrictToWorkspace": false,
-    "workspace": "/home/etsme/cy/openclaw/code/lingguard",
     "tavilyApiKey": "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",
     "mcpServers": {
       "filesystem": {

@@ -108,7 +108,6 @@
   "tools": {
     "_comment": "==================== 工具配置 ====================",
     "restrictToWorkspace": true,
-    "workspace": "~/.lingguard/workspace",
     "tavilyApiKey": "",
     "webMaxChars": 50000,
     "mcpServers": {
