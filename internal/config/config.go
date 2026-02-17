@@ -117,9 +117,13 @@ type StorageConfig struct {
 
 // LoggingConfig 日志配置
 type LoggingConfig struct {
-	Level  string `json:"level"`
-	Format string `json:"format"`
-	Output string `json:"output,omitempty"`
+	Level      string `json:"level"`                // 日志级别: debug, info, warn, error
+	Format     string `json:"format"`               // 输出格式: text, json
+	Output     string `json:"output,omitempty"`     // 日志文件路径
+	MaxSize    int    `json:"maxSize,omitempty"`    // 单个文件最大大小(MB)，默认 10
+	MaxAge     int    `json:"maxAge,omitempty"`     // 保留旧日志文件的最大天数，默认 7
+	MaxBackups int    `json:"maxBackups,omitempty"` // 保留的旧日志文件最大数量，默认 5
+	Compress   bool   `json:"compress,omitempty"`   // 是否压缩旧日志文件
 }
 
 // CronConfig 定时任务配置

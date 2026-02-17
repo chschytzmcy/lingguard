@@ -51,6 +51,7 @@ Actions:
 Schedule formats:
 - every:<duration>  - Repeat every duration (e.g., "every:1h", "every:30m")
 - at:<datetime>     - Run once at specific time (e.g., "at:2024-12-25 09:00")
+- at:<relative>     - Run once after relative time (e.g., "at:in 5m", "at:+1h")
 - cron:<expr>       - Cron expression (e.g., "cron:0 9 * * *")`
 }
 

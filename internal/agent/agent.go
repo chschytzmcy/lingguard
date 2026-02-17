@@ -209,6 +209,15 @@ func (a *Agent) buildContext(sessionID string) ([]llm.Message, error) {
 	// 构建系统提示
 	systemPrompt := a.config.SystemPrompt
 
+	// 添加当前时间信息（让 LLM 能准确计算相对时间）
+	currentTime := time.Now().Format("2006-01-02 15:04:05 Monday")
+	timeInfo := fmt.Sprintf("当前时间: %s", currentTime)
+	if systemPrompt != "" {
+		systemPrompt = systemPrompt + "\n\n" + timeInfo
+	} else {
+		systemPrompt = timeInfo
+	}
+
 	// 添加工作目录信息
 	if a.config.Workspace != "" {
 		workspaceInfo := fmt.Sprintf("工作目录: %s\n\n重要规则:\n- 所有文件操作都应该相对于工作目录进行\n- git clone 时先 cd %s\n- 下载的代码应该放在工作目录下", a.config.Workspace, a.config.Workspace)

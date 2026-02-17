@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestExpandHome(t *testing.T) {
@@ -38,6 +39,11 @@ func TestParseTime(t *testing.T) {
 		{"2024-12-25 09:00", false},
 		{"2024-12-25", false},
 		{"2024-12-25T09:00:00Z", false},
+		{"in 5m", false},
+		{"in 1h30m", false},
+		{"+5m", false},
+		{"+1h", false},
+		{"  in 5m  ", false}, // with spaces
 		{"invalid", true},
 		{"", true},
 	}
@@ -70,6 +76,43 @@ func TestParseTimeFormats(t *testing.T) {
 	}
 	if t2.Year() != 2024 || t2.Month() != 6 || t2.Day() != 15 {
 		t.Errorf("Unexpected date: %v", t2)
+	}
+}
+
+func TestParseTimeRelative(t *testing.T) {
+	now := time.Now()
+
+	// Test "in 5m"
+	t1, err := ParseTime("in 5m")
+	if err != nil {
+		t.Fatalf("ParseTime(in 5m) failed: %v", err)
+	}
+	expected1 := now.Add(5 * time.Minute)
+	diff1 := t1.Sub(expected1)
+	if diff1 < -time.Second || diff1 > time.Second {
+		t.Errorf("ParseTime(in 5m) = %v, expected around %v (diff: %v)", t1, expected1, diff1)
+	}
+
+	// Test "+1h"
+	t2, err := ParseTime("+1h")
+	if err != nil {
+		t.Fatalf("ParseTime(+1h) failed: %v", err)
+	}
+	expected2 := now.Add(1 * time.Hour)
+	diff2 := t2.Sub(expected2)
+	if diff2 < -time.Second || diff2 > time.Second {
+		t.Errorf("ParseTime(+1h) = %v, expected around %v (diff: %v)", t2, expected2, diff2)
+	}
+
+	// Test "in 1h30m"
+	t3, err := ParseTime("in 1h30m")
+	if err != nil {
+		t.Fatalf("ParseTime(in 1h30m) failed: %v", err)
+	}
+	expected3 := now.Add(90 * time.Minute)
+	diff3 := t3.Sub(expected3)
+	if diff3 < -time.Second || diff3 > time.Second {
+		t.Errorf("ParseTime(in 1h30m) = %v, expected around %v (diff: %v)", t3, expected3, diff3)
 	}
 }
 

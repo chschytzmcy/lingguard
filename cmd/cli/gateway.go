@@ -50,7 +50,15 @@ func runGateway() error {
 	}
 
 	// 初始化日志
-	logger.Init(cfg.Logging.Level, cfg.Logging.Format, cfg.Logging.Output)
+	logger.InitWithConfig(logger.Config{
+		Level:      cfg.Logging.Level,
+		Format:     cfg.Logging.Format,
+		Output:     cfg.Logging.Output,
+		MaxSize:    cfg.Logging.MaxSize,
+		MaxAge:     cfg.Logging.MaxAge,
+		MaxBackups: cfg.Logging.MaxBackups,
+		Compress:   cfg.Logging.Compress,
+	})
 
 	// 创建 Agent（使用 AgentBuilder）
 	builder := NewAgentBuilder(cfg)

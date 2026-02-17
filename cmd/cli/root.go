@@ -28,7 +28,15 @@ func Execute(configPath string) error {
 
 	// 尝试加载配置并初始化日志
 	if cfg, err := config.Load(cfgPath); err == nil {
-		logger.Init(cfg.Logging.Level, cfg.Logging.Format, cfg.Logging.Output)
+		logger.InitWithConfig(logger.Config{
+			Level:      cfg.Logging.Level,
+			Format:     cfg.Logging.Format,
+			Output:     cfg.Logging.Output,
+			MaxSize:    cfg.Logging.MaxSize,
+			MaxAge:     cfg.Logging.MaxAge,
+			MaxBackups: cfg.Logging.MaxBackups,
+			Compress:   cfg.Logging.Compress,
+		})
 	}
 
 	return rootCmd.Execute()

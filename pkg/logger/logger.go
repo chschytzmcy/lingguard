@@ -2,10 +2,13 @@
 package logger
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -27,44 +30,99 @@ var levelNames = map[Level]string{
 	LevelError: "ERROR",
 }
 
+// Config 日志配置
+type Config struct {
+	Level      string // 日志级别
+	Format     string // 输出格式: text, json
+	Output     string // 日志文件路径
+	MaxSize    int    // 单个文件最大大小(MB)，默认 10
+	MaxAge     int    // 保留旧日志文件的最大天数，默认 7
+	MaxBackups int    // 保留的旧日志文件最大数量，默认 5
+	Compress   bool   // 是否压缩旧日志文件
+}
+
 // Logger 日志器
 type Logger struct {
-	mu       sync.Mutex
-	level    Level
-	format   string
-	file     *os.File
-	filePath string
+	mu          sync.Mutex
+	level       Level
+	format      string
+	file        *os.File
+	filePath    string
+	currentSize int64
+	config      Config
 }
 
 var defaultLogger *Logger
 
 // Init 初始化日志器
 func Init(level, format, output string) error {
+	return InitWithConfig(Config{
+		Level:  level,
+		Format: format,
+		Output: output,
+	})
+}
+
+// InitWithConfig 使用完整配置初始化日志器
+func InitWithConfig(cfg Config) error {
 	l := &Logger{
-		level:  parseLevel(level),
-		format: format,
+		level:  parseLevel(cfg.Level),
+		format: cfg.Format,
+		config: applyDefaults(cfg),
 	}
 
-	if output != "" {
+	if l.config.Output != "" {
 		// 展开路径
-		output = expandPath(output)
+		l.config.Output = expandPath(l.config.Output)
 
 		// 创建目录
-		dir := filepath.Dir(output)
+		dir := filepath.Dir(l.config.Output)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create log directory: %w", err)
 		}
 
 		// 打开日志文件
-		f, err := os.OpenFile(output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to open log file: %w", err)
+		if err := l.openFile(); err != nil {
+			return err
 		}
-		l.file = f
-		l.filePath = output
 	}
 
 	defaultLogger = l
+	return nil
+}
+
+// applyDefaults 应用默认配置
+func applyDefaults(cfg Config) Config {
+	if cfg.MaxSize <= 0 {
+		cfg.MaxSize = 10 // 10MB
+	}
+	if cfg.MaxAge <= 0 {
+		cfg.MaxAge = 7 // 7 days
+	}
+	if cfg.MaxBackups <= 0 {
+		cfg.MaxBackups = 5
+	}
+	return cfg
+}
+
+// openFile 打开日志文件
+func (l *Logger) openFile() error {
+	f, err := os.OpenFile(l.config.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+
+	l.file = f
+	l.filePath = l.config.Output
+
+	// 获取当前文件大小
+	info, err := f.Stat()
+	if err != nil {
+		l.currentSize = 0
+	} else {
+		l.currentSize = info.Size()
+	}
+
 	return nil
 }
 
@@ -75,6 +133,7 @@ func GetLogger() *Logger {
 		defaultLogger = &Logger{
 			level:  LevelInfo,
 			format: "text",
+			config: Config{MaxSize: 10, MaxAge: 7, MaxBackups: 5},
 		}
 	}
 	return defaultLogger
@@ -183,9 +242,144 @@ func (l *Logger) log(level Level, msg string, fields ...interface{}) {
 		output = l.formatText(now, levelName, msg, fields)
 	}
 
-	// 只输出到文件，不输出到标准输出
+	// 输出到文件
 	if l.file != nil {
-		l.file.WriteString(output + "\n")
+		// 检查是否需要轮转
+		if l.shouldRotate(len(output)) {
+			l.rotate()
+		}
+
+		n, _ := l.file.WriteString(output + "\n")
+		l.currentSize += int64(n)
+	}
+}
+
+// shouldRotate 检查是否需要轮转
+func (l *Logger) shouldRotate(newLen int) bool {
+	maxBytes := int64(l.config.MaxSize) * 1024 * 1024
+	return l.currentSize+int64(newLen) > maxBytes
+}
+
+// rotate 执行日志轮转
+func (l *Logger) rotate() {
+	// 关闭当前文件
+	if l.file != nil {
+		l.file.Close()
+	}
+
+	// 重命名当前文件
+	backupPath := l.backupPath()
+	if err := os.Rename(l.config.Output, backupPath); err != nil {
+		// 如果重命名失败（可能文件不存在），直接打开新文件
+	}
+
+	// 压缩旧文件
+	if l.config.Compress {
+		go l.compressFile(backupPath)
+	}
+
+	// 清理旧日志
+	go l.cleanOldLogs()
+
+	// 打开新文件
+	l.openFile()
+}
+
+// backupPath 生成备份文件路径
+func (l *Logger) backupPath() string {
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	ext := filepath.Ext(l.config.Output)
+	base := strings.TrimSuffix(filepath.Base(l.config.Output), ext)
+	dir := filepath.Dir(l.config.Output)
+
+	var backupName string
+	if ext == "" {
+		backupName = fmt.Sprintf("%s.%s", base, timestamp)
+	} else {
+		backupName = fmt.Sprintf("%s.%s%s", base, timestamp, ext)
+	}
+
+	return filepath.Join(dir, backupName)
+}
+
+// compressFile 压缩日志文件
+func (l *Logger) compressFile(src string) {
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return
+	}
+
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer srcFile.Close()
+
+	dstPath := src + ".gz"
+	dstFile, err := os.Create(dstPath)
+	if err != nil {
+		return
+	}
+	defer dstFile.Close()
+
+	gzWriter := gzip.NewWriter(dstFile)
+	defer gzWriter.Close()
+
+	io.Copy(gzWriter, srcFile)
+	gzWriter.Close()
+	srcFile.Close()
+
+	// 删除原文件
+	os.Remove(src)
+}
+
+// cleanOldLogs 清理旧日志文件
+func (l *Logger) cleanOldLogs() {
+	dir := filepath.Dir(l.config.Output)
+	base := filepath.Base(l.config.Output)
+	ext := filepath.Ext(l.config.Output)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	var backups []os.DirEntry
+	prefix := base
+	if ext != "" {
+		prefix = strings.TrimSuffix(base, ext) + "."
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		// 匹配备份文件 (包括压缩的)
+		if name != base && (strings.HasPrefix(name, prefix) || strings.HasPrefix(name, strings.TrimSuffix(base, ext)+".") && (strings.HasSuffix(name, ext) || strings.HasSuffix(name, ext+".gz"))) {
+			backups = append(backups, entry)
+		}
+	}
+
+	now := time.Now()
+	cutoff := now.AddDate(0, 0, -l.config.MaxAge)
+
+	for _, entry := range backups {
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		// 按数量限制清理
+		if len(backups) > l.config.MaxBackups {
+			os.Remove(filepath.Join(dir, entry.Name()))
+			backups = backups[1:] // 简单处理
+			continue
+		}
+
+		// 按时间清理
+		if info.ModTime().Before(cutoff) {
+			os.Remove(filepath.Join(dir, entry.Name()))
+		}
 	}
 }
 
@@ -214,9 +408,9 @@ func (l *Logger) formatJSON(time, level, msg string, fields []interface{}) strin
 }
 
 // Close 关闭日志器
-func (l *Logger) Close() error {
-	if l.file != nil {
-		return l.file.Close()
+func Close() error {
+	if defaultLogger != nil && defaultLogger.file != nil {
+		return defaultLogger.file.Close()
 	}
 	return nil
 }
