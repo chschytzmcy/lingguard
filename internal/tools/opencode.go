@@ -48,6 +48,7 @@ type OpenCodeConfig struct {
 	BaseURL   string
 	Timeout   time.Duration
 	Workspace string // Working directory for OpenCode operations
+	Enabled   bool   // Whether OpenCode server is enabled
 }
 
 // DefaultOpenCodeConfig returns default configuration
@@ -56,6 +57,7 @@ func DefaultOpenCodeConfig() *OpenCodeConfig {
 		BaseURL:   "http://127.0.0.1:4096",
 		Timeout:   300 * time.Second,
 		Workspace: "",
+		Enabled:   false,
 	}
 }
 
@@ -864,18 +866,27 @@ func (t *OpenCodeTool) Execute(ctx context.Context, params json.RawMessage) (str
 		p.Agent = "build"
 	}
 
+	// If OpenCode is disabled, return native tools prompt
+	if !t.config.Enabled {
+		logger.Debug("OpenCode is disabled, using native tools")
+		return fmt.Sprintf("⚠️ OpenCode 服务已禁用，请使用原生工具完成任务：\n\n**任务**: %s\n\n请使用以下原生工具：\n- file 工具：读取、编辑、写入文件\n- shell 工具：执行命令、编译、测试\n- workspace 工具：查看工作目录\n\n工作目录: %s", p.Task, t.config.Workspace), nil
+	}
+
 	// Check server health, try to start if not available
 	healthy, version, err := t.client.Health(ctx)
 	if err != nil || !healthy {
 		// Try to start OpenCode server
 		logger.Info("OpenCode server not available, attempting to start...")
 		if startErr := t.client.StartServer(ctx); startErr != nil {
-			return "", fmt.Errorf("OpenCode server not available and failed to start: %w", startErr)
+			logger.Warn("OpenCode server failed to start, falling back to native tools", "error", startErr)
+			// 返回提示让 LLM 使用原生工具
+			return fmt.Sprintf("⚠️ OpenCode 服务不可用，请使用原生工具完成任务：\n\n**任务**: %s\n\n请使用以下原生工具：\n- file 工具：读取、编辑、写入文件\n- shell 工具：执行命令、编译、测试\n- workspace 工具：查看工作目录\n\n工作目录: %s", p.Task, t.config.Workspace), nil
 		}
 		// Re-check health after starting
 		healthy, version, err = t.client.Health(ctx)
 		if err != nil || !healthy {
-			return "", fmt.Errorf("OpenCode server unhealthy after start attempt")
+			logger.Warn("OpenCode server unhealthy after start, falling back to native tools")
+			return fmt.Sprintf("⚠️ OpenCode 服务不可用，请使用原生工具完成任务：\n\n**任务**: %s\n\n请使用以下原生工具：\n- file 工具：读取、编辑、写入文件\n- shell 工具：执行命令、编译、测试\n- workspace 工具：查看工作目录\n\n工作目录: %s", p.Task, t.config.Workspace), nil
 		}
 	}
 

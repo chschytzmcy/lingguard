@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/lingguard/internal/agent"
@@ -153,26 +154,41 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 	// 注册记忆工具
 	ag.RegisterMemoryTool()
 
-	// 注册 OpenCode 工具
-	if b.cfg.Tools.OpenCode != nil && b.cfg.Tools.OpenCode.Enabled {
+	// 注册 OpenCode 工具（即使 disabled 也注册，会返回原生工具提示）
+	{
 		openCodeCfg := tools.DefaultOpenCodeConfig()
-		if b.cfg.Tools.OpenCode.BaseURL != "" {
-			openCodeCfg.BaseURL = b.cfg.Tools.OpenCode.BaseURL
+		enabled := b.cfg.Tools.OpenCode != nil && b.cfg.Tools.OpenCode.Enabled
+
+		if b.cfg.Tools.OpenCode != nil {
+			if b.cfg.Tools.OpenCode.BaseURL != "" {
+				openCodeCfg.BaseURL = b.cfg.Tools.OpenCode.BaseURL
+			}
+			if b.cfg.Tools.OpenCode.Timeout > 0 {
+				openCodeCfg.Timeout = time.Duration(b.cfg.Tools.OpenCode.Timeout) * time.Second
+			}
 		}
-		if b.cfg.Tools.OpenCode.Timeout > 0 {
-			openCodeCfg.Timeout = time.Duration(b.cfg.Tools.OpenCode.Timeout) * time.Second
+
+		// Set workspace from agents config, fallback to default
+		workspace := b.cfg.Agents.Workspace
+		if workspace == "" {
+			// 默认使用 ~/.lingguard/workspace
+			home, _ := os.UserHomeDir()
+			workspace = filepath.Join(home, ".lingguard", "workspace")
+			logger.Debug("Using default workspace for OpenCode", "path", workspace)
 		}
-		// Set workspace from agents config (统一使用 agents.workspace)
-		if b.cfg.Agents.Workspace != "" {
-			openCodeCfg.Workspace = b.cfg.Agents.Workspace
+		// 展开 ~ 路径
+		if strings.HasPrefix(workspace, "~") {
+			home, _ := os.UserHomeDir()
+			workspace = filepath.Join(home, workspace[1:])
 		}
+		openCodeCfg.Workspace = workspace
+		openCodeCfg.Enabled = enabled
+
 		ag.RegisterTool(tools.NewOpenCodeTool(openCodeCfg))
-		logger.Info("OpenCode tool enabled", "baseURL", openCodeCfg.BaseURL, "workspace", openCodeCfg.Workspace)
-	} else {
-		if b.cfg.Tools.OpenCode == nil {
-			logger.Debug("OpenCode config is nil, tool not registered")
+		if enabled {
+			logger.Info("OpenCode tool enabled", "baseURL", openCodeCfg.BaseURL, "workspace", openCodeCfg.Workspace)
 		} else {
-			logger.Debug("OpenCode not enabled, tool not registered")
+			logger.Info("OpenCode tool registered in fallback mode (will use native tools)")
 		}
 	}
 
