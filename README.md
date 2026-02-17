@@ -73,7 +73,7 @@ EOF
 # 单次消息
 ./lingguard agent -m "你好"
 
-# 启动飞书网关
+# 启动网关
 ./lingguard gateway
 ```
 
@@ -95,7 +95,7 @@ EOF
 ### Gateway 网关
 
 ```bash
-# 启动网关（连接飞书）
+# 启动网关
 ./lingguard gateway
 ```
 
