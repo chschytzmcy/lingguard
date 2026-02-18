@@ -196,8 +196,12 @@ func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMess
 	if hasMedia && a.multimodalProvider.SupportsVision() {
 		// 使用多模态消息格式
 		s.AddMessageWithMedia("user", userMessage, mediaPaths)
+		logger.Info("Processing multimodal message", "session", sessionID, "mediaCount", len(mediaPaths), "provider", a.multimodalProvider.Name())
 	} else {
 		s.AddMessage("user", userMessage)
+		if hasMedia {
+			logger.Warn("Multimodal provider does not support vision, falling back to text mode", "session", sessionID)
+		}
 		hasMedia = false // 如果 provider 不支持视觉，退化为文本模式
 	}
 
@@ -211,6 +215,7 @@ func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMess
 	provider := a.provider
 	if hasMedia {
 		provider = a.multimodalProvider
+		logger.Info("Using multimodal provider", "provider", provider.Name(), "model", provider.Model())
 	}
 
 	// 4. 执行代理循环
@@ -231,8 +236,12 @@ func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, us
 	hasMedia := len(mediaPaths) > 0
 	if hasMedia && a.multimodalProvider.SupportsVision() {
 		s.AddMessageWithMedia("user", userMessage, mediaPaths)
+		logger.Info("Processing multimodal message (stream)", "session", sessionID, "mediaCount", len(mediaPaths), "provider", a.multimodalProvider.Name())
 	} else {
 		s.AddMessage("user", userMessage)
+		if hasMedia {
+			logger.Warn("Multimodal provider does not support vision, falling back to text mode", "session", sessionID)
+		}
 		hasMedia = false // 如果 provider 不支持视觉，退化为文本模式
 	}
 
@@ -247,6 +256,7 @@ func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, us
 	provider := a.provider
 	if hasMedia {
 		provider = a.multimodalProvider
+		logger.Info("Using multimodal provider (stream)", "provider", provider.Name(), "model", provider.Model())
 	}
 
 	// 4. 执行流式代理循环
@@ -349,25 +359,42 @@ func (a *Agent) buildContextWithMedia(sessionID string, hasMedia bool) ([]llm.Me
 func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.ContentPart, error) {
 	parts := make([]llm.ContentPart, 0)
 
-	// 添加图片
+	// 添加图片/视频
 	for _, path := range mediaPaths {
-		// 读取图片并转换为 base64
+		// 读取媒体文件并转换为 base64
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("read image %s: %w", path, err)
+			return nil, fmt.Errorf("read media %s: %w", path, err)
 		}
 
-		// 检测 MIME 类型
-		mimeType := detectMimeType(data)
-		base64Data := encodeBase64(data)
+		ext := strings.ToLower(filepath.Ext(path))
 
-		parts = append(parts, llm.ContentPart{
-			Type: "image_url",
-			ImageURL: &llm.ImageURL{
-				URL:    fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data),
-				Detail: "auto",
-			},
-		})
+		// 如果是视频文件，使用 video_url 格式（Qwen-Omni 模型）
+		if isVideoFile(ext) {
+			mimeType := detectVideoMimeType(ext)
+			base64Data := encodeBase64(data)
+			logger.Info("Processing video file for multimodal", "path", path, "mimeType", mimeType, "size", len(data))
+
+			// 使用 video_url 格式（支持 Qwen-Omni 模型）
+			parts = append(parts, llm.ContentPart{
+				Type: "video_url",
+				VideoURL: &llm.VideoURL{
+					URL: fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data),
+				},
+			})
+		} else {
+			// 图片使用 image_url 格式
+			mimeType := detectMimeType(data)
+			base64Data := encodeBase64(data)
+
+			parts = append(parts, llm.ContentPart{
+				Type: "image_url",
+				ImageURL: &llm.ImageURL{
+					URL:    fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data),
+					Detail: "auto",
+				},
+			})
+		}
 	}
 
 	// 添加文本（放在最后）
@@ -379,6 +406,41 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 	}
 
 	return parts, nil
+}
+
+// isVideoFile 检查文件扩展名是否为视频格式
+func isVideoFile(ext string) bool {
+	videoExts := map[string]bool{
+		".mp4":  true,
+		".mov":  true,
+		".avi":  true,
+		".mkv":  true,
+		".webm": true,
+		".flv":  true,
+		".wmv":  true,
+		".m4v":  true,
+		".3gp":  true,
+	}
+	return videoExts[ext]
+}
+
+// detectVideoMimeType 根据扩展名检测视频 MIME 类型
+func detectVideoMimeType(ext string) string {
+	videoMimes := map[string]string{
+		".mp4":  "video/mp4",
+		".mov":  "video/quicktime",
+		".avi":  "video/x-msvideo",
+		".mkv":  "video/x-matroska",
+		".webm": "video/webm",
+		".flv":  "video/x-flv",
+		".wmv":  "video/x-ms-wmv",
+		".m4v":  "video/mp4",
+		".3gp":  "video/3gpp",
+	}
+	if mime, ok := videoMimes[ext]; ok {
+		return mime
+	}
+	return "video/mp4"
 }
 
 // detectMimeType 检测图片 MIME 类型

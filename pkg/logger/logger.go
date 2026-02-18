@@ -251,7 +251,12 @@ func (l *Logger) log(level Level, msg string, fields ...interface{}) {
 
 		n, _ := l.file.WriteString(output + "\n")
 		l.currentSize += int64(n)
+		// 立即刷新到磁盘，确保日志不丢失
+		l.file.Sync()
 	}
+
+	// 同时输出到 stdout（调试用）
+	// fmt.Println(output)
 }
 
 // shouldRotate 检查是否需要轮转

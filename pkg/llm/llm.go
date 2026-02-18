@@ -22,12 +22,19 @@ type ContentPart struct {
 	Type     string    `json:"type"`
 	Text     string    `json:"text,omitempty"`
 	ImageURL *ImageURL `json:"image_url,omitempty"`
+	VideoURL *VideoURL `json:"video_url,omitempty"` // 视频URL（Qwen-Omni）
+	Video    []string  `json:"video,omitempty"`     // 视频帧URL列表（Qwen-VL）
 }
 
 // ImageURL 图片 URL
 type ImageURL struct {
 	URL    string `json:"url"`
 	Detail string `json:"detail,omitempty"` // "low", "high", "auto"
+}
+
+// VideoURL 视频 URL（用于 Qwen-Omni 模型）
+type VideoURL struct {
+	URL string `json:"url"`
 }
 
 // MarshalJSON 自定义 JSON 序列化，支持多模态内容

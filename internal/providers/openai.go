@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -97,6 +98,15 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *llm.Request) (<-chan l
 	req.Stream = true
 	eventChan := make(chan llm.StreamEvent, 100)
 
+	// 记录请求开始
+	logger.LLMRequest(p.name, req.Model, map[string]interface{}{
+		"model":    req.Model,
+		"messages": len(req.Messages),
+		"stream":   true,
+	})
+
+	start := time.Now()
+
 	resp, err := p.client.R().
 		SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
@@ -107,14 +117,20 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *llm.Request) (<-chan l
 
 	if err != nil {
 		close(eventChan)
+		duration := time.Since(start)
+		logger.LLMResponse(p.name, req.Model, nil, duration, err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	// 检查 HTTP 状态码
 	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.RawBody())
 		resp.RawBody().Close()
 		close(eventChan)
-		return nil, fmt.Errorf("API error: status=%d", resp.StatusCode())
+		duration := time.Since(start)
+		errMsg := fmt.Sprintf("API error: status=%d body=%s", resp.StatusCode(), string(bodyBytes))
+		logger.LLMResponse(p.name, req.Model, nil, duration, fmt.Errorf(errMsg))
+		return nil, fmt.Errorf(errMsg)
 	}
 
 	go func() {
