@@ -39,27 +39,41 @@ type VideoURL struct {
 
 // MarshalJSON 自定义 JSON 序列化，支持多模态内容
 func (m Message) MarshalJSON() ([]byte, error) {
-	// 使用匿名结构体来控制序列化
-	type Alias Message
-
-	if len(m.ContentParts) > 0 {
-		// 多模态消息：content 是数组
-		return json.Marshal(struct {
-			Role       string        `json:"role"`
-			Content    []ContentPart `json:"content"`
-			ToolCalls  []ToolCall    `json:"tool_calls,omitempty"`
-			ToolCallID string        `json:"tool_call_id,omitempty"`
-			Name       string        `json:"name,omitempty"`
-		}{
-			Role:       m.Role,
-			Content:    m.ContentParts,
-			ToolCalls:  m.ToolCalls,
-			ToolCallID: m.ToolCallID,
-			Name:       m.Name,
-		})
+	// 只有当 ContentParts 有有效内容时才使用数组格式
+	hasValidContentParts := len(m.ContentParts) > 0
+	if hasValidContentParts {
+		// 验证 ContentParts 是否有效
+		validParts := make([]ContentPart, 0)
+		for _, part := range m.ContentParts {
+			if part.Type != "" && (part.Text != "" || part.ImageURL != nil || part.VideoURL != nil) {
+				validParts = append(validParts, part)
+			}
+		}
+		if len(validParts) > 0 {
+			// 多模态消息：content 是数组
+			return json.Marshal(struct {
+				Role       string        `json:"role"`
+				Content    []ContentPart `json:"content"`
+				ToolCalls  []ToolCall    `json:"tool_calls,omitempty"`
+				ToolCallID string        `json:"tool_call_id,omitempty"`
+				Name       string        `json:"name,omitempty"`
+			}{
+				Role:       m.Role,
+				Content:    validParts,
+				ToolCalls:  m.ToolCalls,
+				ToolCallID: m.ToolCallID,
+				Name:       m.Name,
+			})
+		}
 	}
 
-	// 普通消息：使用默认序列化
+	// 普通消息：content 是字符串
+	// 如果 Content 为空但有 ToolCalls，仍然发送空字符串
+	content := m.Content
+	if content == "" && len(m.ToolCalls) > 0 {
+		content = "" // 保持为空，但仍然序列化
+	}
+
 	return json.Marshal(struct {
 		Role       string     `json:"role"`
 		Content    string     `json:"content,omitempty"`
@@ -68,7 +82,7 @@ func (m Message) MarshalJSON() ([]byte, error) {
 		Name       string     `json:"name,omitempty"`
 	}{
 		Role:       m.Role,
-		Content:    m.Content,
+		Content:    content,
 		ToolCalls:  m.ToolCalls,
 		ToolCallID: m.ToolCallID,
 		Name:       m.Name,
@@ -99,6 +113,7 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	m.ToolCalls = temp.ToolCalls
 	m.ToolCallID = temp.ToolCallID
 	m.Name = temp.Name
+	m.ContentParts = nil // 确保清空，防止之前的数据残留
 
 	// 处理 content 字段
 	if len(temp.Content) > 0 {
@@ -121,19 +136,42 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 					m.Content = objContent.Reasoning
 				}
 			} else {
-				// 尝试解析为数组（多模态格式）
-				var arrContent []ContentPart
-				if err := json.Unmarshal(temp.Content, &arrContent); err == nil {
-					m.ContentParts = arrContent
-					// 提取文本内容
-					for _, part := range arrContent {
-						if part.Type == "text" && part.Text != "" {
-							m.Content = part.Text
-							break
+				// 尝试解析为通用对象（处理未知格式）
+				var genericObj map[string]interface{}
+				if err := json.Unmarshal(temp.Content, &genericObj); err == nil {
+					// 尝试提取 text 或 content 字段
+					if text, ok := genericObj["text"].(string); ok {
+						m.Content = text
+					} else if content, ok := genericObj["content"].(string); ok {
+						m.Content = content
+					} else {
+						// 将整个对象转为 JSON 字符串作为内容（最后手段）
+						m.Content = string(temp.Content)
+					}
+				} else {
+					// 尝试解析为数组（多模态格式）
+					var arrContent []ContentPart
+					if err := json.Unmarshal(temp.Content, &arrContent); err == nil && len(arrContent) > 0 {
+						// 验证数组内容有效性
+						validParts := make([]ContentPart, 0)
+						for _, part := range arrContent {
+							if part.Type != "" && (part.Text != "" || part.ImageURL != nil || part.VideoURL != nil) {
+								validParts = append(validParts, part)
+							}
+						}
+						if len(validParts) > 0 {
+							m.ContentParts = validParts
+							// 提取文本内容
+							for _, part := range validParts {
+								if part.Type == "text" && part.Text != "" {
+									m.Content = part.Text
+									break
+								}
+							}
 						}
 					}
+					// 如果都失败了，保持 Content 为空
 				}
-				// 如果都失败了，保持 Content 为空
 			}
 		}
 	}
@@ -191,6 +229,53 @@ type Response struct {
 	Usage Usage `json:"usage"`
 }
 
+// UnmarshalJSON 自定义 JSON 反序列化，处理嵌套 Message 的 content 为对象的情况
+func (r *Response) UnmarshalJSON(data []byte) error {
+	// 临时结构体，避免递归调用
+	type tempResponse struct {
+		ID      string `json:"id"`
+		Object  string `json:"object"`
+		Created int64  `json:"created"`
+		Model   string `json:"model"`
+		Choices []struct {
+			Index        int             `json:"index"`
+			Message      json.RawMessage `json:"message"`
+			FinishReason string          `json:"finish_reason"`
+		} `json:"choices"`
+		Usage Usage `json:"usage"`
+	}
+
+	var temp tempResponse
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	r.ID = temp.ID
+	r.Object = temp.Object
+	r.Created = temp.Created
+	r.Model = temp.Model
+	r.Usage = temp.Usage
+	r.Choices = make([]struct {
+		Index        int     `json:"index"`
+		Message      Message `json:"message"`
+		FinishReason string  `json:"finish_reason"`
+	}, len(temp.Choices))
+
+	for i, choice := range temp.Choices {
+		r.Choices[i].Index = choice.Index
+		r.Choices[i].FinishReason = choice.FinishReason
+
+		// 手动解析 Message，会调用 Message.UnmarshalJSON
+		var msg Message
+		if err := json.Unmarshal(choice.Message, &msg); err != nil {
+			return err
+		}
+		r.Choices[i].Message = msg
+	}
+
+	return nil
+}
+
 // Usage Token 使用量
 type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
@@ -216,6 +301,49 @@ type Delta struct {
 	Role      string          `json:"role,omitempty"`
 	Content   string          `json:"content,omitempty"`
 	ToolCalls []DeltaToolCall `json:"tool_calls,omitempty"`
+}
+
+// UnmarshalJSON 自定义 JSON 反序列化，处理 content 为对象的情况
+func (d *Delta) UnmarshalJSON(data []byte) error {
+	// 临时结构体
+	type tempDelta struct {
+		Role      string          `json:"role,omitempty"`
+		Content   json.RawMessage `json:"content,omitempty"`
+		ToolCalls []DeltaToolCall `json:"tool_calls,omitempty"`
+	}
+
+	var temp tempDelta
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	d.Role = temp.Role
+	d.ToolCalls = temp.ToolCalls
+
+	// 处理 content 字段
+	if len(temp.Content) > 0 {
+		// 尝试解析为字符串
+		var strContent string
+		if err := json.Unmarshal(temp.Content, &strContent); err == nil {
+			d.Content = strContent
+		} else {
+			// 尝试解析为对象（Qwen/DeepSeek reasoning 格式）
+			var objContent struct {
+				Text      string `json:"text"`
+				Reasoning string `json:"reasoning"`
+			}
+			if err := json.Unmarshal(temp.Content, &objContent); err == nil {
+				if objContent.Text != "" {
+					d.Content = objContent.Text
+				} else if objContent.Reasoning != "" {
+					d.Content = objContent.Reasoning
+				}
+			}
+			// 如果都失败了，Content 保持为空
+		}
+	}
+
+	return nil
 }
 
 // DeltaToolCall 流式增量中的工具调用（包含 index 字段）
