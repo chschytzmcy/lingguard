@@ -88,6 +88,15 @@ func (l *Loader) ListSkills() ([]*Skill, error) {
 		}
 	}
 
+	// 如果没有加载到任何技能，记录警告
+	if len(skills) == 0 {
+		logger.Warn("No skills loaded! Check skill directories configuration",
+			"builtinDirs", l.builtinDirs,
+			"workspace", l.workspace)
+	} else {
+		logger.Info("Skills loaded", "count", len(skills))
+	}
+
 	return skills, nil
 }
 
