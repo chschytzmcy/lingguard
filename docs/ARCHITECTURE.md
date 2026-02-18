@@ -30,43 +30,81 @@
 
 ## 2. 与 nanobot 对比
 
-### 2.1 语言与架构对比
+### 2.1 基本定位
 
 | 维度 | LingGuard (Go) | nanobot (Python) |
 |------|----------------|------------------|
 | **编程语言** | Go 1.23+ | Python 3 |
-| **代码量** | ~8,000 行 | ~3,500 行 |
-| **部署方式** | 单二进制文件 | pip/uv 安装 |
+| **代码量** | ~8,000 行 | ~3,700 行核心代码 |
+| **核心理念** | 极简、高性能、单二进制部署 | 超轻量级、易研究、易扩展 |
+| **部署方式** | 单二进制文件 | pip/uv/Docker |
 | **并发模型** | Goroutine | asyncio |
 | **内存占用** | ~20MB | ~100MB+ |
 | **启动速度** | 毫秒级 | 秒级 |
 | **类型安全** | 静态类型 | 动态类型 |
 
-### 2.2 功能对比
+### 2.2 渠道支持对比
+
+| 渠道 | LingGuard | nanobot | 说明 |
+|------|:---------:|:-------:|------|
+| 飞书 | ✅ WebSocket 长连接 | ✅ | 两者都支持，无需公网IP |
+| QQ | ✅ 私聊 | ✅ 私聊 | 两者都支持 WebSocket |
+| Telegram | ❌ | ✅ 推荐 | nanobot 官方推荐 |
+| Discord | ❌ | ✅ | Socket Mode |
+| WhatsApp | ❌ | ✅ | 扫码登录 |
+| Slack | ❌ | ✅ | Socket Mode |
+| Email | ❌ | ✅ | IMAP/SMTP |
+| 钉钉 | ❌ | ✅ | Stream Mode |
+| Mochat | ❌ | ✅ | 自动配置 |
+
+**nanobot 优势**: 渠道支持更丰富（9种 vs 2种）
+
+### 2.3 LLM 提供商对比
+
+| Provider | LingGuard | nanobot | 说明 |
+|----------|:---------:|:-------:|------|
+| OpenAI | ✅ | ✅ | GPT 系列 |
+| Anthropic | ✅ | ✅ | Claude 系列 |
+| OpenRouter | ✅ | ✅ 推荐 | 网关类型，访问所有模型 |
+| DeepSeek | ✅ | ✅ | 国产模型 |
+| Qwen/通义千问 | ✅ | ✅ | 阿里云 |
+| GLM/智谱 | ✅ | ✅ | 智谱 AI |
+| MiniMax | ✅ | ✅ | MiniMax |
+| Moonshot/Kimi | ✅ | ✅ | 月之暗面 |
+| Gemini | ✅ | ✅ | Google |
+| Groq | ✅ | ✅ + 语音转录 | 高速推理 |
+| vLLM | ✅ | ✅ | 本地部署 |
+| AiHubMix | ✅ | ✅ | API 网关 |
+| SiliconFlow | ❌ | ✅ | 硅基流动 |
+| OpenAI Codex (OAuth) | ❌ | ✅ | ChatGPT Plus/Pro |
+| GitHub Copilot (OAuth) | ❌ | ✅ | OAuth 登录 |
+| 自定义 OpenAI 兼容 | ✅ | ✅ | 任意兼容端点 |
+
+### 2.4 核心功能对比
 
 | 功能模块 | LingGuard | nanobot | 差异说明 |
 |----------|:---------:|:-------:|----------|
-| **渠道支持** ||||
-| 飞书 (WebSocket) | ✅ | ✅ | 两者都支持，无需公网IP |
-| QQ (WebSocket) | ✅ | ✅ | 两者都支持私聊消息 |
-| Telegram/Discord/WhatsApp | ❌ | ✅ | nanobot 支持 9+ 渠道 |
-| **LLM Provider** ||||
-| OpenAI/Anthropic/DeepSeek | ✅ | ✅ | 两者都支持 |
-| GLM/Qwen/MiniMax/Moonshot | ✅ | ✅ | 两者都支持 |
-| Provider 自动匹配 | ✅ | ✅ | 相同的 Provider Registry 机制 |
 | **核心功能** ||||
 | Agent Loop | ✅ | ✅ | 相同的循环迭代模式 |
 | 会话管理 | ✅ | ✅ | 内存 + 窗口管理 |
 | 记忆系统 | ✅ | ✅ | 相同的 MEMORY.md 方案 |
-| 工具系统 | ✅ | ✅ | Shell, File 等 |
+| 工具系统 | ✅ | ✅ | Shell, File, Web 等 |
 | 技能系统 | ✅ | ✅ | LingGuard 支持渐进式加载 |
 | **高级功能** ||||
 | 定时任务 (Cron) | ✅ | ✅ | 相同的调度机制 |
 | 子代理 (Subagent) | ✅ | ✅ | 相同的后台任务模式 |
 | 流式响应 | ✅ | ✅ | 两者都支持实时输出 |
-| Agent Social Network | ✅ | ✅ | 两者都支持 Moltbook 社交网络 |
-| 语音转写 | ❌ | ✅ | nanobot 支持 Groq Whisper |
-| Docker 支持 | ❌ | ✅ | nanobot 提供镜像 |
+| MCP (Stdio) | ✅ | ✅ | 子进程启动 |
+| MCP (HTTP) | ✅ | ✅ | HTTP/SSE 端点 |
+| Agent Social Network | ✅ Moltbook | ✅ Moltbook + ClawdChat | AI 社交网络 |
+| **独有功能** ||||
+| 渐进式技能加载 | ✅ 独有 | ❌ | 节省 Token |
+| 多模态支持 | ✅ 图片+视频 | 🚧 计划中 | 已实现 |
+| 独立多模态 Provider | ✅ 独有 | ❌ | 可配置独立模型 |
+| ClawHub 技能库 | ❌ | ✅ | 搜索安装技能 |
+| OAuth 登录 | ❌ | ✅ | Codex/Copilot |
+| 语音转写 | ❌ | ✅ | Groq Whisper |
+| Docker 支持 | ❌ | ✅ | 官方镜像 |
 
 ### 2.3 实现差异详解
 
@@ -755,7 +793,7 @@ type MCPManager struct {
 
 ## 8. 开发路线图
 
-### Phase 1-4: 已完成 ✅
+### Phase 1-6: 已完成 ✅
 
 | 功能 | 状态 |
 |------|------|
@@ -770,15 +808,18 @@ type MCPManager struct {
 | MCP Stdio 传输 | ✅ |
 | MCP HTTP 传输 | ✅ |
 | Moltbook 技能 | ✅ |
+| 多模态支持 | ✅ 图片+视频 |
+| 独立多模态 Provider | ✅ |
+| QQ 渠道 | ✅ |
 
-### Phase 5: 计划中
+### Phase 7: 计划中
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
 | 多渠道支持 | ⏳ | Telegram, Discord |
 | 向量记忆 | ⏳ | Qdrant 集成 |
-| 多模态 | ⏳ | Vision 支持 |
 | Docker | ⏳ | 容器化部署 |
+| ClawHub 技能库 | ⏳ | 技能搜索安装 |
 
 ---
 
@@ -866,7 +907,9 @@ curl -X POST https://www.moltbook.com/api/v1/posts \
 |------|-----------|---------|
 | Spawn 子代理 | ✅ goroutine | ✅ asyncio |
 | Moltbook 技能 | ✅ 完整 | ✅ 完整 |
+| ClawdChat 支持 | ❌ | ✅ |
 | 技能加载方式 | 渐进式（按需） | 一次性加载 |
+| ClawHub 技能库 | ❌ | ✅ 搜索安装技能 |
 
 ---
 

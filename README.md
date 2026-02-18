@@ -331,31 +331,81 @@ task_status --id "task_xxx"
 
 ## 与 nanobot 对比
 
-| 方面 | LingGuard | nanobot |
-|------|-----------|---------|
+### 基本定位
+
+| 方面 | LingGuard (本项目) | nanobot |
+|------|-------------------|---------|
 | **语言** | Go | Python |
-| **部署** | 单二进制 | pip/uv |
-| **内存** | ~20MB | ~100MB+ |
-| **启动** | 毫秒级 | 秒级 |
-| **并发** | Goroutine | asyncio |
+| **代码量** | ~8,000+ 行 | ~3,700 行核心代码 |
+| **核心理念** | 极简、高性能、单二进制部署 | 超轻量级、易研究、易扩展 |
+| **内存占用** | ~20MB | ~100MB+ |
+| **启动速度** | 毫秒级 | 秒级 |
+| **部署方式** | 单二进制文件 | pip/uv/Docker |
+
+### 渠道支持对比
+
+| 渠道 | LingGuard | nanobot |
+|------|:---------:|:-------:|
+| 飞书 | ✅ WebSocket 长连接 | ✅ |
+| QQ | ✅ 私聊 | ✅ 私聊 |
+| Telegram | ❌ | ✅ 推荐 |
+| Discord | ❌ | ✅ |
+| WhatsApp | ❌ | ✅ |
+| Slack | ❌ | ✅ |
+| Email | ❌ | ✅ |
+| 钉钉 | ❌ | ✅ |
+| Mochat | ❌ | ✅ 自动配置 |
+
+### LLM 提供商支持
+
+| Provider | LingGuard | nanobot |
+|----------|:---------:|:-------:|
+| OpenAI / Anthropic / DeepSeek | ✅ | ✅ |
+| OpenRouter (推荐) | ✅ | ✅ |
+| Qwen / GLM / MiniMax / Moonshot | ✅ | ✅ |
+| Gemini / Groq / vLLM | ✅ | ✅ |
+| AiHubMix / SiliconFlow | ✅ (部分) | ✅ |
+| OpenAI Codex (OAuth) | ❌ | ✅ |
+| GitHub Copilot (OAuth) | ❌ | ✅ |
 
 ### 功能对比
 
 | 功能 | LingGuard | nanobot |
 |------|:---------:|:-------:|
-| 飞书 | ✅ | ✅ |
-| QQ | ✅ 基础 | ✅ |
-| Telegram/Discord/WhatsApp | ❌ | ✅ |
-| 定时任务 | ✅ | ✅ |
-| 时区支持 | ✅ | ✅ |
-| MCP (Stdio) | ✅ | ✅ |
-| MCP (HTTP) | ✅ | ✅ |
-| 子代理 | ✅ | ✅ |
-| 技能系统 | ✅ | ✅ |
-| 渐进式技能加载 | ✅ | ❌ |
+| **核心功能** |||
+| Agent Loop | ✅ | ✅ |
+| 会话管理 | ✅ | ✅ |
 | 记忆系统 | ✅ | ✅ |
+| 工具系统 | ✅ | ✅ |
+| 技能系统 | ✅ | ✅ |
+| **高级功能** |||
+| 定时任务 (Cron) | ✅ | ✅ |
+| 时区支持 | ✅ | ✅ |
+| 子代理 (Subagent) | ✅ | ✅ |
 | 流式响应 | ✅ | ✅ |
-| Agent Social Network | ✅ Moltbook | ✅ Moltbook |
+| MCP (Stdio + HTTP) | ✅ | ✅ |
+| Agent Social Network | ✅ Moltbook | ✅ Moltbook + ClawdChat |
+| **独有功能** |||
+| 渐进式技能加载 | ✅ 独有 | ❌ |
+| 多模态支持 | ✅ 图片+视频 | 🚧 计划中 |
+| 独立多模态 Provider | ✅ 独有 | ❌ |
+| ClawHub 技能库 | ❌ | ✅ |
+| OAuth 登录 | ❌ | ✅ Codex/Copilot |
+| 语音转录 | ❌ | ✅ Groq Whisper |
+| Docker 支持 | ❌ | ✅ |
+
+### 适用场景
+
+| 场景 | 推荐选择 | 理由 |
+|------|----------|------|
+| **个人桌面使用** | LingGuard | 低资源占用、快速启动 |
+| **需要多种聊天平台** | nanobot | 9 种渠道支持 |
+| **服务器长期运行** | 两者皆可 | 都支持 Gateway 模式 |
+| **研究和二次开发** | nanobot | 代码更精简、Python 易上手 |
+| **生产环境部署** | LingGuard | 单二进制、无依赖 |
+| **需要 OAuth 登录** | nanobot | 支持 Codex/Copilot |
+| **需要语音交互** | nanobot | Groq 语音转录 |
+| **节省 Token 成本** | LingGuard | 渐进式技能加载 |
 
 ## 目录结构
 
