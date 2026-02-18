@@ -207,16 +207,26 @@ func createCronJobCallback(ag *agent.Agent, mgr *channels.Manager) cron.JobCallb
 		sessionID := fmt.Sprintf("cron-%s", job.ID)
 
 		response, err := ag.ProcessMessage(ctx, sessionID, job.Payload.Message)
-		if err != nil {
-			return "", err
-		}
 
+		// 如果需要投递消息到渠道
 		if job.Payload.Deliver && job.Payload.Channel != "" && job.Payload.To != "" {
-			if err := mgr.SendMessage(job.Payload.Channel, job.Payload.To, response); err != nil {
-				logger.Error("Failed to deliver cron job response", "error", err)
+			var content string
+			if err != nil {
+				// LLM 调用失败时，也要发送通知（包含错误信息）
+				content = fmt.Sprintf("⏰ **定时任务: %s**\n\n%s\n\n⚠️ 执行出错: %s", job.Name, job.Payload.Message, err.Error())
+				logger.Error("Cron job LLM call failed, sending error notification", "name", job.Name, "error", err)
+			} else {
+				content = fmt.Sprintf("⏰ **定时任务: %s**\n\n%s", job.Name, response)
+			}
+
+			if sendErr := mgr.SendMessage(job.Payload.Channel, job.Payload.To, content); sendErr != nil {
+				logger.Error("Failed to deliver cron job response", "error", sendErr)
 			}
 		}
 
+		if err != nil {
+			return "", err
+		}
 		return response, nil
 	}
 }
