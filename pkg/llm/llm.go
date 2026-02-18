@@ -38,19 +38,23 @@ type VideoURL struct {
 }
 
 // MarshalJSON 自定义 JSON 序列化，支持多模态内容
+// 确保永远不会将 content 序列化为单个对象
 func (m Message) MarshalJSON() ([]byte, error) {
 	// 只有当 ContentParts 有有效内容时才使用数组格式
-	hasValidContentParts := len(m.ContentParts) > 0
-	if hasValidContentParts {
-		// 验证 ContentParts 是否有效
+	// 严格验证每个 part
+	if len(m.ContentParts) > 0 {
 		validParts := make([]ContentPart, 0)
 		for _, part := range m.ContentParts {
-			if part.Type != "" && (part.Text != "" || part.ImageURL != nil || part.VideoURL != nil) {
-				validParts = append(validParts, part)
+			// 每个 part 必须有 type 和实际内容
+			if part.Type != "" {
+				hasContent := part.Text != "" || part.ImageURL != nil || part.VideoURL != nil || len(part.Video) > 0
+				if hasContent {
+					validParts = append(validParts, part)
+				}
 			}
 		}
+		// 只有有有效的 parts 才使用数组格式
 		if len(validParts) > 0 {
-			// 多模态消息：content 是数组
 			return json.Marshal(struct {
 				Role       string        `json:"role"`
 				Content    []ContentPart `json:"content"`
@@ -67,11 +71,11 @@ func (m Message) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	// 普通消息：content 是字符串
-	// 如果 Content 为空但有 ToolCalls，仍然发送空字符串
+	// 普通消息：content 是字符串（绝对不会是对象）
 	content := m.Content
+	// 如果 Content 为空但有 ToolCalls，仍然发送（某些 API 需要）
 	if content == "" && len(m.ToolCalls) > 0 {
-		content = "" // 保持为空，但仍然序列化
+		content = ""
 	}
 
 	return json.Marshal(struct {
@@ -93,6 +97,7 @@ func (m Message) MarshalJSON() ([]byte, error) {
 // 某些模型（如 Qwen3.5-Plus, DeepSeek R1）的响应中 content 可能是：
 // - string: "普通文本"
 // - object: {"text": "内容", "reasoning": "思考过程"}
+// - object: {"type": "text", "text": "内容"} (单对象多模态格式)
 // - array: [{"type": "text", "text": "内容"}]
 func (m *Message) UnmarshalJSON(data []byte) error {
 	// 临时结构体，content 使用 RawMessage 来灵活处理
@@ -136,41 +141,51 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 					m.Content = objContent.Reasoning
 				}
 			} else {
-				// 尝试解析为通用对象（处理未知格式）
-				var genericObj map[string]interface{}
-				if err := json.Unmarshal(temp.Content, &genericObj); err == nil {
-					// 尝试提取 text 或 content 字段
-					if text, ok := genericObj["text"].(string); ok {
-						m.Content = text
-					} else if content, ok := genericObj["content"].(string); ok {
-						m.Content = content
-					} else {
-						// 将整个对象转为 JSON 字符串作为内容（最后手段）
-						m.Content = string(temp.Content)
+				// 尝试解析为单对象多模态格式 {"type": "text", "text": "..."}
+				var singlePart ContentPart
+				if err := json.Unmarshal(temp.Content, &singlePart); err == nil && singlePart.Type != "" {
+					// 这是一个单对象，提取文本
+					if singlePart.Text != "" {
+						m.Content = singlePart.Text
 					}
+					// 注意：不设置 ContentParts，因为我们要将其作为字符串发送
 				} else {
-					// 尝试解析为数组（多模态格式）
-					var arrContent []ContentPart
-					if err := json.Unmarshal(temp.Content, &arrContent); err == nil && len(arrContent) > 0 {
-						// 验证数组内容有效性
-						validParts := make([]ContentPart, 0)
-						for _, part := range arrContent {
-							if part.Type != "" && (part.Text != "" || part.ImageURL != nil || part.VideoURL != nil) {
-								validParts = append(validParts, part)
-							}
+					// 尝试解析为通用对象（处理未知格式）
+					var genericObj map[string]interface{}
+					if err := json.Unmarshal(temp.Content, &genericObj); err == nil {
+						// 尝试提取 text 或 content 字段
+						if text, ok := genericObj["text"].(string); ok {
+							m.Content = text
+						} else if content, ok := genericObj["content"].(string); ok {
+							m.Content = content
+						} else {
+							// 将整个对象转为 JSON 字符串作为内容（最后手段）
+							m.Content = string(temp.Content)
 						}
-						if len(validParts) > 0 {
-							m.ContentParts = validParts
-							// 提取文本内容
-							for _, part := range validParts {
-								if part.Type == "text" && part.Text != "" {
-									m.Content = part.Text
-									break
+					} else {
+						// 尝试解析为数组（多模态格式）
+						var arrContent []ContentPart
+						if err := json.Unmarshal(temp.Content, &arrContent); err == nil && len(arrContent) > 0 {
+							// 验证数组内容有效性
+							validParts := make([]ContentPart, 0)
+							for _, part := range arrContent {
+								if part.Type != "" && (part.Text != "" || part.ImageURL != nil || part.VideoURL != nil) {
+									validParts = append(validParts, part)
+								}
+							}
+							if len(validParts) > 0 {
+								m.ContentParts = validParts
+								// 提取文本内容
+								for _, part := range validParts {
+									if part.Type == "text" && part.Text != "" {
+										m.Content = part.Text
+										break
+									}
 								}
 							}
 						}
+						// 如果都失败了，保持 Content 为空
 					}
-					// 如果都失败了，保持 Content 为空
 				}
 			}
 		}
@@ -337,6 +352,20 @@ func (d *Delta) UnmarshalJSON(data []byte) error {
 					d.Content = objContent.Text
 				} else if objContent.Reasoning != "" {
 					d.Content = objContent.Reasoning
+				}
+			} else {
+				// 尝试解析为单对象多模态格式 {"type": "text", "text": "..."}
+				var singlePart ContentPart
+				if err := json.Unmarshal(temp.Content, &singlePart); err == nil && singlePart.Type != "" && singlePart.Text != "" {
+					d.Content = singlePart.Text
+				} else {
+					// 尝试解析为通用对象
+					var genericObj map[string]interface{}
+					if err := json.Unmarshal(temp.Content, &genericObj); err == nil {
+						if text, ok := genericObj["text"].(string); ok {
+							d.Content = text
+						}
+					}
 				}
 			}
 			// 如果都失败了，Content 保持为空

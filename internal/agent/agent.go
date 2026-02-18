@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,6 +23,9 @@ import (
 	"github.com/lingguard/pkg/memory"
 	"github.com/lingguard/pkg/stream"
 )
+
+// ErrSessionBusy 会话正在处理其他消息
+var ErrSessionBusy = errors.New("会话正在处理上一条消息，请稍后再试")
 
 // ReflectPrompt 反思提示（参考 nanobot）
 const ReflectPrompt = "Reflect on the results and decide next steps."
@@ -188,8 +192,15 @@ func (a *Agent) ProcessMessage(ctx context.Context, sessionID, userMessage strin
 
 // ProcessMessageWithMedia 处理带媒体的消息
 func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMessage string, mediaPaths []string) (string, error) {
-	// 1. 获取或创建会话并添加用户消息
+	// 1. 获取或创建会话
 	s := a.sessions.GetOrCreate(sessionID)
+
+	// 尝试锁定会话，如果失败则返回友好提示
+	if !s.TryLockForProcessing() {
+		logger.Warn("Session is busy, please wait", "session", sessionID)
+		return "⏳ 正在处理上一条消息，请稍后再试...", nil
+	}
+	defer s.UnlockAfterProcessing()
 
 	// 检查是否有多模态内容
 	hasMedia := len(mediaPaths) > 0
@@ -229,8 +240,18 @@ func (a *Agent) ProcessMessageStream(ctx context.Context, sessionID, userMessage
 
 // ProcessMessageStreamWithMedia 流式处理带媒体的消息
 func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, userMessage string, mediaPaths []string, callback stream.StreamCallback) error {
-	// 1. 获取或创建会话并添加用户消息
+	// 1. 获取或创建会话
 	s := a.sessions.GetOrCreate(sessionID)
+
+	// 尝试锁定会话，如果失败则返回友好提示
+	if !s.TryLockForProcessing() {
+		logger.Warn("Session is busy, please wait", "session", sessionID)
+		// 发送友好提示给用户
+		callback(stream.NewTextEvent("⏳ 正在处理上一条消息，请稍后再试..."))
+		callback(stream.NewDoneEvent())
+		return ErrSessionBusy
+	}
+	defer s.UnlockAfterProcessing()
 
 	// 检查是否有多模态内容
 	hasMedia := len(mediaPaths) > 0

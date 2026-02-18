@@ -2,10 +2,12 @@ package providers
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -71,12 +73,24 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *llm.Request) (*llm.R
 	// 记录请求
 	logger.LLMRequest(p.name, req.Model, req)
 
+	// 手动序列化请求，确保使用自定义的 MarshalJSON
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	// DEBUG: 记录请求体
+	if len(reqBody) > 2000 {
+		logger.Debug("Complete request body (truncated)", "body", string(reqBody[:2000]))
+	} else {
+		logger.Debug("Complete request body", "body", string(reqBody))
+	}
+
 	resp, err := p.client.R().
 		SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", "Bearer "+p.apiKey).
-		SetBody(req).
-		SetResult(&llm.Response{}).
+		SetBody(reqBody).
 		Post(p.apiBase + "/chat/completions")
 
 	duration := time.Since(start)
@@ -92,12 +106,17 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *llm.Request) (*llm.R
 		return nil, err
 	}
 
-	result := resp.Result().(*llm.Response)
+	// 手动解析响应，确保使用自定义的 UnmarshalJSON
+	var result llm.Response
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		logger.LLMResponse(p.name, req.Model, nil, duration, err)
+		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
 
 	// 记录响应
-	logger.LLMResponse(p.name, req.Model, result, duration, nil)
+	logger.LLMResponse(p.name, req.Model, &result, duration, nil)
 
-	return result, nil
+	return &result, nil
 }
 
 func (p *OpenAIProvider) Stream(ctx context.Context, req *llm.Request) (<-chan llm.StreamEvent, error) {
@@ -111,13 +130,58 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *llm.Request) (<-chan l
 		"stream":   true,
 	})
 
+	// 手动序列化请求，确保使用自定义的 MarshalJSON
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		close(eventChan)
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	// DEBUG: 将请求体写入文件以供检查
+	debugFile := fmt.Sprintf("/tmp/llm_request_%d.json", time.Now().UnixNano())
+	if err := os.WriteFile(debugFile, reqBody, 0644); err == nil {
+		fmt.Printf("[DEBUG] Request body written to: %s\n", debugFile)
+	}
+
+	// DEBUG: 检查每个消息的 content 字段
+	for i, msg := range req.Messages {
+		// 尝试找到消息在 JSON 中的位置
+		msgStart := bytes.Index(reqBody, []byte(fmt.Sprintf(`{"role":"%s"`, msg.Role)))
+		if msgStart >= 0 {
+			// 找到 content 字段
+			contentStart := bytes.Index(reqBody[msgStart:], []byte(`"content":`))
+			if contentStart >= 0 {
+				contentStart += msgStart + 10 // skip "content":
+				// 找到 content 的值开始位置
+				for contentStart < len(reqBody) && (reqBody[contentStart] == ' ' || reqBody[contentStart] == '\n') {
+					contentStart++
+				}
+				if contentStart < len(reqBody) {
+					firstChar := reqBody[contentStart]
+					contentType := "unknown"
+					if firstChar == '"' {
+						contentType = "string"
+					} else if firstChar == '[' {
+						contentType = "array"
+					} else if firstChar == '{' {
+						contentType = "OBJECT!"
+					}
+					fmt.Printf("[DEBUG] Message[%d] role=%s content type in JSON: %s (first char: %c)\n",
+						i, msg.Role, contentType, firstChar)
+				}
+			}
+		}
+	}
+
+	logger.Debug("Stream request body", "body", string(reqBody))
+
 	start := time.Now()
 
 	resp, err := p.client.R().
 		SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", "Bearer "+p.apiKey).
-		SetBody(req).
+		SetBody(reqBody).
 		SetDoNotParseResponse(true).
 		Post(p.apiBase + "/chat/completions")
 
