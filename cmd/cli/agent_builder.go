@@ -143,8 +143,8 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 		b.InitWorkspace()
 	}
 
-	// 使用带多模态支持的 Agent 创建方法
-	ag := agent.NewAgentWithMultimodal(&b.cfg.Agents, b.provider, b.multimodalProvider, b.skillsLoader)
+	// 使用带完整配置的 Agent 创建方法（支持向量存储）
+	ag := agent.NewAgentWithMultimodalAndConfig(&b.cfg.Agents, b.provider, b.multimodalProvider, b.skillsLoader, b.cfg)
 
 	// 注册基础工具
 	ag.RegisterTool(tools.NewShellTool(b.workspaceMgr, b.cfg.Tools.RestrictToWorkspace))

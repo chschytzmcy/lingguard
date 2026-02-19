@@ -157,18 +157,37 @@ func runGateway() error {
 	fmt.Println("\nShutting down...")
 	logger.Info("Gateway shutting down")
 
-	// 清理资源
-	if mcpManager != nil {
-		mcpManager.Close()
-	}
-	if cronService != nil {
-		cronService.Stop()
-	}
-	if heartbeatService != nil {
-		heartbeatService.Stop()
+	// 创建带超时的关闭上下文
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	// 清理资源（使用 goroutine 并行关闭，避免阻塞）
+	done := make(chan struct{})
+	go func() {
+		if mcpManager != nil {
+			mcpManager.Close()
+		}
+		if cronService != nil {
+			cronService.Stop()
+		}
+		if heartbeatService != nil {
+			heartbeatService.Stop()
+		}
+		if err := mgr.StopAll(); err != nil {
+			logger.Warn("Error stopping channels", "error", err)
+		}
+		close(done)
+	}()
+
+	// 等待关闭完成或超时
+	select {
+	case <-done:
+		logger.Info("Gateway shutdown complete")
+	case <-shutdownCtx.Done():
+		logger.Warn("Gateway shutdown timed out, some resources may not be cleaned up")
 	}
 
-	return mgr.StopAll()
+	return nil
 }
 
 // registerChannels 注册所有渠道

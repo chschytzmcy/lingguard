@@ -128,6 +128,14 @@ func (f *FeishuChannel) Stop() error {
 	if f.cancel != nil {
 		f.cancel()
 	}
+
+	// 尝试关闭 WebSocket 客户端
+	if f.wsClient != nil {
+		// lark WebSocket 客户端没有 Stop 方法，但 context 取消应该会停止它
+		// 给它一小段时间来清理
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	f.running = false
 	logger.Info("Feishu channel stopped")
 	return nil
