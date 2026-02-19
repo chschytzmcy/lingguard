@@ -41,6 +41,7 @@ type Agent struct {
 	subagentMgr        *subagent.SubagentManager
 	config             *config.AgentsConfig
 	memoryStore        *memory.FileStore      // 文件持久化存储（参考 nanobot）
+	hybridStore        *memory.HybridStore    // 混合存储（文件+向量），可选
 	memoryBuilder      *memory.ContextBuilder // 记忆上下文构建器
 }
 
@@ -51,6 +52,11 @@ func NewAgent(cfg *config.AgentsConfig, provider providers.Provider, skillsLoade
 
 // NewAgentWithMultimodal 创建带多模态支持的代理
 func NewAgentWithMultimodal(cfg *config.AgentsConfig, provider providers.Provider, multimodalProvider providers.Provider, skillsLoader *skills.Loader) *Agent {
+	return NewAgentWithMultimodalAndConfig(cfg, provider, multimodalProvider, skillsLoader, nil)
+}
+
+// NewAgentWithMultimodalAndConfig 创建带多模态支持和完整配置的代理
+func NewAgentWithMultimodalAndConfig(cfg *config.AgentsConfig, provider providers.Provider, multimodalProvider providers.Provider, skillsLoader *skills.Loader, fullConfig *config.Config) *Agent {
 	var skillsMgr *skills.Manager
 	if skillsLoader != nil {
 		skillsMgr = skills.NewManager(skillsLoader)
@@ -58,9 +64,10 @@ func NewAgentWithMultimodal(cfg *config.AgentsConfig, provider providers.Provide
 
 	toolRegistry := tools.NewRegistry()
 
-	// 初始化文件持久化存储（参考 nanobot）
+	// 初始化存储（参考 nanobot）
 	// 记忆目录固定在 ~/.lingguard/memory/
 	var memStore *memory.FileStore
+	var hybridStore *memory.HybridStore
 	var memBuilder *memory.ContextBuilder
 	var sessionStore memory.Store
 
@@ -69,14 +76,44 @@ func NewAgentWithMultimodal(cfg *config.AgentsConfig, provider providers.Provide
 		home, _ := os.UserHomeDir()
 		memDir := filepath.Join(home, ".lingguard", "memory")
 
-		memStore = memory.NewFileStore(memDir)
-		if err := memStore.Init(); err != nil {
-			logger.Warn("Failed to init file memory store, using in-memory", "error", err)
-			sessionStore = memory.NewMemoryStore()
-		} else {
-			sessionStore = memStore
-			memBuilder = memory.NewContextBuilder(memStore)
-			logger.Info("File-based memory store initialized", "path", memDir)
+		// 检查是否启用向量检索
+		if cfg.MemoryConfig.Vector != nil && cfg.MemoryConfig.Vector.Enabled {
+			// 使用混合存储（文件+向量）
+			var providers map[string]config.ProviderConfig
+			if fullConfig != nil {
+				providers = fullConfig.Providers
+			}
+
+			hybridCfg := &memory.HybridStoreConfig{
+				MemoryDir:    memDir,
+				VectorConfig: cfg.MemoryConfig.Vector,
+				Providers:    providers,
+			}
+
+			var err error
+			hybridStore, err = memory.NewHybridStore(hybridCfg)
+			if err != nil {
+				logger.Warn("Failed to init hybrid store, falling back to file store", "error", err)
+				hybridStore = nil
+			} else {
+				memStore = hybridStore.FileStore()
+				sessionStore = memStore
+				memBuilder = memory.NewContextBuilderWithHybrid(hybridStore)
+				logger.Info("Hybrid memory store initialized with vector search", "path", memDir)
+			}
+		}
+
+		// 如果向量存储初始化失败或未启用，使用纯文件存储
+		if hybridStore == nil {
+			memStore = memory.NewFileStore(memDir)
+			if err := memStore.Init(); err != nil {
+				logger.Warn("Failed to init file memory store, using in-memory", "error", err)
+				sessionStore = memory.NewMemoryStore()
+			} else {
+				sessionStore = memStore
+				memBuilder = memory.NewContextBuilder(memStore)
+				logger.Info("File-based memory store initialized", "path", memDir)
+			}
 		}
 	} else {
 		// 使用内存存储
@@ -97,6 +134,7 @@ func NewAgentWithMultimodal(cfg *config.AgentsConfig, provider providers.Provide
 		skillsMgr:          skillsMgr,
 		config:             cfg,
 		memoryStore:        memStore,
+		hybridStore:        hybridStore,
 		memoryBuilder:      memBuilder,
 	}
 
@@ -133,7 +171,12 @@ func (a *Agent) RegisterSubagentTools() {
 
 // RegisterMemoryTool 注册记忆工具
 func (a *Agent) RegisterMemoryTool() {
-	if a.memoryStore != nil {
+	if a.hybridStore != nil {
+		// 使用混合存储（支持向量检索）
+		memTool := tools.NewMemoryToolFromHybridStore(a.hybridStore)
+		a.toolRegistry.Register(memTool)
+	} else if a.memoryStore != nil {
+		// 使用纯文件存储
 		memTool := tools.NewMemoryToolFromStore(a.memoryStore)
 		a.toolRegistry.Register(memTool)
 	}
@@ -157,6 +200,16 @@ func (a *Agent) RecordEvent(eventType, summary string, details map[string]string
 // GetMemoryStore 获取记忆存储
 func (a *Agent) GetMemoryStore() *memory.FileStore {
 	return a.memoryStore
+}
+
+// GetHybridStore 获取混合存储（如果启用）
+func (a *Agent) GetHybridStore() *memory.HybridStore {
+	return a.hybridStore
+}
+
+// IsVectorSearchEnabled 检查是否启用向量检索
+func (a *Agent) IsVectorSearchEnabled() bool {
+	return a.hybridStore != nil && a.hybridStore.IsVectorEnabled()
 }
 
 // SubagentManager 返回子代理管理器

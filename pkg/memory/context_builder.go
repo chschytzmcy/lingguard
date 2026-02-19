@@ -2,6 +2,7 @@
 package memory
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -9,12 +10,21 @@ import (
 
 // ContextBuilder 上下文构建器（参考 nanobot）
 type ContextBuilder struct {
-	store *FileStore
+	store       *FileStore
+	hybridStore *HybridStore // 可选：混合存储，支持向量检索
 }
 
 // NewContextBuilder 创建上下文构建器
 func NewContextBuilder(store *FileStore) *ContextBuilder {
 	return &ContextBuilder{store: store}
+}
+
+// NewContextBuilderWithHybrid 创建支持向量检索的上下文构建器
+func NewContextBuilderWithHybrid(store *HybridStore) *ContextBuilder {
+	return &ContextBuilder{
+		store:       store.FileStore(),
+		hybridStore: store,
+	}
 }
 
 // BuildContext 构建记忆上下文
@@ -73,9 +83,9 @@ func (b *ContextBuilder) BuildContext(includeRecentDays int) (string, error) {
 }
 
 // BuildContextWithQuery 基于查询构建相关上下文
-// 使用 grep 搜索相关记忆
+// 如果启用向量检索，使用语义搜索；否则使用 grep 搜索
 func (b *ContextBuilder) BuildContextWithQuery(query string, includeRecentDays int) (string, error) {
-	var context strings.Builder
+	var result strings.Builder
 
 	// 首先获取基础上下文
 	baseContext, err := b.BuildContext(includeRecentDays)
@@ -84,24 +94,45 @@ func (b *ContextBuilder) BuildContextWithQuery(query string, includeRecentDays i
 	}
 
 	// 搜索相关记忆
-	searchResults, err := b.store.SearchAll(query)
-	if err == nil && len(searchResults) > 0 {
-		context.WriteString("## Relevant Memories\n\n")
-		for file, lines := range searchResults {
-			context.WriteString(fmt.Sprintf("### From %s\n", file))
-			for _, line := range lines {
-				// 限制行长度
-				if len(line) > 200 {
-					line = line[:200] + "..."
+	if b.hybridStore != nil && b.hybridStore.IsVectorEnabled() {
+		// 使用向量语义搜索
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		records, err := b.hybridStore.Search(ctx, query, 10)
+		if err == nil && len(records) > 0 {
+			result.WriteString("## Relevant Memories (Semantic Search)\n\n")
+			for _, record := range records {
+				// 限制内容长度
+				content := record.Content
+				if len(content) > 300 {
+					content = content[:300] + "..."
 				}
-				context.WriteString(line + "\n")
+				result.WriteString(fmt.Sprintf("- [%.2f] %s\n", record.Score, content))
 			}
-			context.WriteString("\n")
+			result.WriteString("\n")
+		}
+	} else {
+		// 回退到 grep 搜索
+		searchResults, err := b.store.SearchAll(query)
+		if err == nil && len(searchResults) > 0 {
+			result.WriteString("## Relevant Memories\n\n")
+			for file, lines := range searchResults {
+				result.WriteString(fmt.Sprintf("### From %s\n", file))
+				for _, line := range lines {
+					// 限制行长度
+					if len(line) > 200 {
+						line = line[:200] + "..."
+					}
+					result.WriteString(line + "\n")
+				}
+				result.WriteString("\n")
+			}
 		}
 	}
 
-	context.WriteString(baseContext)
-	return context.String(), nil
+	result.WriteString(baseContext)
+	return result.String(), nil
 }
 
 // cleanMemoryContent 清理记忆内容，移除注释和格式化
@@ -143,12 +174,21 @@ func (b *ContextBuilder) cleanMemoryContent(content string) string {
 
 // MemoryTools 记忆工具集合
 type MemoryTools struct {
-	store *FileStore
+	store       *FileStore
+	hybridStore *HybridStore // 可选：支持向量检索
 }
 
 // NewMemoryTools 创建记忆工具
 func NewMemoryTools(store *FileStore) *MemoryTools {
 	return &MemoryTools{store: store}
+}
+
+// NewMemoryToolsWithHybrid 创建支持向量检索的记忆工具
+func NewMemoryToolsWithHybrid(store *HybridStore) *MemoryTools {
+	return &MemoryTools{
+		store:       store.FileStore(),
+		hybridStore: store,
+	}
 }
 
 // Remember 记录长期记忆
@@ -159,6 +199,34 @@ func (t *MemoryTools) Remember(category, fact string) error {
 // Recall 回忆（搜索记忆）
 func (t *MemoryTools) Recall(query string) (map[string][]string, error) {
 	return t.store.SearchAll(query)
+}
+
+// RecallSemantic 语义搜索记忆（使用向量检索）
+func (t *MemoryTools) RecallSemantic(ctx context.Context, query string, topK int) ([]*VectorRecord, error) {
+	if t.hybridStore != nil && t.hybridStore.IsVectorEnabled() {
+		return t.hybridStore.Search(ctx, query, topK)
+	}
+	// 回退到关键词搜索
+	records, err := t.store.SearchAll(query)
+	if err != nil {
+		return nil, err
+	}
+	var results []*VectorRecord
+	for file, lines := range records {
+		for i, line := range lines {
+			results = append(results, &VectorRecord{
+				ID:        fmt.Sprintf("%s-%d", file, i),
+				Content:   line,
+				Timestamp: time.Now(),
+				Score:     1.0,
+				Metadata:  map[string]interface{}{"source": file},
+			})
+		}
+	}
+	if len(results) > topK {
+		results = results[:topK]
+	}
+	return results, nil
 }
 
 // LogEvent 记录事件到每日日志

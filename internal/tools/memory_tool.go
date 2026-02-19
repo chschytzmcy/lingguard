@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/lingguard/pkg/memory"
 )
@@ -14,8 +16,9 @@ import (
 // MemoryTool 记忆工具（参考 nanobot）
 // 允许 Agent 记录和回忆信息
 type MemoryTool struct {
-	store   *memory.FileStore
-	builder *memory.ContextBuilder
+	store       *memory.FileStore
+	hybridStore *memory.HybridStore // 可选：支持向量检索
+	builder     *memory.ContextBuilder
 }
 
 // NewMemoryTool 创建记忆工具
@@ -46,6 +49,15 @@ func NewMemoryToolFromStore(store *memory.FileStore) *MemoryTool {
 	}
 }
 
+// NewMemoryToolFromHybridStore 从混合存储创建记忆工具
+func NewMemoryToolFromHybridStore(store *memory.HybridStore) *MemoryTool {
+	return &MemoryTool{
+		store:       store.FileStore(),
+		hybridStore: store,
+		builder:     memory.NewContextBuilderWithHybrid(store),
+	}
+}
+
 // Name 返回工具名称
 func (t *MemoryTool) Name() string {
 	return "memory"
@@ -53,7 +65,7 @@ func (t *MemoryTool) Name() string {
 
 // Description 返回工具描述
 func (t *MemoryTool) Description() string {
-	return `Memory tool for storing and retrieving information.
+	desc := `Memory tool for storing and retrieving information.
 
 Actions:
 - remember: Store a fact in long-term memory
@@ -66,6 +78,14 @@ Usage:
 {"action": "recall", "query": "user preferences"}
 {"action": "log", "event": "Completed task X"}
 {"action": "context"}`
+
+	if t.hybridStore != nil && t.hybridStore.IsVectorEnabled() {
+		desc += `
+
+Note: Vector-based semantic search is enabled for better recall results.`
+	}
+
+	return desc
 }
 
 // Parameters 返回参数定义
@@ -148,6 +168,12 @@ func (t *MemoryTool) actionRecall(query string) (string, error) {
 		return t.actionContext()
 	}
 
+	// 如果启用向量检索，使用语义搜索
+	if t.hybridStore != nil && t.hybridStore.IsVectorEnabled() {
+		return t.actionRecallSemantic(query)
+	}
+
+	// 回退到关键词搜索
 	results, err := t.store.SearchAll(query)
 	if err != nil {
 		return "", fmt.Errorf("failed to recall: %w", err)
@@ -157,16 +183,43 @@ func (t *MemoryTool) actionRecall(query string) (string, error) {
 		return "No matching memories found.", nil
 	}
 
-	var output string
+	var output strings.Builder
 	for file, lines := range results {
-		output += fmt.Sprintf("From %s:\n", file)
+		output.WriteString(fmt.Sprintf("From %s:\n", file))
 		for _, line := range lines {
-			output += line + "\n"
+			output.WriteString(line + "\n")
 		}
-		output += "\n"
+		output.WriteString("\n")
 	}
 
-	return output, nil
+	return output.String(), nil
+}
+
+// actionRecallSemantic 使用语义搜索召回记忆
+func (t *MemoryTool) actionRecallSemantic(query string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	records, err := t.hybridStore.Search(ctx, query, 10)
+	if err != nil {
+		return "", fmt.Errorf("failed to recall (semantic): %w", err)
+	}
+
+	if len(records) == 0 {
+		return "No matching memories found.", nil
+	}
+
+	var output strings.Builder
+	output.WriteString("## Relevant Memories (Semantic Search)\n\n")
+	for _, record := range records {
+		content := record.Content
+		if len(content) > 200 {
+			content = content[:200] + "..."
+		}
+		output.WriteString(fmt.Sprintf("- [%.2f] %s\n", record.Score, content))
+	}
+
+	return output.String(), nil
 }
 
 func (t *MemoryTool) actionLog(event string) (string, error) {

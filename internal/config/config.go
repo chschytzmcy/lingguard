@@ -47,9 +47,52 @@ type AgentsConfig struct {
 // MemoryConfig 记忆系统配置（参考 nanobot）
 // 记忆文件固定存储在 ~/.lingguard/memory/ 目录下
 type MemoryConfig struct {
-	Enabled         bool `json:"enabled"`                   // 是否启用持久化记忆
-	RecentDays      int  `json:"recentDays,omitempty"`      // 加载最近几天的日志，默认 3
-	MaxHistoryLines int  `json:"maxHistoryLines,omitempty"` // 历史记录最大行数，默认 1000
+	Enabled         bool          `json:"enabled"`                   // 是否启用持久化记忆
+	RecentDays      int           `json:"recentDays,omitempty"`      // 加载最近几天的日志，默认 3
+	MaxHistoryLines int           `json:"maxHistoryLines,omitempty"` // 历史记录最大行数，默认 1000
+	Vector          *VectorConfig `json:"vector,omitempty"`          // 向量检索配置
+}
+
+// VectorConfig 向量检索配置
+type VectorConfig struct {
+	Enabled   bool            `json:"enabled"`             // 是否启用向量检索
+	Embedding EmbeddingConfig `json:"embedding,omitempty"` // Embedding 配置
+	Search    SearchConfig    `json:"search,omitempty"`    // 搜索配置
+	Database  VectorDbConfig  `json:"database,omitempty"`  // 向量数据库配置
+}
+
+// EmbeddingConfig Embedding 模型配置
+type EmbeddingConfig struct {
+	Provider  string `json:"provider"`            // 提供商: "qwen", "openai" 等
+	Model     string `json:"model,omitempty"`     // 模型名称，默认 text-embedding-v4
+	APIKey    string `json:"apiKey,omitempty"`    // API Key (可从 Provider 配置继承)
+	APIBase   string `json:"apiBase,omitempty"`   // API 基础 URL
+	Dimension int    `json:"dimension,omitempty"` // 向量维度，默认 1024
+}
+
+// SearchConfig 搜索配置
+type SearchConfig struct {
+	VectorWeight float64       `json:"vectorWeight,omitempty"` // 向量检索权重，默认 0.7
+	BM25Weight   float64       `json:"bm25Weight,omitempty"`   // BM25 检索权重，默认 0.3
+	TimeDecay    float64       `json:"timeDecay,omitempty"`    // 时间衰减系数，默认 0.1
+	DefaultTopK  int           `json:"defaultTopK,omitempty"`  // 默认返回数量，默认 10
+	MinScore     float32       `json:"minScore,omitempty"`     // 最小相似度分数，默认 0.5
+	Rerank       *RerankConfig `json:"rerank,omitempty"`       // 重排序配置
+}
+
+// RerankConfig 重排序配置
+type RerankConfig struct {
+	Enabled  bool   `json:"enabled"`            // 是否启用重排序
+	Provider string `json:"provider,omitempty"` // 提供商: "qwen"
+	Model    string `json:"model,omitempty"`    // 模型名称，默认 qwen3-vl-rerank
+	APIKey   string `json:"apiKey,omitempty"`   // API Key (可从 Provider 配置继承)
+	APIBase  string `json:"apiBase,omitempty"`  // API 基础 URL
+}
+
+// VectorDbConfig 向量数据库配置
+type VectorDbConfig struct {
+	Path      string `json:"path,omitempty"`      // 数据库文件路径，默认 ~/.lingguard/memory/vectors.db
+	Dimension int    `json:"dimension,omitempty"` // 向量维度，默认 1024
 }
 
 // ChannelsConfig 渠道配置
