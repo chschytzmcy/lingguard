@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -292,6 +293,10 @@ func (f *FeishuChannel) handleMessage(ctx context.Context, event *larkim.P2Messa
 
 	// Send reply
 	if reply != "" {
+		// 检查是否包含生成的图片或视频
+		if strings.Contains(reply, "[GENERATED_IMAGE:") || strings.Contains(reply, "[GENERATED_VIDEO:") {
+			return f.SendWithImages(ctx, replyTo, reply)
+		}
 		return f.sendReply(ctx, replyTo, reply)
 	}
 	return nil
@@ -342,13 +347,60 @@ func (f *FeishuChannel) handleMessageStream(ctx context.Context, msg *Message, r
 			}
 
 		case stream.EventToolEnd:
-			// 工具结束时可以显示结果摘要（可选）
+			// 检查工具结果是否包含生成的图片或视频，如果有则上传并发送
+			if strings.Contains(event.ToolResult, "[GENERATED_IMAGE:") || strings.Contains(event.ToolResult, "[GENERATED_VIDEO:") {
+				go func() {
+					// 处理图片
+					imagePattern := regexp.MustCompile(`\[GENERATED_IMAGE:([^\]]+)\]`)
+					imageMatches := imagePattern.FindAllStringSubmatch(event.ToolResult, -1)
+					for _, match := range imageMatches {
+						if len(match) > 1 {
+							imagePath := match[1]
+							logger.Info("Auto-uploading generated image", "path", imagePath)
+
+							imageKey, err := f.uploadImage(context.Background(), imagePath)
+							if err != nil {
+								logger.Warn("Failed to upload image", "path", imagePath, "error", err)
+								continue
+							}
+
+							if err := f.sendImageMessage(context.Background(), replyTo, imageKey); err != nil {
+								logger.Warn("Failed to send image message", "error", err)
+							}
+						}
+					}
+
+					// 处理视频
+					videoPattern := regexp.MustCompile(`\[GENERATED_VIDEO:([^\]]+)\]`)
+					videoMatches := videoPattern.FindAllStringSubmatch(event.ToolResult, -1)
+					for _, match := range videoMatches {
+						if len(match) > 1 {
+							videoPath := match[1]
+							logger.Info("Auto-uploading generated video", "path", videoPath)
+
+							fileKey, err := f.uploadFile(context.Background(), videoPath)
+							if err != nil {
+								logger.Warn("Failed to upload video", "path", videoPath, "error", err)
+								continue
+							}
+
+							if err := f.sendFileMessage(context.Background(), replyTo, fileKey); err != nil {
+								logger.Warn("Failed to send video message", "error", err)
+							}
+						}
+					}
+				}()
+			}
 
 		case stream.EventDone:
 			// 最终更新
 			content := contentBuilder.String()
 			if content != "" {
-				if messageID == "" {
+				// 检查是否包含生成的图片或视频
+				if strings.Contains(content, "[GENERATED_IMAGE:") || strings.Contains(content, "[GENERATED_VIDEO:") {
+					// 使用 SendWithImages 发送带媒体的消息
+					f.SendWithImages(ctx, replyTo, content)
+				} else if messageID == "" {
 					f.sendReply(ctx, replyTo, content)
 				} else {
 					f.updateReply(ctx, messageID, content)
@@ -872,6 +924,217 @@ func (f *FeishuChannel) downloadImageFromBase64(base64Data, mimeType, messageID 
 	}
 
 	return filePath, nil
+}
+
+// uploadImage 上传图片到飞书并返回 image_key
+func (f *FeishuChannel) uploadImage(ctx context.Context, imagePath string) (string, error) {
+	// 读取图片文件
+	fileData, err := os.ReadFile(imagePath)
+	if err != nil {
+		return "", fmt.Errorf("read image file: %w", err)
+	}
+
+	// 上传图片到飞书
+	req := larkim.NewCreateImageReqBuilder().
+		Body(larkim.NewCreateImageReqBodyBuilder().
+			ImageType("message").
+			Image(bytes.NewReader(fileData)).
+			Build()).
+		Build()
+
+	resp, err := f.client.Im.Image.Create(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("upload image: %w", err)
+	}
+
+	if resp.Code != 0 {
+		return "", fmt.Errorf("upload image failed: %s", resp.Msg)
+	}
+
+	if resp.Data == nil || resp.Data.ImageKey == nil {
+		return "", fmt.Errorf("upload image: no image_key in response")
+	}
+
+	return *resp.Data.ImageKey, nil
+}
+
+// sendImageMessage 发送图片消息
+func (f *FeishuChannel) sendImageMessage(ctx context.Context, receiveID, imageKey string) error {
+	if receiveID == "" {
+		return fmt.Errorf("receive_id is empty")
+	}
+
+	// Determine receive_id_type based on ID format
+	receiveIDType := larkim.ReceiveIdTypeOpenId
+	if strings.HasPrefix(receiveID, "oc_") {
+		receiveIDType = larkim.ReceiveIdTypeChatId
+	}
+
+	// Build image message content
+	imageContent := map[string]any{
+		"image_key": imageKey,
+	}
+	contentJSON, err := json.Marshal(imageContent)
+	if err != nil {
+		return fmt.Errorf("marshal image content: %w", err)
+	}
+
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(receiveIDType).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(receiveID).
+			MsgType(larkim.MsgTypeImage).
+			Content(string(contentJSON)).
+			Build()).
+		Build()
+
+	resp, err := f.client.Im.Message.Create(ctx, req)
+	if err != nil {
+		return fmt.Errorf("send image message: %w", err)
+	}
+
+	if resp.Code != 0 {
+		return fmt.Errorf("send image failed: %s", resp.Msg)
+	}
+
+	logger.Debug("Image sent successfully", "to", receiveID, "messageID", safeString(resp.Data.MessageId))
+	return nil
+}
+
+// SendWithImages 发送消息（支持图片）
+// 检测内容中的 [GENERATED_IMAGE:路径] 标记，上传图片并发送
+func (f *FeishuChannel) SendWithImages(ctx context.Context, receiveID, content string) error {
+	// 正则匹配 [GENERATED_IMAGE:路径]
+	imagePattern := regexp.MustCompile(`\[GENERATED_IMAGE:([^\]]+)\]`)
+	matches := imagePattern.FindAllStringSubmatch(content, -1)
+
+	// 先发送文本内容（移除图片标记）
+	textContent := imagePattern.ReplaceAllString(content, "")
+
+	// 发送文本消息
+	if strings.TrimSpace(textContent) != "" {
+		if err := f.sendReply(ctx, receiveID, textContent); err != nil {
+			logger.Warn("Failed to send text message", "error", err)
+		}
+	}
+
+	// 发送图片
+	for _, match := range matches {
+		if len(match) > 1 {
+			imagePath := match[1]
+			logger.Info("Uploading generated image", "path", imagePath)
+
+			imageKey, err := f.uploadImage(ctx, imagePath)
+			if err != nil {
+				logger.Warn("Failed to upload image", "path", imagePath, "error", err)
+				continue
+			}
+
+			if err := f.sendImageMessage(ctx, receiveID, imageKey); err != nil {
+				logger.Warn("Failed to send image message", "error", err)
+			}
+		}
+	}
+
+	// 处理视频标记 [GENERATED_VIDEO:路径]
+	videoPattern := regexp.MustCompile(`\[GENERATED_VIDEO:([^\]]+)\]`)
+	videoMatches := videoPattern.FindAllStringSubmatch(content, -1)
+
+	for _, match := range videoMatches {
+		if len(match) > 1 {
+			videoPath := match[1]
+			logger.Info("Uploading generated video", "path", videoPath)
+
+			fileKey, err := f.uploadFile(ctx, videoPath)
+			if err != nil {
+				logger.Warn("Failed to upload video", "path", videoPath, "error", err)
+				continue
+			}
+
+			if err := f.sendFileMessage(ctx, receiveID, fileKey); err != nil {
+				logger.Warn("Failed to send video message", "error", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// uploadFile 上传文件到飞书
+func (f *FeishuChannel) uploadFile(ctx context.Context, filePath string) (string, error) {
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+
+	// 获取文件名
+	fileName := filepath.Base(filePath)
+
+	req := larkim.NewCreateFileReqBuilder().
+		Body(larkim.NewCreateFileReqBodyBuilder().
+			FileType("stream").
+			FileName(fileName).
+			File(bytes.NewReader(fileData)).
+			Build()).
+		Build()
+
+	resp, err := f.client.Im.File.Create(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("upload file: %w", err)
+	}
+
+	if resp.Code != 0 {
+		return "", fmt.Errorf("upload file failed: %s", resp.Msg)
+	}
+
+	if resp.Data == nil || resp.Data.FileKey == nil {
+		return "", fmt.Errorf("upload file: no file_key in response")
+	}
+
+	return *resp.Data.FileKey, nil
+}
+
+// sendFileMessage 发送文件消息
+func (f *FeishuChannel) sendFileMessage(ctx context.Context, receiveID, fileKey string) error {
+	if receiveID == "" {
+		return fmt.Errorf("receive_id is empty")
+	}
+
+	// Determine receive_id_type based on ID format
+	receiveIDType := larkim.ReceiveIdTypeOpenId
+	if strings.HasPrefix(receiveID, "oc_") {
+		receiveIDType = larkim.ReceiveIdTypeChatId
+	}
+
+	// Build file message content
+	fileContent := map[string]any{
+		"file_key": fileKey,
+	}
+	contentJSON, err := json.Marshal(fileContent)
+	if err != nil {
+		return fmt.Errorf("marshal file content: %w", err)
+	}
+
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(receiveIDType).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(receiveID).
+			MsgType(larkim.MsgTypeFile).
+			Content(string(contentJSON)).
+			Build()).
+		Build()
+
+	resp, err := f.client.Im.Message.Create(ctx, req)
+	if err != nil {
+		return fmt.Errorf("send file message: %w", err)
+	}
+
+	if resp.Code != 0 {
+		return fmt.Errorf("send file failed: %s", resp.Msg)
+	}
+
+	logger.Debug("File sent successfully", "to", receiveID, "messageID", safeString(resp.Data.MessageId))
+	return nil
 }
 
 // Compile-time check for unused code (regexp for markdown table parsing if needed later)

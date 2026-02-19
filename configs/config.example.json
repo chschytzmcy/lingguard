@@ -148,6 +148,19 @@
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-fetch"]
       }
+    },
+    "opencode": {
+      "_comment": "OpenCode 代码助手配置",
+      "enabled": false,
+      "baseURL": "http://127.0.0.1:4096",
+      "timeout": 1200
+    },
+    "imageGen": {
+      "_comment": "图片/视频生成配置 - 使用阿里云通义万相",
+      "enabled": false,
+      "provider": "qwen",
+      "model": "wanx2.1-t2i-turbo",
+      "_models": "可用模型: wanx2.1-t2i-turbo (快速), wanx2.1-t2i-plus (高质量), wanx-v1 (旧版)"
     }
   },
 

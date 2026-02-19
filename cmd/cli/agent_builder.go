@@ -168,6 +168,33 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 	// 注册记忆工具
 	ag.RegisterMemoryTool()
 
+	// 注册图像/视频生成工具
+	if b.cfg.Tools.ImageGen != nil && b.cfg.Tools.ImageGen.Enabled {
+		imageGenCfg := tools.DefaultImageGenConfig()
+		imageGenCfg.APIKey = b.cfg.Tools.ImageGen.APIKey
+
+		// 从 Provider 配置继承 API Key
+		if imageGenCfg.APIKey == "" {
+			providerName := b.cfg.Tools.ImageGen.Provider
+			if providerName == "" {
+				providerName = "qwen"
+			}
+			if p, ok := b.cfg.Providers[providerName]; ok {
+				imageGenCfg.APIKey = p.APIKey
+			}
+		}
+
+		if b.cfg.Tools.ImageGen.Model != "" {
+			imageGenCfg.Model = b.cfg.Tools.ImageGen.Model
+		}
+		if b.cfg.Tools.ImageGen.OutputDir != "" {
+			imageGenCfg.OutputDir = b.cfg.Tools.ImageGen.OutputDir
+		}
+
+		ag.RegisterTool(tools.NewImageGenTool(imageGenCfg))
+		logger.Info("Image/Video generation tool enabled", "model", imageGenCfg.Model)
+	}
+
 	// 注册 OpenCode 工具（即使 disabled 也注册，会返回原生工具提示）
 	{
 		openCodeCfg := tools.DefaultOpenCodeConfig()
