@@ -170,7 +170,7 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 
 	// 注册 AI 内容生成工具（图像/视频）
 	if b.cfg.Tools.AIGC != nil && b.cfg.Tools.AIGC.Enabled {
-		aigcCfg := tools.DefaultImageGenConfig()
+		aigcCfg := tools.DefaultAIGCConfig()
 		aigcCfg.APIKey = b.cfg.Tools.AIGC.APIKey
 
 		// 从 Provider 配置继承 API Key
@@ -198,7 +198,7 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 			aigcCfg.OutputDir = b.cfg.Tools.AIGC.OutputDir
 		}
 
-		ag.RegisterTool(tools.NewImageGenTool(aigcCfg))
+		ag.RegisterTool(tools.NewAIGCTool(aigcCfg))
 		logger.Info("AIGC tool enabled", "textToImage", aigcCfg.TextToImage, "textToVideo", aigcCfg.TextToVideo, "imageToVideo", aigcCfg.ImageToVideo)
 	}
 

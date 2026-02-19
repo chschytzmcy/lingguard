@@ -16,8 +16,8 @@ import (
 	"time"
 )
 
-// ImageGenTool 图像/视频生成工具
-type ImageGenTool struct {
+// AIGCTool 图像/视频生成工具
+type AIGCTool struct {
 	apiKey       string
 	apiBase      string
 	textToImage  string // 文生图模型
@@ -26,8 +26,8 @@ type ImageGenTool struct {
 	outputDir    string
 }
 
-// ImageGenConfig 图像/视频生成配置
-type ImageGenConfig struct {
+// AIGCConfig 图像/视频生成配置
+type AIGCConfig struct {
 	APIKey       string
 	APIBase      string
 	TextToImage  string // 文生图模型
@@ -36,10 +36,10 @@ type ImageGenConfig struct {
 	OutputDir    string
 }
 
-// DefaultImageGenConfig 默认配置
-func DefaultImageGenConfig() *ImageGenConfig {
+// DefaultAIGCConfig 默认配置
+func DefaultAIGCConfig() *AIGCConfig {
 	home, _ := os.UserHomeDir()
-	return &ImageGenConfig{
+	return &AIGCConfig{
 		APIBase:      "https://dashscope.aliyuncs.com/api/v1/services/aigc",
 		TextToImage:  "wan2.6-t2i",
 		TextToVideo:  "wan2.6-t2v",
@@ -48,8 +48,8 @@ func DefaultImageGenConfig() *ImageGenConfig {
 	}
 }
 
-// NewImageGenTool 创建图像生成工具
-func NewImageGenTool(cfg *ImageGenConfig) *ImageGenTool {
+// NewAIGCTool 创建图像生成工具
+func NewAIGCTool(cfg *AIGCConfig) *AIGCTool {
 	if cfg.APIBase == "" {
 		cfg.APIBase = "https://dashscope.aliyuncs.com/api/v1/services/aigc"
 	}
@@ -67,7 +67,7 @@ func NewImageGenTool(cfg *ImageGenConfig) *ImageGenTool {
 		cfg.OutputDir = filepath.Join(home, ".lingguard", "workspace", "generated")
 	}
 
-	return &ImageGenTool{
+	return &AIGCTool{
 		apiKey:       cfg.APIKey,
 		apiBase:      cfg.APIBase,
 		textToImage:  cfg.TextToImage,
@@ -78,12 +78,12 @@ func NewImageGenTool(cfg *ImageGenConfig) *ImageGenTool {
 }
 
 // Name 返回工具名称
-func (t *ImageGenTool) Name() string {
-	return "image_gen"
+func (t *AIGCTool) Name() string {
+	return "aigc"
 }
 
 // Description 返回工具描述
-func (t *ImageGenTool) Description() string {
+func (t *AIGCTool) Description() string {
 	return `Image and video generation tool using Alibaba Cloud Tongyi Wanxiang.
 
 Actions:
@@ -112,7 +112,7 @@ Video generation:
 }
 
 // Parameters 返回参数定义
-func (t *ImageGenTool) Parameters() map[string]interface{} {
+func (t *AIGCTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -151,7 +151,7 @@ func (t *ImageGenTool) Parameters() map[string]interface{} {
 }
 
 // Execute 执行工具
-func (t *ImageGenTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+func (t *AIGCTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	if t.apiKey == "" {
 		return "", fmt.Errorf("image generation API key not configured")
 	}
@@ -183,7 +183,7 @@ func (t *ImageGenTool) Execute(ctx context.Context, args json.RawMessage) (strin
 }
 
 // generateImage 生成图片
-func (t *ImageGenTool) generateImage(ctx context.Context, prompt, model, size, style string) (string, error) {
+func (t *AIGCTool) generateImage(ctx context.Context, prompt, model, size, style string) (string, error) {
 	if prompt == "" {
 		return "", fmt.Errorf("prompt is required")
 	}
@@ -240,7 +240,7 @@ func (t *ImageGenTool) generateImage(ctx context.Context, prompt, model, size, s
 }
 
 // generateVideo 生成视频
-func (t *ImageGenTool) generateVideo(ctx context.Context, prompt string, duration int) (string, error) {
+func (t *AIGCTool) generateVideo(ctx context.Context, prompt string, duration int) (string, error) {
 	if prompt == "" {
 		return "", fmt.Errorf("prompt is required")
 	}
@@ -293,7 +293,7 @@ func (t *ImageGenTool) generateVideo(ctx context.Context, prompt string, duratio
 }
 
 // generateVideoFromImage 图生视频
-func (t *ImageGenTool) generateVideoFromImage(ctx context.Context, imagePath, prompt string, duration int) (string, error) {
+func (t *AIGCTool) generateVideoFromImage(ctx context.Context, imagePath, prompt string, duration int) (string, error) {
 	if imagePath == "" {
 		return "", fmt.Errorf("image_path is required for image-to-video generation")
 	}
@@ -363,7 +363,7 @@ func (t *ImageGenTool) generateVideoFromImage(ctx context.Context, imagePath, pr
 }
 
 // submitImageToVideoTask 提交图生视频任务
-func (t *ImageGenTool) submitImageToVideoTask(ctx context.Context, reqBody interface{}) (string, error) {
+func (t *AIGCTool) submitImageToVideoTask(ctx context.Context, reqBody interface{}) (string, error) {
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
@@ -431,7 +431,7 @@ type videoAPIResponse struct {
 }
 
 // callImageAPI 调用图片生成 API
-func (t *ImageGenTool) callImageAPI(ctx context.Context, reqBody interface{}) (*imageAPIResponse, error) {
+func (t *AIGCTool) callImageAPI(ctx context.Context, reqBody interface{}) (*imageAPIResponse, error) {
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -477,7 +477,7 @@ func (t *ImageGenTool) callImageAPI(ctx context.Context, reqBody interface{}) (*
 }
 
 // waitForImageResult 等待图片生成结果
-func (t *ImageGenTool) waitForImageResult(ctx context.Context, taskID string) (*imageAPIResponse, error) {
+func (t *AIGCTool) waitForImageResult(ctx context.Context, taskID string) (*imageAPIResponse, error) {
 	// 阿里云任务查询 URL
 	url := fmt.Sprintf("https://dashscope.aliyuncs.com/api/v1/tasks/%s", taskID)
 
@@ -531,7 +531,7 @@ func (t *ImageGenTool) waitForImageResult(ctx context.Context, taskID string) (*
 }
 
 // submitVideoTask 提交视频生成任务
-func (t *ImageGenTool) submitVideoTask(ctx context.Context, reqBody interface{}) (string, error) {
+func (t *AIGCTool) submitVideoTask(ctx context.Context, reqBody interface{}) (string, error) {
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
@@ -573,7 +573,7 @@ func (t *ImageGenTool) submitVideoTask(ctx context.Context, reqBody interface{})
 }
 
 // waitForVideoResult 等待视频生成结果
-func (t *ImageGenTool) waitForVideoResult(ctx context.Context, taskID string) (*videoAPIResponse, error) {
+func (t *AIGCTool) waitForVideoResult(ctx context.Context, taskID string) (*videoAPIResponse, error) {
 	// 使用统一的任务查询 URL
 	url := fmt.Sprintf("https://dashscope.aliyuncs.com/api/v1/tasks/%s", taskID)
 
@@ -617,7 +617,7 @@ func (t *ImageGenTool) waitForVideoResult(ctx context.Context, taskID string) (*
 }
 
 // downloadFile 下载文件
-func (t *ImageGenTool) downloadFile(ctx context.Context, url, prefix, ext string) (string, error) {
+func (t *AIGCTool) downloadFile(ctx context.Context, url, prefix, ext string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", err
@@ -657,7 +657,7 @@ func (t *ImageGenTool) downloadFile(ctx context.Context, url, prefix, ext string
 
 // compressImageForAPI 压缩图片以符合 API 大小限制
 // 返回带 MIME 类型前缀的完整 data URI 格式
-func (t *ImageGenTool) compressImageForAPI(imageData []byte, maxSize int) (string, error) {
+func (t *AIGCTool) compressImageForAPI(imageData []byte, maxSize int) (string, error) {
 	// 先检查原始大小
 	base64Str := base64.StdEncoding.EncodeToString(imageData)
 	dataURI := fmt.Sprintf("data:image/jpeg;base64,%s", base64Str)
@@ -730,7 +730,7 @@ func (t *ImageGenTool) compressImageForAPI(imageData []byte, maxSize int) (strin
 }
 
 // resizeImage 简单的图片缩放
-func (t *ImageGenTool) resizeImage(img image.Image, newWidth, newHeight int) image.Image {
+func (t *AIGCTool) resizeImage(img image.Image, newWidth, newHeight int) image.Image {
 	bounds := img.Bounds()
 	dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
 
@@ -749,11 +749,11 @@ func (t *ImageGenTool) resizeImage(img image.Image, newWidth, newHeight int) ima
 }
 
 // IsDangerous 返回是否为危险操作
-func (t *ImageGenTool) IsDangerous() bool {
+func (t *AIGCTool) IsDangerous() bool {
 	return false
 }
 
 // SetAPIKey 设置 API Key
-func (t *ImageGenTool) SetAPIKey(key string) {
+func (t *AIGCTool) SetAPIKey(key string) {
 	t.apiKey = key
 }
