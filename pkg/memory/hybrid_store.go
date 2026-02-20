@@ -4,6 +4,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -244,15 +245,42 @@ func (s *HybridStore) searchFromFile(ctx context.Context, query string, topK int
 // AddMemory 添加长期记忆
 func (s *HybridStore) AddMemory(category, content string) error {
 	// 智能去重：检查是否已存在相似记忆
+
+	// 1. 先检查文件存储中是否已有相同或相似内容（最快最可靠）
+	existingMemory, err := s.fileStore.GetMemory()
+	if err == nil && existingMemory != "" {
+		// 检查是否已包含相同内容
+		if strings.Contains(existingMemory, content) {
+			logger.Debug("Skipping duplicate memory in file store", "content", content[:min(50, len(content))])
+			return nil
+		}
+	}
+
+	// 2. 检查缓冲区中是否有相似内容
 	if s.IsVectorEnabled() {
+		s.bufferMu.Lock()
+		for _, r := range s.buffer {
+			// 检查内容相似度
+			bufferContent := r.Content
+			// 去掉分类前缀进行比较
+			if idx := strings.Index(bufferContent, "] "); idx > 0 {
+				bufferContent = bufferContent[idx+2:]
+			}
+			if bufferContent == content || strings.Contains(bufferContent, content) || strings.Contains(content, bufferContent) {
+				s.bufferMu.Unlock()
+				logger.Debug("Skipping similar memory in buffer", "content", content[:min(50, len(content))])
+				return nil
+			}
+		}
+		s.bufferMu.Unlock()
+
+		// 3. 搜索向量数据库中的相似记忆
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		// 搜索相似记忆
 		existing, err := s.Search(ctx, content, 1)
 		if err == nil && len(existing) > 0 && existing[0].Score >= 0.95 {
-			// 已存在高度相似的记忆，跳过
-			logger.Debug("Skipping duplicate memory", "score", existing[0].Score, "content", content[:min(50, len(content))])
+			logger.Debug("Skipping duplicate memory in vector store", "score", existing[0].Score, "content", content[:min(50, len(content))])
 			return nil
 		}
 	}

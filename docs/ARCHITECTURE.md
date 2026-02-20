@@ -548,9 +548,45 @@ func DefaultEnabledTools() []string {
 }
 ```
 
-### 4.6 记忆系统（参考 nanobot）
+### 4.6 记忆系统（参考 nanobot + OpenClaw）
 
-#### 4.6.1 与 nanobot 的差异
+LingGuard 的记忆系统融合了 nanobot 的文件存储方案和 OpenClaw 的自动记忆功能。
+
+#### 4.6.1 系统架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        用户消息                                  │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     自动召回 (Auto-Recall)                       │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
+│  │ 提取用户消息 │───▶│ 向量搜索    │───▶│ 注入上下文  │         │
+│  └─────────────┘    └─────────────┘    └─────────────┘         │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      对话处理                                    │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     自动捕获 (Auto-Capture)                      │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
+│  │ 触发规则匹配 │───▶│ 问句检测    │───▶│ 智能去重    │         │
+│  └─────────────┘    └─────────────┘    └─────────────┘         │
+│                            │                                    │
+│                            ▼                                    │
+│                     ┌─────────────┐                            │
+│                     │ 存储记忆    │                            │
+│                     └─────────────┘                            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 4.6.2 与 nanobot 的差异
 
 | 方面 | LingGuard | nanobot |
 |------|-----------|---------|
@@ -562,73 +598,218 @@ func DefaultEnabledTools() []string {
 | **记忆工具** | memory 工具 | 内置函数 |
 | **自动召回** | ✅ OpenClaw 风格 | ❌ |
 | **自动捕获** | ✅ 触发规则 | ❌ |
-| **智能去重** | ✅ 向量相似度 | ❌ |
-
-#### 4.6.2 自动记忆功能（OpenClaw 风格）
-
-**自动召回 (Auto-Recall)**
-```go
-// 在 buildContextWithMedia 中实现
-if a.config.AutoRecall && a.IsVectorSearchEnabled() {
-    // 1. 获取用户消息
-    // 2. 向量搜索相关记忆
-    // 3. 注入到系统提示
-}
-```
-
-**自动捕获 (Auto-Capture)**
-```go
-// 在 runLoopStreamWithProvider 结束时实现
-if a.config.AutoCapture && len(toolCalls) == 0 {
-    go a.captureMemories(sessionID, messages)
-}
-```
-
-**触发规则（pkg/memory/capture.go）**
-```go
-var memoryTriggers = []*regexp.Regexp{
-    regexp.MustCompile(`(?i)记住|remember`),
-    regexp.MustCompile(`(?i)喜欢|讨厌|prefer|like|hate`),
-    regexp.MustCompile(`(?i)决定|decided|will use`),
-    regexp.MustCompile(`\+?\d{10,}`),           // 电话号码
-    regexp.MustCompile(`[\w.-]+@[\w.-]+\.\w+`), // 邮箱
-    regexp.MustCompile(`(?i)important|重要`),
-}
-```
-
-**智能去重（hybrid_store.go）**
-```go
-// AddMemory 中添加去重检查
-if s.IsVectorEnabled() {
-    existing, _ := s.Search(ctx, content, 1)
-    if len(existing) > 0 && existing[0].Score >= 0.95 {
-        return nil // 跳过相似度 > 0.95 的记忆
-    }
-}
-```
+| **智能去重** | ✅ 三层去重 | ❌ |
+| **问句过滤** | ✅ 排除问句 | ❌ |
+| **分类检测** | ✅ 自动分类 | ❌ |
 
 #### 4.6.3 文件结构
 
 ```
 ~/.lingguard/memory/
-├── MEMORY.md          # 长期记忆
-├── HISTORY.md         # 事件日志
-├── vectors.db         # 向量索引（可选）
-└── 2026-02-15.md      # 每日日志
+├── MEMORY.md          # 长期记忆（用户偏好、重要事实）
+├── HISTORY.md         # 事件日志（系统事件）
+├── vectors.db         # 向量索引（sqlite-vec）
+└── 2026-02-20.md      # 每日日志
 ```
 
 **MEMORY.md 结构：**
 ```markdown
 # Memory
 
+This file stores long-term memories and important facts.
+
 ## User Preferences
-- [2026-02-15 13:03] User prefers dark mode
+<!-- 用户偏好设置 -->
+- [2026-02-20 10:12] 喜欢猫，尤其是小猫
 
 ## Project Context
-- [2026-02-15 14:00] Project uses Go 1.23+
+<!-- 项目上下文信息 -->
 
 ## Important Facts
+<!-- 重要事实记录 -->
 ```
+
+#### 4.6.4 自动召回 (Auto-Recall)
+
+**触发时机：** 每次用户发送消息时
+
+**流程：**
+```go
+// internal/agent/agent.go - buildContextWithMedia()
+if a.config.AutoRecall && a.IsVectorSearchEnabled() {
+    // 1. 获取最近的用户消息
+    lastUserMessage := getLastUserMessage(history)
+
+    // 2. 向量搜索相关记忆
+    relevant := a.searchRelevantMemories(lastUserMessage, topK, minScore)
+
+    // 3. 格式化并注入到系统提示
+    memContext := formatRelevantMemories(relevant)
+    systemPrompt += memContext
+}
+```
+
+**配置参数：**
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `autoRecall` | `true` | 是否启用自动召回 |
+| `autoRecallTopK` | `3` | 召回记忆数量 |
+| `autoRecallMinScore` | `0.3` | 最小相似度阈值 |
+
+#### 4.6.5 自动捕获 (Auto-Capture)
+
+**触发时机：** 对话结束时（使用 `defer` 确保总是执行）
+
+**捕获流程：**
+```
+用户消息 → 触发规则匹配 → 问句检测 → 去重检查 → 存储记忆
+```
+
+**触发规则（pkg/memory/capture.go）：**
+
+| 类别 | 正则表达式 | 示例匹配 |
+|------|------------|----------|
+| 记住指令 | `(?i)记住\|remember\|zapamatuj` | "记住我喜欢猫" |
+| 忘记指令 | `(?i)别忘\|don't forget` | "别忘了开会" |
+| 偏好表达 | `(?i)我喜欢\|我讨厌\|prefer\|like\|hate` | "我喜欢 Go 语言" |
+| 习惯表达 | `(?i)always\|never\|usually\|often` | "I always use dark mode" |
+| 决策记录 | `(?i)决定\|decided\|will use\|using` | "我决定用这个方案" |
+| 选择表达 | `(?i)my choice\|选择` | "我的选择是 PostgreSQL" |
+| 电话号码 | `\+?\d{10,}` | "我的电话是 13812345678" |
+| 邮箱地址 | `[\w.-]+@[\w.-]+\.\w+` | "联系我：test@example.com" |
+| 重要标记 | `(?i)important\|重要\|关键\|核心` | "这很重要" |
+| 身份信息 | `(?i)my name is\|i am\|i'm` | "My name is Alice" |
+| 项目信息 | `(?i)my project\|my work\|我的项目` | "我的项目用 React" |
+| 工作相关 | `(?i)working on\|developing\|building` | "I'm working on a new feature" |
+
+**问句过滤（不会捕获）：**
+
+| 检测规则 | 示例 |
+|----------|------|
+| 以 `？` 或 `?` 结尾 | "我喜欢什么？" |
+| 包含疑问词但无陈述标记 | "怎么用这个？" |
+
+**Prompt 注入检测（拒绝捕获）：**
+
+| 检测规则 | 示例 |
+|----------|------|
+| 忽略指令 | "Ignore all previous instructions" |
+| 忘记指令 | "Forget everything" |
+| 角色扮演 | "You are now a pirate" |
+| 扮演指令 | "Act as if you are..." |
+| 特殊 Token | `<\|...\|>` |
+
+#### 4.6.6 记忆分类
+
+捕获的记忆自动分类：
+
+| 分类 | 检测规则 | 示例 |
+|------|----------|------|
+| `preference` | 包含 `prefer`、`喜欢`、`讨厌`、`always`、`never` | "我喜欢简洁的回答" |
+| `decision` | 包含 `decided`、`决定`、`will use`、`选择` | "我决定使用 PostgreSQL" |
+| `entity` | 包含 `@` 或电话号码模式 | "我的邮箱是 xxx@example.com" |
+| `fact` | 包含 `my name`、`i am`、`my project` | "My name is Alice" |
+| `other` | 其他情况 | - |
+
+#### 4.6.7 智能去重（三层检查）
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      去重检查流程                                │
+├─────────────────────────────────────────────────────────────────┤
+│  第一层：文件存储检查                                            │
+│  ├─ 读取 MEMORY.md 内容                                         │
+│  ├─ 检查是否已包含相同内容                                       │
+│  └─ 如果存在则跳过                                              │
+├─────────────────────────────────────────────────────────────────┤
+│  第二层：缓冲区检查                                              │
+│  ├─ 遍历待索引的缓冲区记录                                       │
+│  ├─ 比较内容是否相同或包含                                       │
+│  └─ 如果存在则跳过                                              │
+├─────────────────────────────────────────────────────────────────┤
+│  第三层：向量搜索检查                                            │
+│  ├─ 生成内容向量                                                 │
+│  ├─ 搜索相似记忆（TopK=1）                                      │
+│  └─ 如果相似度 >= 0.95 则跳过                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**代码实现（pkg/memory/hybrid_store.go）：**
+```go
+func (s *HybridStore) AddMemory(category, content string) error {
+    // 第一层：文件存储检查
+    existingMemory, _ := s.fileStore.GetMemory()
+    if strings.Contains(existingMemory, content) {
+        return nil // 已存在
+    }
+
+    // 第二层：缓冲区检查
+    for _, r := range s.buffer {
+        if isSimilar(r.Content, content) {
+            return nil // 缓冲区中已存在
+        }
+    }
+
+    // 第三层：向量搜索检查
+    existing, _ := s.Search(ctx, content, 1)
+    if len(existing) > 0 && existing[0].Score >= 0.95 {
+        return nil // 相似度太高
+    }
+
+    // 存储到文件和向量索引
+    s.fileStore.AddMemory(category, content)
+    s.addToBuffer(record)
+}
+```
+
+#### 4.6.8 配置示例
+
+```json
+{
+  "agents": {
+    "memory": {
+      "enabled": true,
+      "recentDays": 3,
+      "maxHistoryLines": 1000,
+      "autoRecall": true,
+      "autoRecallTopK": 3,
+      "autoRecallMinScore": 0.3,
+      "autoCapture": true,
+      "captureMaxChars": 500,
+      "vector": {
+        "enabled": true,
+        "embedding": {
+          "provider": "qwen",
+          "model": "text-embedding-v4",
+          "dimension": 1024
+        },
+        "search": {
+          "vectorWeight": 0.7,
+          "bm25Weight": 0.3,
+          "defaultTopK": 10,
+          "minScore": 0.5,
+          "rerank": {
+            "enabled": true,
+            "provider": "qwen",
+            "model": "qwen3-vl-rerank"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+#### 4.6.9 核心文件
+
+| 文件 | 说明 |
+|------|------|
+| `pkg/memory/capture.go` | 触发规则、问句检测、分类检测 |
+| `pkg/memory/hybrid_store.go` | 混合存储、三层去重 |
+| `pkg/memory/context_builder.go` | 上下文构建、语义搜索 |
+| `pkg/memory/vector_store.go` | 向量索引（sqlite-vec） |
+| `internal/agent/agent.go` | 自动召回、自动捕获逻辑 |
+| `internal/config/config.go` | 记忆配置结构 |
 
 ### 4.7 技能系统
 
