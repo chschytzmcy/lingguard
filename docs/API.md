@@ -405,6 +405,106 @@ Search results for: Go programming language
 | tasks[].prompt | string | 任务描述 |
 | tasks[].description | string | 任务简述 |
 
+### 5.7 TTS 工具
+
+语音合成工具，将文本转换为语音。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| action | string | 是 | 动作类型：`synthesize` |
+| text | string | 是 | 要合成的文本内容（最大 5000 字符） |
+| voice | string | 否 | 音色（默认 Cherry） |
+
+**可用音色：**
+
+| 音色 | 描述 |
+|------|------|
+| Cherry | 甜美女声（默认） |
+| Serena | 温柔女声 |
+| Ethan | 沉稳男声 |
+| Chelsie | 活力女声 |
+| Momo | 可爱童声 |
+| Vivian | 知性女声 |
+| Moon | 亲切男声 |
+| Maia | 清澈女声 |
+| Kai | 磁性男声 |
+
+**示例：**
+```json
+{"action": "synthesize", "text": "你好，这是一段测试语音"}
+{"action": "synthesize", "text": "欢迎使用语音合成功能", "voice": "Ethan"}
+```
+
+**返回格式：**
+```
+语音合成成功！
+文本: 你好，这是一段测试语音
+音色: Cherry
+时长: 3.5 秒
+
+[GENERATED_AUDIO:/home/user/.lingguard/workspace/generated/audio-20260220.wav]
+```
+
+**配置要求：** 需要配置 `tts` 配置或 `providers.qwen.apiKey`。
+
+### 5.8 AIGC 工具
+
+图像和视频生成工具，使用阿里云通义万相。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| action | string | 是 | 生成动作类型 |
+| prompt | string | 是 | 文字描述 |
+| image_path | string | 条件 | 图片路径（图生视频时需要） |
+| video_path | string | 条件 | 视频路径（视频生视频时需要） |
+| model | string | 否 | 使用的模型 |
+| size | string | 否 | 图片尺寸（如 1024x1024） |
+| duration | integer | 否 | 视频时长秒数（默认 5） |
+| style | string | 否 | 风格预设 |
+
+**动作类型：**
+
+| 动作 | 说明 | 模型 |
+|------|------|------|
+| `generate_image` | 文生图 | wan2.6-t2i |
+| `generate_video` | 文生视频 | wan2.6-t2v |
+| `generate_video_from_image` | 图生视频 | wan2.6-i2v-flash |
+| `generate_video_from_video` | 视频生视频 | wan2.6-r2v-flash |
+
+**示例：**
+
+```json
+// 文生图
+{"action": "generate_image", "prompt": "一只可爱的猫咪坐在椅子上"}
+
+// 文生视频
+{"action": "generate_video", "prompt": "一只猫在花园里散步", "duration": 5}
+
+// 图生视频
+{"action": "generate_video_from_image", "prompt": "猫开始走动", "image_path": "/path/to/image.png"}
+
+// 视频生视频（保持角色一致性）
+{"action": "generate_video_from_video", "prompt": "人物开始跳舞", "video_path": "/path/to/video.mp4"}
+```
+
+**返回格式：**
+```
+图片生成成功！
+描述: 一只可爱的猫咪坐在椅子上
+
+[GENERATED_IMAGE:/home/user/.lingguard/workspace/generated/image-20260220.png]
+```
+
+```
+视频生成成功！
+描述: 一只猫在花园里散步
+时长: 5 秒
+
+[GENERATED_VIDEO:/home/user/.lingguard/workspace/generated/video-20260220.mp4]
+```
+
+**配置要求：** 需要配置 `tools.aigc.enabled = true` 和 `providers.qwen.apiKey`。
+
 ---
 
 ## 6. 飞书 Channel API

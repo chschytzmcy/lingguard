@@ -17,7 +17,9 @@
 ### 工具系统
 - **Shell 工具** - 执行命令，支持安全沙箱
 - **文件工具** - 读写、编辑、列表
-- **Web 工具** - Brave 搜索、网页抓取
+- **Web 工具** - Tavily AI 搜索、网页抓取
+- **AIGC 工具** - 图像/视频生成（文生图、文生视频、图生视频、视频生视频）
+- **TTS 工具** - 语音合成，多种音色可选
 - **MCP 支持** - Model Context Protocol，支持 Stdio 和 HTTP 传输
 
 ### 智能能力
@@ -151,7 +153,7 @@ EOF
       "model": "glm-5",
       "timeout": 120
     },
-    "deepseek": {
+    "qwen": {
       "apiKey": "sk-xxx"
     }
   },
@@ -183,21 +185,37 @@ EOF
   "tools": {
     "restrictToWorkspace": false,
     "workspace": "~/.lingguard/workspace",
-    "braveApiKey": "",
+    "tavilyApiKey": "",
     "webMaxChars": 50000,
     "mcpServers": {
       "filesystem": {
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/documents"]
-      },
-      "remote-server": {
-        "url": "http://localhost:8765/mcp"
       }
+    },
+    "aigc": {
+      "enabled": true,
+      "provider": "qwen"
     }
+  },
+  "speech": {
+    "enabled": true,
+    "provider": "qwen",
+    "model": "qwen3-asr-flash"
+  },
+  "tts": {
+    "enabled": true,
+    "provider": "qwen",
+    "model": "qwen3-tts-flash",
+    "voice": "Cherry"
   },
   "cron": {
     "enabled": true,
     "storePath": "~/.lingguard/cron/jobs.json"
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
   },
   "storage": {
     "type": "file",
@@ -217,10 +235,12 @@ EOF
 |--------|----------|:--------:|
 | `shell` | 执行 Shell 命令 | ⚠️ |
 | `file` | 文件读写、编辑、列表 | ⚠️ |
-| `web_search` | Brave 搜索 API | - |
+| `web_search` | Tavily AI 搜索 | - |
 | `web_fetch` | 网页抓取、HTML 转 Markdown | - |
+| `aigc` | 图像/视频生成（文生图、文生视频、图生视频、视频生视频） | - |
+| `tts` | 语音合成，多种音色可选 | - |
 | `skill` | 按需加载技能指令 | - |
-| `memory` | 记忆操作（添加/搜索） | - |
+| `memory` | 记忆操作（添加/搜索/日志） | - |
 | `cron` | 定时任务管理 | - |
 | `message` | 发送消息到渠道 | - |
 | `workspace` | 工作区管理 | - |
@@ -475,9 +495,11 @@ task_status --id "task_xxx"
 | 渐进式技能加载 | ✅ 独有 | ❌ |
 | 多模态支持 | ✅ 图片+视频 | 🚧 计划中 |
 | 独立多模态 Provider | ✅ 独有 | ❌ |
+| AIGC 生成工具 | ✅ 图片+视频 | ❌ |
+| 语音合成 (TTS) | ✅ Qwen TTS | ❌ |
 | ClawHub 技能库 | ❌ | ✅ |
 | OAuth 登录 | ❌ | ✅ Codex/Copilot |
-| 语音转录 | ❌ | ✅ Groq Whisper |
+| 语音转录 | ✅ Qwen3-ASR | ✅ Groq Whisper |
 | Docker 支持 | ❌ | ✅ |
 
 ### 适用场景
