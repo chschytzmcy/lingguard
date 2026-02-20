@@ -188,7 +188,7 @@
   },
 
   "speech": {
-    "_comment": "==================== 语音识别配置 ====================",
+    "_comment": "==================== 语音识别配置 (ASR) ====================",
     "_desc": "用于飞书语音消息转文字，使用阿里云通义千问 Paraformer",
     "_docs": "https://help.aliyun.com/zh/model-studio/developer-reference/paraformer",
     "_note": "apiKey 自动从 providers.qwen 继承，无需单独配置",
@@ -198,6 +198,20 @@
     "format": "opus",
     "language": "zh",
     "timeout": 60
+  },
+
+  "tts": {
+    "_comment": "==================== 语音合成配置 (TTS) ====================",
+    "_desc": "文字转语音，使用阿里云通义千问 CosyVoice",
+    "_docs": "https://help.aliyun.com/zh/model-studio/developer-reference/tongyi-qianwen-tts",
+    "_note": "apiKey 自动从 providers.qwen 继承，无需单独配置",
+    "enabled": false,
+    "provider": "qwen",
+    "model": "qwen3-tts-flash",
+    "voice": "Cherry",
+    "_voices": "可用音色: Cherry(甜美女声), Serena(温柔女声), Ethan(沉稳男声), Chelsie(活力女声), Momo(可爱童声), Vivian(知性女声), Moon(亲切男声), Maia(清澈女声), Kai(磁性男声)",
+    "timeout": 60,
+    "outputDir": "~/.lingguard/workspace/generated"
   },
 
   "cron": {
