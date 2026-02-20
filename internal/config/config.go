@@ -146,13 +146,15 @@ type ToolsConfig struct {
 
 // AIGCConfig AI 内容生成配置（图像/视频）
 type AIGCConfig struct {
-	Enabled      bool   `json:"enabled"`                // 是否启用
-	Provider     string `json:"provider,omitempty"`     // 提供商: "qwen" (通义万相)
-	APIKey       string `json:"apiKey,omitempty"`       // API Key (可从 Provider 配置继承)
-	TextToImage  string `json:"textToImage,omitempty"`  // 文生图模型，默认 wan2.6-t2i
-	TextToVideo  string `json:"textToVideo,omitempty"`  // 文生视频模型，默认 wan2.6-t2v
-	ImageToVideo string `json:"imageToVideo,omitempty"` // 图生视频模型，默认 wan2.6-i2v-flash
-	OutputDir    string `json:"outputDir,omitempty"`    // 输出目录，默认 ~/.lingguard/workspace/generated
+	Enabled              bool   `json:"enabled"`                        // 是否启用
+	Provider             string `json:"provider,omitempty"`             // 提供商: "qwen" (通义万相)
+	APIKey               string `json:"apiKey,omitempty"`               // API Key (可从 Provider 配置继承)
+	TextToImage          string `json:"textToImage,omitempty"`          // 文生图模型，默认 wan2.6-t2i
+	TextToVideo          string `json:"textToVideo,omitempty"`          // 文生视频模型，默认 wan2.6-t2v
+	ImageToVideo         string `json:"imageToVideo,omitempty"`         // 图生视频模型，默认 wan2.6-i2v-flash
+	VideoToVideo         string `json:"videoToVideo,omitempty"`         // 参考生视频模型，默认 wan2.6-r2v
+	ImageToVideoDuration int    `json:"imageToVideoDuration,omitempty"` // 图生视频时长（秒），默认 5，最大 15
+	OutputDir            string `json:"outputDir,omitempty"`            // 输出目录，默认 ~/.lingguard/workspace/generated
 }
 
 // OpenCodeConfig OpenCode HTTP API 配置

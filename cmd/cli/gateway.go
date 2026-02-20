@@ -118,11 +118,11 @@ func runGateway() error {
 			Interval: interval,
 		}, createHeartbeatCallback(ag))
 
-		workspace := cfg.Agents.Workspace
-		if workspace == "" {
-			workspace = cfg.Tools.Workspace
+		hbWorkspace := cfg.Agents.Workspace
+		if hbWorkspace == "" {
+			hbWorkspace = cfg.Tools.Workspace
 		}
-		heartbeatService.SetWorkspace(utils.ExpandHome(workspace))
+		heartbeatService.SetWorkspace(utils.ExpandHome(hbWorkspace))
 		heartbeatService.Start()
 		logger.Info("Heartbeat service started", "interval", interval)
 	}
@@ -133,8 +133,15 @@ func runGateway() error {
 	contextAdapter.SetMessageTool(messageTool)
 	var handler channels.MessageHandler = contextAdapter
 
+	// 获取工作目录（用于媒体文件存储）
+	workspace := cfg.Agents.Workspace
+	if workspace == "" {
+		workspace = cfg.Tools.Workspace
+	}
+	workspace = utils.ExpandHome(workspace)
+
 	// 注册渠道
-	if err := registerChannels(cfg, mgr, handler); err != nil {
+	if err := registerChannels(cfg, mgr, workspace, handler); err != nil {
 		return err
 	}
 
@@ -191,13 +198,13 @@ func runGateway() error {
 }
 
 // registerChannels 注册所有渠道
-func registerChannels(cfg *config.Config, mgr *channels.Manager, handler channels.MessageHandler) error {
+func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace string, handler channels.MessageHandler) error {
 	// 飞书渠道
 	if cfg.Channels.Feishu != nil && cfg.Channels.Feishu.Enabled {
 		if cfg.Channels.Feishu.AppID == "" || cfg.Channels.Feishu.AppSecret == "" {
 			return fmt.Errorf("feishu channel enabled but appId or appSecret not configured")
 		}
-		mgr.RegisterChannel(channels.NewFeishuChannel(cfg.Channels.Feishu, cfg.Speech, cfg.Providers, handler))
+		mgr.RegisterChannel(channels.NewFeishuChannel(cfg.Channels.Feishu, cfg.Speech, cfg.Providers, workspace, handler))
 		logger.Info("Feishu channel registered")
 	}
 

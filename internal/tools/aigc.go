@@ -11,6 +11,7 @@ import (
 	"image/jpeg"
 	_ "image/png" // 注册 PNG 解码器
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,33 +22,39 @@ import (
 
 // AIGCTool 图像/视频生成工具
 type AIGCTool struct {
-	apiKey       string
-	apiBase      string
-	textToImage  string // 文生图模型
-	textToVideo  string // 文生视频模型
-	imageToVideo string // 图生视频模型
-	outputDir    string
+	apiKey               string
+	apiBase              string
+	textToImage          string // 文生图模型
+	textToVideo          string // 文生视频模型
+	imageToVideo         string // 图生视频模型
+	videoToVideo         string // 参考生视频模型
+	imageToVideoDuration int    // 图生视频最大时长（秒）
+	outputDir            string
 }
 
 // AIGCConfig 图像/视频生成配置
 type AIGCConfig struct {
-	APIKey       string
-	APIBase      string
-	TextToImage  string // 文生图模型
-	TextToVideo  string // 文生视频模型
-	ImageToVideo string // 图生视频模型
-	OutputDir    string
+	APIKey               string
+	APIBase              string
+	TextToImage          string // 文生图模型
+	TextToVideo          string // 文生视频模型
+	ImageToVideo         string // 图生视频模型
+	VideoToVideo         string // 参考生视频模型（视频生视频）
+	ImageToVideoDuration int    // 图生视频最大时长（秒），默认 5，最大 15
+	OutputDir            string
 }
 
 // DefaultAIGCConfig 默认配置
 func DefaultAIGCConfig() *AIGCConfig {
 	home, _ := os.UserHomeDir()
 	return &AIGCConfig{
-		APIBase:      "https://dashscope.aliyuncs.com/api/v1/services/aigc",
-		TextToImage:  "wan2.6-t2i",
-		TextToVideo:  "wan2.6-t2v",
-		ImageToVideo: "wan2.6-i2v-flash",
-		OutputDir:    filepath.Join(home, ".lingguard", "workspace", "generated"),
+		APIBase:              "https://dashscope.aliyuncs.com/api/v1/services/aigc",
+		TextToImage:          "wan2.6-t2i",
+		TextToVideo:          "wan2.6-t2v",
+		ImageToVideo:         "wan2.6-i2v-flash",
+		VideoToVideo:         "wan2.6-r2v-flash",
+		ImageToVideoDuration: 5,
+		OutputDir:            filepath.Join(home, ".lingguard", "workspace", "generated"),
 	}
 }
 
@@ -65,18 +72,29 @@ func NewAIGCTool(cfg *AIGCConfig) *AIGCTool {
 	if cfg.ImageToVideo == "" {
 		cfg.ImageToVideo = "wan2.6-i2v-flash"
 	}
+	if cfg.VideoToVideo == "" {
+		cfg.VideoToVideo = "wan2.6-r2v"
+	}
+	if cfg.ImageToVideoDuration <= 0 {
+		cfg.ImageToVideoDuration = 5
+	}
+	if cfg.ImageToVideoDuration > 15 {
+		cfg.ImageToVideoDuration = 15
+	}
 	if cfg.OutputDir == "" {
 		home, _ := os.UserHomeDir()
 		cfg.OutputDir = filepath.Join(home, ".lingguard", "workspace", "generated")
 	}
 
 	return &AIGCTool{
-		apiKey:       cfg.APIKey,
-		apiBase:      cfg.APIBase,
-		textToImage:  cfg.TextToImage,
-		textToVideo:  cfg.TextToVideo,
-		imageToVideo: cfg.ImageToVideo,
-		outputDir:    cfg.OutputDir,
+		apiKey:               cfg.APIKey,
+		apiBase:              cfg.APIBase,
+		textToImage:          cfg.TextToImage,
+		textToVideo:          cfg.TextToVideo,
+		imageToVideo:         cfg.ImageToVideo,
+		videoToVideo:         cfg.VideoToVideo,
+		imageToVideoDuration: cfg.ImageToVideoDuration,
+		outputDir:            cfg.OutputDir,
 	}
 }
 
@@ -87,7 +105,12 @@ func (t *AIGCTool) Name() string {
 
 // Description 返回工具描述
 func (t *AIGCTool) Description() string {
-	return `图像和视频生成工具，使用阿里云通义万相。
+	maxDuration := t.imageToVideoDuration
+	if maxDuration <= 0 {
+		maxDuration = 5
+	}
+
+	return fmt.Sprintf(`图像和视频生成工具，使用阿里云通义万相。
 
 【重要】每次调用此工具都会生成新的内容。不要从记忆或历史记录中返回之前生成的图片/视频路径，必须实际调用此工具生成新内容。
 
@@ -98,25 +121,28 @@ Actions:
 - generate_image: 根据文字描述生成图片
 - generate_video: 根据文字描述生成视频
 - generate_video_from_image: 根据已有图片生成视频
+- generate_video_from_video: 根据参考视频生成新视频（保持角色一致性）
 
 Usage:
 {"action": "generate_image", "prompt": "一只可爱的猫咪坐在椅子上"}
 {"action": "generate_video", "prompt": "一只猫在花园里散步", "duration": 5}
 {"action": "generate_video_from_image", "prompt": "猫开始走动", "image_path": "/path/to/image.png"}
+{"action": "generate_video_from_video", "prompt": "人物开始跳舞", "video_path": "/path/to/video.mp4"}
 
-Image path for generate_video_from_image:
-- 生成的图片: ~/.lingguard/workspace/generated/
-- 聊天中下载的图片: ~/.lingguard/media/
+File paths:
+- 生成的图片/视频: ~/.lingguard/workspace/generated/
+- 聊天中下载的图片/视频: ~/.lingguard/workspace/media/
 - 必须使用实际文件路径，先列出文件确认路径
 
 Available models:
 - wan2.6-t2i: 文生图 (默认)
 - wan2.6-t2v: 文生视频
 - wan2.6-i2v-flash: 图生视频
+- wan2.6-r2v: 参考生视频（视频生视频）
 
 Video generation:
 - 默认时长: 5 秒
-- 最大时长: 10 秒`
+- 图生视频最大时长: %d 秒`, maxDuration)
 }
 
 // Parameters 返回参数定义
@@ -126,7 +152,7 @@ func (t *AIGCTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"action": map[string]interface{}{
 				"type":        "string",
-				"enum":        []string{"generate_image", "generate_video", "generate_video_from_image"},
+				"enum":        []string{"generate_image", "generate_video", "generate_video_from_image", "generate_video_from_video"},
 				"description": "生成动作类型",
 			},
 			"prompt": map[string]interface{}{
@@ -136,6 +162,10 @@ func (t *AIGCTool) Parameters() map[string]interface{} {
 			"image_path": map[string]interface{}{
 				"type":        "string",
 				"description": "图片路径（图生视频时需要）",
+			},
+			"video_path": map[string]interface{}{
+				"type":        "string",
+				"description": "参考视频路径（视频生视频时需要）",
 			},
 			"model": map[string]interface{}{
 				"type":        "string",
@@ -168,6 +198,7 @@ func (t *AIGCTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 		Action    string `json:"action"`
 		Prompt    string `json:"prompt"`
 		ImagePath string `json:"image_path"`
+		VideoPath string `json:"video_path"`
 		Model     string `json:"model"`
 		Size      string `json:"size"`
 		Duration  int    `json:"duration"`
@@ -185,6 +216,8 @@ func (t *AIGCTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 		return t.generateVideo(ctx, params.Prompt, params.Duration)
 	case "generate_video_from_image":
 		return t.generateVideoFromImage(ctx, params.ImagePath, params.Prompt, params.Duration)
+	case "generate_video_from_video":
+		return t.generateVideoFromVideo(ctx, params.VideoPath, params.Prompt, params.Duration)
 	default:
 		return "", fmt.Errorf("unknown action: %s", params.Action)
 	}
@@ -327,11 +360,20 @@ func (t *AIGCTool) generateVideoFromImage(ctx context.Context, imagePath, prompt
 		return "", fmt.Errorf("compress image: %w", err)
 	}
 
-	if duration <= 0 {
-		duration = 5
+	// 使用配置的最大时长
+	maxDuration := t.imageToVideoDuration
+	if maxDuration <= 0 {
+		maxDuration = 5
 	}
-	if duration > 10 {
-		duration = 10
+	if maxDuration > 15 {
+		maxDuration = 15
+	}
+
+	if duration <= 0 {
+		duration = maxDuration
+	}
+	if duration > maxDuration {
+		duration = maxDuration
 	}
 
 	// 构建请求 - 使用配置的图生视频模型
@@ -376,6 +418,124 @@ func (t *AIGCTool) generateVideoFromImage(ctx context.Context, imagePath, prompt
 
 	// 返回特殊格式，让飞书 channel 自动发送视频
 	return fmt.Sprintf("视频生成成功！\n描述: %s\n时长: %d 秒\n\n[GENERATED_VIDEO:%s]", prompt, duration, localPath), nil
+}
+
+// generateVideoFromVideo 参考视频生成视频（视频生视频）
+// 使用 wan2.6-r2v 模型，保持参考视频中的角色一致性
+func (t *AIGCTool) generateVideoFromVideo(ctx context.Context, videoPath, prompt string, duration int) (string, error) {
+	if videoPath == "" {
+		return "", fmt.Errorf("video_path is required for video-to-video generation")
+	}
+
+	// 读取视频文件
+	videoData, err := os.ReadFile(videoPath)
+	if err != nil {
+		return "", fmt.Errorf("read video file: %w", err)
+	}
+
+	// 先上传视频文件获取临时 URL
+	videoURL, err := t.uploadVideoForAPI(ctx, videoData, filepath.Ext(videoPath))
+	if err != nil {
+		return "", fmt.Errorf("upload video: %w", err)
+	}
+	logger.Info("Video uploaded for reference", "url", videoURL)
+
+	// 使用配置的最大时长（wan2.6-r2v 支持 5 或 10 秒）
+	maxDuration := 10
+	if duration <= 0 {
+		duration = 5
+	}
+	if duration > maxDuration {
+		duration = maxDuration
+	}
+
+	// 构建请求 - 使用配置的参考生视频模型 (wan2.6-r2v)
+	// 参考: https://help.aliyun.com/zh/model-studio/wan-video-to-video-api-reference
+	reqBody := map[string]interface{}{
+		"model": t.videoToVideo,
+		"input": map[string]interface{}{
+			"prompt":         prompt,
+			"reference_urls": []string{videoURL}, // 使用 reference_urls（不是 reference_video_urls）
+		},
+		"parameters": map[string]interface{}{
+			"duration":  duration,
+			"size":      "1280*720",
+			"shot_type": "single",
+		},
+	}
+
+	// 调用视频生成 API（异步）
+	taskID, err := t.submitVideoToVideoTask(ctx, reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	// 等待生成完成
+	result, err := t.waitForVideoResult(ctx, taskID)
+	if err != nil {
+		return "", err
+	}
+
+	// 下载视频
+	if result.Output.VideoURL == "" {
+		return "", fmt.Errorf("no video URL in result")
+	}
+
+	// 确保输出目录存在
+	if err := os.MkdirAll(t.outputDir, 0755); err != nil {
+		return "", fmt.Errorf("create output directory: %w", err)
+	}
+
+	localPath, err := t.downloadFile(ctx, result.Output.VideoURL, "video", ".mp4")
+	if err != nil {
+		return "", fmt.Errorf("download video: %w", err)
+	}
+
+	// 返回特殊格式，让飞书 channel 自动发送视频
+	return fmt.Sprintf("视频生成成功！\n参考视频: %s\n描述: %s\n时长: %d 秒\n\n[GENERATED_VIDEO:%s]", videoPath, prompt, duration, localPath), nil
+}
+
+// submitVideoToVideoTask 提交参考生视频任务
+func (t *AIGCTool) submitVideoToVideoTask(ctx context.Context, reqBody interface{}) (string, error) {
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
+
+	// 使用 video-generation API 端点
+	url := "https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis"
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", t.apiKey))
+	req.Header.Set("X-DashScope-Async", "enable")
+	req.Header.Set("X-DashScope-OssResourceResolve", "enable") // 必需：用于解析 oss:// URL
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error: status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var result videoAPIResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	return result.Output.TaskID, nil
 }
 
 // submitImageToVideoTask 提交图生视频任务
@@ -773,6 +933,119 @@ func (t *AIGCTool) resizeImage(img image.Image, newWidth, newHeight int) image.I
 	}
 
 	return dst
+}
+
+// uploadVideoForAPI 上传视频文件到 DashScope 获取临时 URL
+// 参考: https://help.aliyun.com/zh/model-studio/get-temporary-file-url
+// 步骤1: GET 获取上传凭证
+// 步骤2: POST 上传文件到 OSS
+// 步骤3: 返回 oss:// URL
+func (t *AIGCTool) uploadVideoForAPI(ctx context.Context, videoData []byte, ext string) (string, error) {
+	// 生成唯一文件名
+	timestamp := time.Now().Format("20060102-150405")
+	filename := fmt.Sprintf("video-%s%s", timestamp, ext)
+
+	// 步骤1: 获取上传凭证
+	policyURL := fmt.Sprintf("https://dashscope.aliyuncs.com/api/v1/uploads?action=getPolicy&model=%s", t.videoToVideo)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", policyURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create policy request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", t.apiKey))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("get upload policy: %w", err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return "", fmt.Errorf("read policy response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("policy API error: status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	// 解析凭证响应
+	var policyResp struct {
+		Data struct {
+			Policy              string `json:"policy"`
+			Signature           string `json:"signature"`
+			UploadDir           string `json:"upload_dir"`
+			UploadHost          string `json:"upload_host"`
+			OSSAccessKeyID      string `json:"oss_access_key_id"`
+			XOSSObjectAcl       string `json:"x_oss_object_acl"`
+			XOSSForbidOverwrite string `json:"x_oss_forbid_overwrite"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &policyResp); err != nil {
+		return "", fmt.Errorf("parse policy response: %w (body: %s)", err, string(body))
+	}
+
+	data := policyResp.Data
+	if data.UploadHost == "" {
+		return "", fmt.Errorf("empty upload_host in policy response")
+	}
+
+	// 步骤2: 上传文件到 OSS
+	key := fmt.Sprintf("%s/%s", data.UploadDir, filename)
+
+	// 构建 multipart/form-data 请求
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	// 添加表单字段（顺序不重要，但 file 必须是最后一个）
+	_ = writer.WriteField("OSSAccessKeyId", data.OSSAccessKeyID)
+	_ = writer.WriteField("Signature", data.Signature)
+	_ = writer.WriteField("policy", data.Policy)
+	_ = writer.WriteField("key", key)
+	_ = writer.WriteField("x-oss-object-acl", data.XOSSObjectAcl)
+	_ = writer.WriteField("x-oss-forbid-overwrite", data.XOSSForbidOverwrite)
+	_ = writer.WriteField("success_action_status", "200")
+
+	// 添加文件（必须是最后一个）
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return "", fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := part.Write(videoData); err != nil {
+		return "", fmt.Errorf("write file data: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	// 发送上传请求
+	uploadReq, err := http.NewRequestWithContext(ctx, "POST", data.UploadHost, &buf)
+	if err != nil {
+		return "", fmt.Errorf("create upload request: %w", err)
+	}
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+
+	uploadClient := &http.Client{Timeout: 120 * time.Second}
+	uploadResp, err := uploadClient.Do(uploadReq)
+	if err != nil {
+		return "", fmt.Errorf("upload to OSS: %w", err)
+	}
+	defer uploadResp.Body.Close()
+
+	uploadBody, _ := io.ReadAll(uploadResp.Body)
+	if uploadResp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("OSS upload error: status=%d body=%s", uploadResp.StatusCode, string(uploadBody))
+	}
+
+	// 步骤3: 返回 oss:// URL
+	ossURL := fmt.Sprintf("oss://%s", key)
+	logger.Info("Video uploaded successfully", "url", ossURL)
+
+	return ossURL, nil
 }
 
 // IsDangerous 返回是否为危险操作

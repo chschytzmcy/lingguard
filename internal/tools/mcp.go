@@ -106,11 +106,16 @@ func NewMCPClient(serverName string, cfg config.MCPServerConfig) *MCPClient {
 
 // expandArgs expands placeholders in args with actual values
 func expandArgs(args []string, workspace string) []string {
+	home, _ := os.UserHomeDir()
 	result := make([]string, len(args))
 	for i, arg := range args {
 		// Replace ${workspace} placeholder
 		if arg == "${workspace}" {
 			result[i] = workspace
+		} else if arg == "${home}" {
+			result[i] = home
+		} else if strings.Contains(arg, "${home}") {
+			result[i] = strings.ReplaceAll(arg, "${home}", home)
 		} else {
 			result[i] = arg
 		}

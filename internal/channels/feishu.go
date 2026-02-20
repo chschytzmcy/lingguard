@@ -38,6 +38,7 @@ var msgTypeMap = map[string]string{
 type FeishuChannel struct {
 	cfg              *config.FeishuConfig
 	speechCfg        *config.SpeechConfig
+	workspace        string // 工作目录，媒体文件保存在 workspace/media
 	client           *lark.Client
 	wsClient         *larkws.Client
 	handler          MessageHandler
@@ -57,7 +58,7 @@ type FeishuChannel struct {
 }
 
 // NewFeishuChannel 创建飞书渠道
-func NewFeishuChannel(cfg *config.FeishuConfig, speechCfg *config.SpeechConfig, providers map[string]config.ProviderConfig, handler MessageHandler) *FeishuChannel {
+func NewFeishuChannel(cfg *config.FeishuConfig, speechCfg *config.SpeechConfig, providers map[string]config.ProviderConfig, workspace string, handler MessageHandler) *FeishuChannel {
 	allowMap := make(map[string]bool)
 	for _, id := range cfg.AllowFrom {
 		allowMap[id] = true
@@ -65,6 +66,7 @@ func NewFeishuChannel(cfg *config.FeishuConfig, speechCfg *config.SpeechConfig, 
 	fc := &FeishuChannel{
 		cfg:       cfg,
 		speechCfg: speechCfg,
+		workspace: workspace,
 		handler:   handler,
 		allowMap:  allowMap,
 	}
@@ -290,6 +292,21 @@ func (f *FeishuChannel) handleMessage(ctx context.Context, event *larkim.P2Messa
 			mediaPaths = append(mediaPaths, mediaPath)
 			content = fmt.Sprintf("[%s]", mediaType)
 			logger.Info("Downloaded media for multimodal processing", "type", mediaType, "path", mediaPath, "messageId", messageID)
+		}
+	} else if msgType == "post" {
+		// 飞书富文本消息，可能包含嵌入的媒体（图片/视频）
+		// 解析 post 内容提取媒体文件
+		mediaPath, mediaType, err := f.downloadPostMedia(ctx, msg.Content, safeString(msg.MessageId))
+		if err != nil {
+			logger.Warn("Failed to download post media", "error", err)
+			content = "[post: media download failed]"
+		} else if mediaPath != "" {
+			mediaPaths = append(mediaPaths, mediaPath)
+			content = fmt.Sprintf("[%s]", mediaType)
+			logger.Info("Downloaded post media for multimodal processing", "type", mediaType, "path", mediaPath, "messageId", messageID)
+		} else {
+			// 没有媒体，解析纯文本内容
+			content = f.parsePostContent(msg.Content)
 		}
 	} else {
 		content = msgTypeMap[msgType]
@@ -776,8 +793,7 @@ func (f *FeishuChannel) downloadImage(ctx context.Context, content *string, mess
 	}
 
 	// 创建媒体目录
-	home, _ := os.UserHomeDir()
-	mediaDir := filepath.Join(home, ".lingguard", "media")
+	mediaDir := filepath.Join(f.workspace, "media")
 	if err := os.MkdirAll(mediaDir, 0755); err != nil {
 		return "", fmt.Errorf("create media dir: %w", err)
 	}
@@ -832,8 +848,7 @@ func (f *FeishuChannel) downloadVideo(ctx context.Context, content *string, mess
 	}
 
 	// 创建媒体目录
-	home, _ := os.UserHomeDir()
-	mediaDir := filepath.Join(home, ".lingguard", "media")
+	mediaDir := filepath.Join(f.workspace, "media")
 	if err := os.MkdirAll(mediaDir, 0755); err != nil {
 		return "", fmt.Errorf("create media dir: %w", err)
 	}
@@ -889,8 +904,7 @@ func (f *FeishuChannel) downloadAudio(ctx context.Context, content *string, mess
 	}
 
 	// 创建媒体目录
-	home, _ := os.UserHomeDir()
-	mediaDir := filepath.Join(home, ".lingguard", "media")
+	mediaDir := filepath.Join(f.workspace, "media")
 	if err := os.MkdirAll(mediaDir, 0755); err != nil {
 		return "", fmt.Errorf("create media dir: %w", err)
 	}
@@ -948,8 +962,7 @@ func (f *FeishuChannel) downloadMedia(ctx context.Context, content *string, mess
 	}
 
 	// 创建媒体目录
-	home, _ := os.UserHomeDir()
-	mediaDir := filepath.Join(home, ".lingguard", "media")
+	mediaDir := filepath.Join(f.workspace, "media")
 	if err := os.MkdirAll(mediaDir, 0755); err != nil {
 		return "", "", fmt.Errorf("create media dir: %w", err)
 	}
@@ -1015,11 +1028,148 @@ func (f *FeishuChannel) downloadMedia(ctx context.Context, content *string, mess
 	return filePath, mediaType, nil
 }
 
+// downloadPostMedia 从飞书 post 消息中提取并下载媒体文件
+// post 消息格式: {"title":"","content":[[{"tag":"media","file_key":"xxx","image_key":"yyy"}]]}
+func (f *FeishuChannel) downloadPostMedia(ctx context.Context, content *string, messageID string) (string, string, error) {
+	if content == nil || f.client == nil {
+		return "", "", nil
+	}
+
+	// 解析 post 消息内容
+	var postMsg struct {
+		Title   string `json:"title"`
+		Content [][]struct {
+			Tag      string `json:"tag"`
+			FileKey  string `json:"file_key"`
+			ImageKey string `json:"image_key"`
+			Text     string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(*content), &postMsg); err != nil {
+		return "", "", nil // 不是有效的 post 格式，返回空
+	}
+
+	// 查找第一个媒体元素
+	var fileKey, imageKey string
+	var hasMedia bool
+
+	for _, paragraph := range postMsg.Content {
+		for _, element := range paragraph {
+			if element.Tag == "media" {
+				fileKey = element.FileKey
+				imageKey = element.ImageKey
+				hasMedia = true
+				break
+			}
+		}
+		if hasMedia {
+			break
+		}
+	}
+
+	if !hasMedia || (fileKey == "" && imageKey == "") {
+		return "", "", nil // 没有媒体
+	}
+
+	// 创建媒体目录
+	mediaDir := filepath.Join(f.workspace, "media")
+	if err := os.MkdirAll(mediaDir, 0755); err != nil {
+		return "", "", fmt.Errorf("create media dir: %w", err)
+	}
+
+	// 判断媒体类型和确定扩展名
+	var actualKey string
+	var mediaType string
+	var ext string
+
+	if fileKey != "" {
+		// 有文件键，说明是视频
+		actualKey = fileKey
+		mediaType = "video"
+		ext = ".mp4"
+	} else if imageKey != "" {
+		// 只有图片键
+		actualKey = imageKey
+		mediaType = "image"
+		ext = ".jpg"
+	}
+
+	// 生成文件名
+	timestamp := time.Now().UnixNano()
+	shortID := messageID
+	if len(messageID) > 8 {
+		shortID = messageID[:8]
+	}
+	filename := fmt.Sprintf("feishu_%d_%s%s", timestamp, shortID, ext)
+	filePath := filepath.Join(mediaDir, filename)
+
+	// 获取媒体资源请求
+	req := larkim.NewGetMessageResourceReqBuilder().
+		MessageId(messageID).
+		FileKey(actualKey).
+		Type("file").
+		Build()
+
+	// 获取媒体并直接保存到文件
+	resp, err := f.client.Im.MessageResource.Get(ctx, req)
+	if err != nil {
+		return "", "", fmt.Errorf("get post media resource: %w", err)
+	}
+
+	if resp.Code != 0 {
+		return "", "", fmt.Errorf("get post media failed: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	// 使用 SDK 提供的 WriteFile 方法保存文件
+	if err := resp.WriteFile(filePath); err != nil {
+		return "", "", fmt.Errorf("write post media file: %w", err)
+	}
+
+	logger.Info("Downloaded media for multimodal processing", "type", mediaType, "path", filePath, "messageId", messageID)
+	return filePath, mediaType, nil
+}
+
+// parsePostContent 从飞书 post 消息中提取纯文本内容
+func (f *FeishuChannel) parsePostContent(content *string) string {
+	if content == nil {
+		return ""
+	}
+
+	// 解析 post 消息内容
+	var postMsg struct {
+		Title   string `json:"title"`
+		Content [][]struct {
+			Tag  string `json:"tag"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(*content), &postMsg); err != nil {
+		return "[post]"
+	}
+
+	// 提取所有文本
+	var texts []string
+	if postMsg.Title != "" {
+		texts = append(texts, postMsg.Title)
+	}
+	for _, paragraph := range postMsg.Content {
+		for _, element := range paragraph {
+			if element.Tag == "text" && element.Text != "" {
+				texts = append(texts, element.Text)
+			}
+		}
+	}
+
+	if len(texts) == 0 {
+		return "[post]"
+	}
+	return strings.Join(texts, "\n")
+}
+
 // downloadImageFromBase64 从 base64 数据保存图片（用于发送）
 func (f *FeishuChannel) downloadImageFromBase64(base64Data, mimeType, messageID string) (string, error) {
 	// 创建媒体目录
-	home, _ := os.UserHomeDir()
-	mediaDir := filepath.Join(home, ".lingguard", "media")
+	mediaDir := filepath.Join(f.workspace, "media")
 	if err := os.MkdirAll(mediaDir, 0755); err != nil {
 		return "", fmt.Errorf("create media dir: %w", err)
 	}

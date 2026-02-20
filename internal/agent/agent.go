@@ -481,6 +481,10 @@ func (a *Agent) buildContextWithMedia(sessionID string, hasMedia bool) ([]llm.Me
 func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.ContentPart, error) {
 	parts := make([]llm.ContentPart, 0)
 
+	// 收集视频文件路径，用于后续添加路径提示
+	var videoPaths []string
+	var imagePaths []string
+
 	// 添加图片/视频
 	for _, path := range mediaPaths {
 		// 读取媒体文件并转换为 base64
@@ -504,6 +508,7 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 					URL: fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data),
 				},
 			})
+			videoPaths = append(videoPaths, path)
 		} else {
 			// 图片使用 image_url 格式
 			mimeType := detectMimeType(data)
@@ -525,7 +530,17 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 					Detail: "auto",
 				},
 			})
+			imagePaths = append(imagePaths, path)
 		}
+	}
+
+	// 添加媒体路径提示（让 LLM 知道文件位置以便使用工具处理）
+	var mediaHints []string
+	if len(videoPaths) > 0 {
+		mediaHints = append(mediaHints, fmt.Sprintf("[视频文件路径: %s]", strings.Join(videoPaths, ", ")))
+	}
+	if len(imagePaths) > 0 {
+		mediaHints = append(mediaHints, fmt.Sprintf("[图片文件路径: %s]", strings.Join(imagePaths, ", ")))
 	}
 
 	// 添加文本（放在最后）
@@ -533,6 +548,14 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 		parts = append(parts, llm.ContentPart{
 			Type: "text",
 			Text: text,
+		})
+	}
+
+	// 添加媒体路径提示
+	if len(mediaHints) > 0 {
+		parts = append(parts, llm.ContentPart{
+			Type: "text",
+			Text: strings.Join(mediaHints, "\n"),
 		})
 	}
 

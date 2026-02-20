@@ -97,7 +97,9 @@
       "provider": "qwen",
       "textToImage": "wan2.6-t2i",
       "textToVideo": "wan2.6-t2v",
-      "imageToVideo": "wan2.6-i2v-flash"
+      "imageToVideo": "wan2.6-i2v-flash",
+      "videoToVideo": "wan2.6-r2v-flash",
+      "imageToVideoDuration": 15
     },
     "tts": {
       "enabled": true,

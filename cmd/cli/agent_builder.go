@@ -195,12 +195,18 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 		if b.cfg.Tools.AIGC.ImageToVideo != "" {
 			aigcCfg.ImageToVideo = b.cfg.Tools.AIGC.ImageToVideo
 		}
+		if b.cfg.Tools.AIGC.VideoToVideo != "" {
+			aigcCfg.VideoToVideo = b.cfg.Tools.AIGC.VideoToVideo
+		}
+		if b.cfg.Tools.AIGC.ImageToVideoDuration > 0 {
+			aigcCfg.ImageToVideoDuration = b.cfg.Tools.AIGC.ImageToVideoDuration
+		}
 		if b.cfg.Tools.AIGC.OutputDir != "" {
 			aigcCfg.OutputDir = b.cfg.Tools.AIGC.OutputDir
 		}
 
 		ag.RegisterTool(tools.NewAIGCTool(aigcCfg))
-		logger.Info("AIGC tool enabled", "textToImage", aigcCfg.TextToImage, "textToVideo", aigcCfg.TextToVideo, "imageToVideo", aigcCfg.ImageToVideo)
+		logger.Info("AIGC tool enabled", "textToImage", aigcCfg.TextToImage, "textToVideo", aigcCfg.TextToVideo, "imageToVideo", aigcCfg.ImageToVideo, "videoToVideo", aigcCfg.VideoToVideo, "imageToVideoDuration", aigcCfg.ImageToVideoDuration)
 	}
 
 	// 注册 TTS 语音合成工具
