@@ -558,15 +558,62 @@ func DefaultEnabledTools() []string {
 | **长期记忆** | MEMORY.md | MEMORY.md |
 | **事件日志** | HISTORY.md | 事件日志 |
 | **每日日志** | YYYY-MM-DD.md | 每日笔记 |
-| **检索方式** | grep | grep |
+| **检索方式** | grep + 向量搜索 | grep |
 | **记忆工具** | memory 工具 | 内置函数 |
+| **自动召回** | ✅ OpenClaw 风格 | ❌ |
+| **自动捕获** | ✅ 触发规则 | ❌ |
+| **智能去重** | ✅ 向量相似度 | ❌ |
 
-#### 4.6.2 文件结构
+#### 4.6.2 自动记忆功能（OpenClaw 风格）
+
+**自动召回 (Auto-Recall)**
+```go
+// 在 buildContextWithMedia 中实现
+if a.config.AutoRecall && a.IsVectorSearchEnabled() {
+    // 1. 获取用户消息
+    // 2. 向量搜索相关记忆
+    // 3. 注入到系统提示
+}
+```
+
+**自动捕获 (Auto-Capture)**
+```go
+// 在 runLoopStreamWithProvider 结束时实现
+if a.config.AutoCapture && len(toolCalls) == 0 {
+    go a.captureMemories(sessionID, messages)
+}
+```
+
+**触发规则（pkg/memory/capture.go）**
+```go
+var memoryTriggers = []*regexp.Regexp{
+    regexp.MustCompile(`(?i)记住|remember`),
+    regexp.MustCompile(`(?i)喜欢|讨厌|prefer|like|hate`),
+    regexp.MustCompile(`(?i)决定|decided|will use`),
+    regexp.MustCompile(`\+?\d{10,}`),           // 电话号码
+    regexp.MustCompile(`[\w.-]+@[\w.-]+\.\w+`), // 邮箱
+    regexp.MustCompile(`(?i)important|重要`),
+}
+```
+
+**智能去重（hybrid_store.go）**
+```go
+// AddMemory 中添加去重检查
+if s.IsVectorEnabled() {
+    existing, _ := s.Search(ctx, content, 1)
+    if len(existing) > 0 && existing[0].Score >= 0.95 {
+        return nil // 跳过相似度 > 0.95 的记忆
+    }
+}
+```
+
+#### 4.6.3 文件结构
 
 ```
 ~/.lingguard/memory/
 ├── MEMORY.md          # 长期记忆
 ├── HISTORY.md         # 事件日志
+├── vectors.db         # 向量索引（可选）
 └── 2026-02-15.md      # 每日日志
 ```
 
@@ -815,13 +862,14 @@ type MCPManager struct {
 | 多模态支持 | ✅ 图片+视频 |
 | 独立多模态 Provider | ✅ |
 | QQ 渠道 | ✅ |
+| 向量记忆（sqlite-vec） | ✅ |
+| 自动召回/捕获（OpenClaw 风格） | ✅ |
 
 ### Phase 7: 计划中
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
 | 多渠道支持 | ⏳ | Telegram, Discord |
-| 向量记忆 | ⏳ | Qdrant 集成 |
 | Docker | ⏳ | 容器化部署 |
 | ClawHub 技能库 | ⏳ | 技能搜索安装 |
 

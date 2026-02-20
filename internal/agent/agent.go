@@ -391,6 +391,45 @@ func (a *Agent) buildContextWithMedia(sessionID string, hasMedia bool) ([]llm.Me
 		}
 	}
 
+	// 获取会话历史消息（使用 MemoryWindow）
+	s := a.sessions.GetOrCreate(sessionID)
+	history := s.GetHistory(a.config.MemoryWindow)
+	historyLen = len(history)
+
+	// 自动召回：基于用户消息搜索相关记忆
+	if a.config.MemoryConfig != nil && a.config.MemoryConfig.AutoRecall && a.IsVectorSearchEnabled() && historyLen > 0 {
+		// 获取最近的用户消息
+		var lastUserMessage string
+		for i := historyLen - 1; i >= 0; i-- {
+			if history[i].Role == "user" {
+				lastUserMessage = history[i].Content
+				break
+			}
+		}
+
+		if lastUserMessage != "" {
+			topK := a.config.MemoryConfig.AutoRecallTopK
+			if topK <= 0 {
+				topK = 3
+			}
+			minScore := a.config.MemoryConfig.AutoRecallMinScore
+			if minScore <= 0 {
+				minScore = 0.3
+			}
+
+			// 搜索相关记忆
+			relevantMemories := a.searchRelevantMemories(lastUserMessage, topK, minScore)
+			if len(relevantMemories) > 0 {
+				memContext := a.formatRelevantMemories(relevantMemories)
+				if systemPrompt != "" {
+					systemPrompt = systemPrompt + "\n\n" + memContext
+				} else {
+					systemPrompt = memContext
+				}
+			}
+		}
+	}
+
 	// 添加记忆上下文（参考 nanobot）
 	if a.memoryBuilder != nil {
 		recentDays := 3
@@ -414,11 +453,6 @@ func (a *Agent) buildContextWithMedia(sessionID string, hasMedia bool) ([]llm.Me
 			Content: systemPrompt,
 		})
 	}
-
-	// 获取会话历史消息（使用 MemoryWindow）
-	s := a.sessions.GetOrCreate(sessionID)
-	history := s.GetHistory(a.config.MemoryWindow)
-	historyLen = len(history)
 
 	for i, msg := range history {
 		llmMsg := llm.Message{
@@ -803,6 +837,10 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 
 		// 检查是否有工具调用
 		if len(toolCalls) == 0 {
+			// 自动捕获：对话结束时分析用户消息并存储重要信息
+			if a.config.MemoryConfig != nil && a.config.MemoryConfig.AutoCapture {
+				go a.captureMemories(sessionID, messages)
+			}
 			callback(stream.NewDoneEvent())
 			return nil
 		}
@@ -951,4 +989,104 @@ func resizeImage(img image.Image, newWidth, newHeight int) image.Image {
 	}
 
 	return dst
+}
+
+// searchRelevantMemories 搜索相关记忆（自动召回）
+func (a *Agent) searchRelevantMemories(query string, topK int, minScore float32) []*memory.VectorRecord {
+	if a.hybridStore == nil || !a.hybridStore.IsVectorEnabled() {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	records, err := a.hybridStore.Search(ctx, query, topK)
+	if err != nil {
+		logger.Warn("Auto-recall search failed", "query", query, "error", err)
+		return nil
+	}
+
+	// 过滤低分结果
+	var filtered []*memory.VectorRecord
+	for _, r := range records {
+		if r.Score >= minScore {
+			filtered = append(filtered, r)
+		}
+	}
+
+	if len(filtered) > 0 {
+		logger.Info("Auto-recall found relevant memories", "query", query, "count", len(filtered))
+	}
+
+	return filtered
+}
+
+// formatRelevantMemories 格式化相关记忆为上下文
+func (a *Agent) formatRelevantMemories(records []*memory.VectorRecord) string {
+	if len(records) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## 相关记忆 (自动召回)\n\n")
+	sb.WriteString("以下是与当前对话相关的历史记忆：\n\n")
+
+	for _, r := range records {
+		// 限制内容长度
+		content := r.Content
+		if len(content) > 200 {
+			content = content[:200] + "..."
+		}
+		sb.WriteString(fmt.Sprintf("- %s\n", content))
+	}
+
+	return sb.String()
+}
+
+// captureMemories 自动捕获记忆
+func (a *Agent) captureMemories(sessionID string, messages []llm.Message) {
+	if a.hybridStore == nil && a.memoryStore == nil {
+		return
+	}
+
+	maxChars := 500
+	if a.config.MemoryConfig != nil && a.config.MemoryConfig.CaptureMaxChars > 0 {
+		maxChars = a.config.MemoryConfig.CaptureMaxChars
+	}
+
+	// 分析用户消息
+	for _, msg := range messages {
+		if msg.Role != "user" {
+			continue
+		}
+
+		result := memory.AnalyzeForCapture(msg.Content, maxChars)
+		if !result.Captured {
+			continue
+		}
+
+		// 存储记忆
+		category := string(result.Category)
+		if a.hybridStore != nil {
+			if err := a.hybridStore.AddMemory(category, result.Content); err != nil {
+				logger.Warn("Auto-capture failed", "error", err)
+			} else {
+				logger.Info("Auto-captured memory", "category", category, "content", result.Content[:min(50, len(result.Content))])
+			}
+		} else if a.memoryStore != nil {
+			if err := a.memoryStore.AddMemory(category, result.Content); err != nil {
+				logger.Warn("Auto-capture failed", "error", err)
+			} else {
+				logger.Info("Auto-captured memory", "category", category, "content", result.Content[:min(50, len(result.Content))])
+			}
+		}
+	}
+}
+
+// min 返回两个整数中的较小值
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

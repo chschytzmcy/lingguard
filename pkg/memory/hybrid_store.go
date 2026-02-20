@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/pkg/embedding"
+	"github.com/lingguard/pkg/logger"
 )
 
 // HybridStore 混合存储，组合 FileStore + VectorStore
@@ -161,8 +162,11 @@ func (s *HybridStore) IsVectorEnabled() bool {
 // Search 执行搜索
 // 如果启用向量检索，使用混合检索；否则使用文件搜索
 func (s *HybridStore) Search(ctx context.Context, query string, topK int) ([]*VectorRecord, error) {
+	start := time.Now()
+
 	if !s.IsVectorEnabled() {
 		// 回退到文件搜索
+		logger.Debug("Vector search disabled, falling back to file search", "query", query)
 		return s.searchFromFile(ctx, query, topK)
 	}
 
@@ -170,6 +174,7 @@ func (s *HybridStore) Search(ctx context.Context, query string, topK int) ([]*Ve
 	queryVec, err := s.embedding.Embed(ctx, query)
 	if err != nil {
 		// 向量生成失败，回退到文件搜索
+		logger.Warn("Embedding failed, falling back to file search", "query", query, "error", err)
 		return s.searchFromFile(ctx, query, topK)
 	}
 
@@ -191,7 +196,20 @@ func (s *HybridStore) Search(ctx context.Context, query string, topK int) ([]*Ve
 		opts.TopK = 10
 	}
 
-	return s.vectorStore.HybridSearch(ctx, queryVec, query, opts)
+	results, err := s.vectorStore.HybridSearch(ctx, queryVec, query, opts)
+	if err != nil {
+		logger.Error("Hybrid search failed", "query", query, "error", err, "duration", time.Since(start))
+		return nil, err
+	}
+
+	// 如果向量搜索返回空结果，回退到文件搜索
+	if len(results) == 0 {
+		logger.Info("Vector search returned no results, falling back to file search", "query", query, "duration", time.Since(start))
+		return s.searchFromFile(ctx, query, topK)
+	}
+
+	logger.Info("Vector search completed", "query", query, "results", len(results), "duration", time.Since(start))
+	return results, nil
 }
 
 // searchFromFile 从文件搜索 (回退方案)
@@ -225,6 +243,20 @@ func (s *HybridStore) searchFromFile(ctx context.Context, query string, topK int
 
 // AddMemory 添加长期记忆
 func (s *HybridStore) AddMemory(category, content string) error {
+	// 智能去重：检查是否已存在相似记忆
+	if s.IsVectorEnabled() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// 搜索相似记忆
+		existing, err := s.Search(ctx, content, 1)
+		if err == nil && len(existing) > 0 && existing[0].Score >= 0.95 {
+			// 已存在高度相似的记忆，跳过
+			logger.Debug("Skipping duplicate memory", "score", existing[0].Score, "content", content[:min(50, len(content))])
+			return nil
+		}
+	}
+
 	if err := s.fileStore.AddMemory(category, content); err != nil {
 		return err
 	}
@@ -244,6 +276,14 @@ func (s *HybridStore) AddMemory(category, content string) error {
 	}
 
 	return nil
+}
+
+// min 返回两个整数中的较小值
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // GetMemory 获取 MEMORY.md 内容

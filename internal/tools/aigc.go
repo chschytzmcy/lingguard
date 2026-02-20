@@ -87,31 +87,36 @@ func (t *AIGCTool) Name() string {
 
 // Description 返回工具描述
 func (t *AIGCTool) Description() string {
-	return `Image and video generation tool using Alibaba Cloud Tongyi Wanxiang.
+	return `图像和视频生成工具，使用阿里云通义万相。
+
+【重要】每次调用此工具都会生成新的内容。不要从记忆或历史记录中返回之前生成的图片/视频路径，必须实际调用此工具生成新内容。
+
+【记录】生成成功后，使用 memory 工具记录生成事件，例如：
+{"action": "log", "event": "生成古风美女图片，保存到 image-20260220.png"}
 
 Actions:
-- generate_image: Generate an image from text description
-- generate_video: Generate a video from text description
-- generate_video_from_image: Generate a video from an existing image
+- generate_image: 根据文字描述生成图片
+- generate_video: 根据文字描述生成视频
+- generate_video_from_image: 根据已有图片生成视频
 
 Usage:
-{"action": "generate_image", "prompt": "A cute cat sitting on a chair"}
-{"action": "generate_video", "prompt": "A cat walking in a garden", "duration": 5}
-{"action": "generate_video_from_image", "prompt": "The cat starts walking", "image_path": "/path/to/image.png"}
+{"action": "generate_image", "prompt": "一只可爱的猫咪坐在椅子上"}
+{"action": "generate_video", "prompt": "一只猫在花园里散步", "duration": 5}
+{"action": "generate_video_from_image", "prompt": "猫开始走动", "image_path": "/path/to/image.png"}
 
 Image path for generate_video_from_image:
-- Generated images: ~/.lingguard/workspace/generated/
-- Downloaded images from chat: ~/.lingguard/media/
-- ALWAYS use the actual file path from previous messages or list files first
+- 生成的图片: ~/.lingguard/workspace/generated/
+- 聊天中下载的图片: ~/.lingguard/media/
+- 必须使用实际文件路径，先列出文件确认路径
 
 Available models:
-- wan2.6-t2i: Text-to-image (default)
-- wan2.6-t2v: Text-to-video
-- wan2.6-i2v-flash: Image-to-video
+- wan2.6-t2i: 文生图 (默认)
+- wan2.6-t2v: 文生视频
+- wan2.6-i2v-flash: 图生视频
 
 Video generation:
-- Default duration: 5 seconds
-- Max duration: 10 seconds`
+- 默认时长: 5 秒
+- 最大时长: 10 秒`
 }
 
 // Parameters 返回参数定义
@@ -122,31 +127,31 @@ func (t *AIGCTool) Parameters() map[string]interface{} {
 			"action": map[string]interface{}{
 				"type":        "string",
 				"enum":        []string{"generate_image", "generate_video", "generate_video_from_image"},
-				"description": "The generation action to perform",
+				"description": "生成动作类型",
 			},
 			"prompt": map[string]interface{}{
 				"type":        "string",
-				"description": "Text description of the image or video to generate",
+				"description": "图像或视频的文字描述",
 			},
 			"image_path": map[string]interface{}{
 				"type":        "string",
-				"description": "Path to the image file for image-to-video generation",
+				"description": "图片路径（图生视频时需要）",
 			},
 			"model": map[string]interface{}{
 				"type":        "string",
-				"description": "Model to use (optional, defaults to wanx2.1-t2i-turbo)",
+				"description": "使用的模型（可选，默认 wan2.6-t2i）",
 			},
 			"size": map[string]interface{}{
 				"type":        "string",
-				"description": "Image size for generation (e.g., 1024x1024, 720x1280)",
+				"description": "图片尺寸（如 1024x1024, 720x1280）",
 			},
 			"duration": map[string]interface{}{
 				"type":        "integer",
-				"description": "Video duration in seconds (default: 4, max: 10)",
+				"description": "视频时长秒数（默认 4，最大 10）",
 			},
 			"style": map[string]interface{}{
 				"type":        "string",
-				"description": "Style preset (optional, e.g., 'anime', 'realistic', '3d')",
+				"description": "风格预设（可选，如 'anime', 'realistic', '3d'）",
 			},
 		},
 		"required": []string{"action", "prompt"},

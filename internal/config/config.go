@@ -51,6 +51,13 @@ type MemoryConfig struct {
 	RecentDays      int           `json:"recentDays,omitempty"`      // 加载最近几天的日志，默认 3
 	MaxHistoryLines int           `json:"maxHistoryLines,omitempty"` // 历史记录最大行数，默认 1000
 	Vector          *VectorConfig `json:"vector,omitempty"`          // 向量检索配置
+	// 自动召回配置
+	AutoRecall         bool    `json:"autoRecall,omitempty"`         // 是否启用自动召回，默认 true
+	AutoRecallTopK     int     `json:"autoRecallTopK,omitempty"`     // 自动召回返回数量，默认 3
+	AutoRecallMinScore float32 `json:"autoRecallMinScore,omitempty"` // 自动召回最小相似度，默认 0.3
+	// 自动捕获配置
+	AutoCapture     bool `json:"autoCapture,omitempty"`     // 是否启用自动捕获，默认 true
+	CaptureMaxChars int  `json:"captureMaxChars,omitempty"` // 捕获内容最大字符数，默认 500
 }
 
 // VectorConfig 向量检索配置
@@ -207,9 +214,14 @@ func DefaultConfig() *Config {
 			MemoryWindow:      50,
 			SystemPrompt:      "You are LingGuard, a helpful AI assistant.",
 			MemoryConfig: &MemoryConfig{
-				Enabled:         true,
-				RecentDays:      3,
-				MaxHistoryLines: 1000,
+				Enabled:            true,
+				RecentDays:         3,
+				MaxHistoryLines:    1000,
+				AutoRecall:         true,
+				AutoRecallTopK:     3,
+				AutoRecallMinScore: 0.3,
+				AutoCapture:        true,
+				CaptureMaxChars:    500,
 			},
 		},
 		Channels: ChannelsConfig{},

@@ -164,7 +164,12 @@ EOF
     "memory": {
       "enabled": true,
       "recentDays": 3,
-      "maxHistoryLines": 1000
+      "maxHistoryLines": 1000,
+      "autoRecall": true,
+      "autoRecallTopK": 3,
+      "autoRecallMinScore": 0.3,
+      "autoCapture": true,
+      "captureMaxChars": 500
     }
   },
   "channels": {
@@ -303,6 +308,57 @@ Skill instructions here...
 ├── MEMORY.md          # 长期记忆（用户偏好、重要事实）
 ├── HISTORY.md         # 事件日志
 └── 2026-02-16.md      # 每日日志
+```
+
+### 自动记忆功能（OpenClaw 风格）
+
+LingGuard 支持类似 OpenClaw 的自动记忆功能：
+
+**自动召回 (Auto-Recall)**
+- 在对话开始时，自动搜索与用户消息相关的历史记忆
+- 将相关记忆注入到系统提示中，帮助 AI 理解上下文
+
+**自动捕获 (Auto-Capture)**
+- 在对话结束时，自动分析用户消息
+- 根据触发规则识别值得记忆的内容（如偏好、决定、联系方式等）
+- 智能去重，避免重复存储相似记忆
+
+**触发规则**
+- 记住/忘记：`记住`、`remember`、`don't forget`
+- 偏好表达：`喜欢`、`讨厌`、`prefer`、`like`、`hate`
+- 决策记录：`决定`、`decided`、`will use`
+- 联系方式：电话号码、邮箱地址
+- 重要标记：`重要`、`important`、`always`、`never`
+
+### 记忆配置
+
+```json
+{
+  "agents": {
+    "memory": {
+      "enabled": true,
+      "recentDays": 3,
+      "maxHistoryLines": 1000,
+      "autoRecall": true,
+      "autoRecallTopK": 3,
+      "autoRecallMinScore": 0.3,
+      "autoCapture": true,
+      "captureMaxChars": 500,
+      "vector": {
+        "enabled": true,
+        "embedding": {
+          "provider": "qwen",
+          "model": "text-embedding-v4"
+        },
+        "search": {
+          "vectorWeight": 0.7,
+          "bm25Weight": 0.3,
+          "minScore": 0.5
+        }
+      }
+    }
+  }
+}
 ```
 
 ### 记忆工具

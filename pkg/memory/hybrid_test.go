@@ -194,13 +194,6 @@ func TestRRFFusion(t *testing.T) {
 	t.Log("RRF 融合测试通过")
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func abs(x float32) float32 {
 	if x < 0 {
 		return -x
