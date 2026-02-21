@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
@@ -332,6 +334,35 @@ func (t *WebFetchTool) Execute(ctx context.Context, params json.RawMessage) (str
 
 func (t *WebFetchTool) IsDangerous() bool { return false }
 
+// 私有 IP 地址段黑名单（用于 SSRF 防护）
+var privateIPBlocks []netip.Prefix
+
+func init() {
+	// 初始化私有 IP 地址段
+	privateRanges := []string{
+		// IPv4 私有地址
+		"10.0.0.0/8",     // Class A 私有网络
+		"172.16.0.0/12",  // Class B 私有网络
+		"192.168.0.0/16", // Class C 私有网络
+		"127.0.0.0/8",    // 本地回环
+		"169.254.0.0/16", // 链路本地（包含云元数据 169.254.169.254）
+		"0.0.0.0/8",      // 当前网络
+		"224.0.0.0/4",    // 多播地址
+		"240.0.0.0/4",    // 保留地址
+		// IPv6 私有地址
+		"::1/128",   // 本地回环
+		"fc00::/7",  // 唯一本地地址
+		"fe80::/10", // 链路本地
+		"ff00::/8",  // 多播
+	}
+
+	for _, r := range privateRanges {
+		if prefix, err := netip.ParsePrefix(r); err == nil {
+			privateIPBlocks = append(privateIPBlocks, prefix)
+		}
+	}
+}
+
 func (t *WebFetchTool) validateURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -346,7 +377,51 @@ func (t *WebFetchTool) validateURL(rawURL string) error {
 		return fmt.Errorf("missing domain")
 	}
 
+	// SSRF 防护：检查是否为私有 IP 地址
+	host := parsed.Host
+	// 移除端口号
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+
+	// 解析 IP 地址
+	ip, err := netip.ParseAddr(host)
+	if err == nil {
+		// 是 IP 地址，检查是否在黑名单中
+		if t.isPrivateIP(ip) {
+			return fmt.Errorf("access to private IP addresses is blocked: %s", host)
+		}
+	} else {
+		// 不是 IP 地址，可能是域名
+		// 检查危险域名模式
+		lowerHost := strings.ToLower(host)
+		dangerousHosts := []string{
+			"localhost",
+			"local",
+			"localhost.localdomain",
+			"ip6-localhost",
+			"ip6-loopback",
+			"metadata.google.internal", // GCP 元数据
+			"metadata",                 // Azure 元数据
+		}
+		for _, dangerous := range dangerousHosts {
+			if lowerHost == dangerous || strings.HasSuffix(lowerHost, "."+dangerous) {
+				return fmt.Errorf("access to internal hostnames is blocked: %s", host)
+			}
+		}
+	}
+
 	return nil
+}
+
+// isPrivateIP 检查 IP 是否在私有地址段
+func (t *WebFetchTool) isPrivateIP(ip netip.Addr) bool {
+	for _, block := range privateIPBlocks {
+		if block.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *WebFetchTool) isHTML(body []byte) bool {

@@ -204,6 +204,11 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 		if b.cfg.Tools.AIGC.OutputDir != "" {
 			aigcCfg.OutputDir = b.cfg.Tools.AIGC.OutputDir
 		}
+		// 设置工作区路径用于沙盒验证
+		if b.workspaceMgr != nil {
+			aigcCfg.Workspace = b.workspaceMgr.Get()
+		}
+		aigcCfg.Sandboxed = b.cfg.Tools.RestrictToWorkspace
 
 		ag.RegisterTool(tools.NewAIGCTool(aigcCfg))
 		logger.Info("AIGC tool enabled", "textToImage", aigcCfg.TextToImage, "textToVideo", aigcCfg.TextToVideo, "imageToVideo", aigcCfg.ImageToVideo, "videoToVideo", aigcCfg.VideoToVideo, "imageToVideoDuration", aigcCfg.ImageToVideoDuration)

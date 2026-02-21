@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/lingguard/pkg/logger"
@@ -30,6 +31,8 @@ type AIGCTool struct {
 	videoToVideo         string // 参考生视频模型
 	imageToVideoDuration int    // 图生视频最大时长（秒）
 	outputDir            string
+	workspace            string // 工作目录，用于路径验证
+	sandboxed            bool   // 是否启用沙箱
 }
 
 // AIGCConfig 图像/视频生成配置
@@ -42,6 +45,8 @@ type AIGCConfig struct {
 	VideoToVideo         string // 参考生视频模型（视频生视频）
 	ImageToVideoDuration int    // 图生视频最大时长（秒），默认 5，最大 15
 	OutputDir            string
+	Workspace            string // 工作目录，用于路径验证
+	Sandboxed            bool   // 是否启用沙箱
 }
 
 // DefaultAIGCConfig 默认配置
@@ -95,6 +100,8 @@ func NewAIGCTool(cfg *AIGCConfig) *AIGCTool {
 		videoToVideo:         cfg.VideoToVideo,
 		imageToVideoDuration: cfg.ImageToVideoDuration,
 		outputDir:            cfg.OutputDir,
+		workspace:            cfg.Workspace,
+		sandboxed:            cfg.Sandboxed,
 	}
 }
 
@@ -347,6 +354,11 @@ func (t *AIGCTool) generateVideoFromImage(ctx context.Context, imagePath, prompt
 		return "", fmt.Errorf("image_path is required for image-to-video generation")
 	}
 
+	// 路径安全验证
+	if err := t.validatePath(imagePath); err != nil {
+		return "", err
+	}
+
 	// 读取图片文件
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
@@ -425,6 +437,11 @@ func (t *AIGCTool) generateVideoFromImage(ctx context.Context, imagePath, prompt
 func (t *AIGCTool) generateVideoFromVideo(ctx context.Context, videoPath, prompt string, duration int) (string, error) {
 	if videoPath == "" {
 		return "", fmt.Errorf("video_path is required for video-to-video generation")
+	}
+
+	// 路径安全验证
+	if err := t.validatePath(videoPath); err != nil {
+		return "", err
 	}
 
 	// 读取视频文件
@@ -1056,4 +1073,72 @@ func (t *AIGCTool) IsDangerous() bool {
 // SetAPIKey 设置 API Key
 func (t *AIGCTool) SetAPIKey(key string) {
 	t.apiKey = key
+}
+
+// validatePath 验证路径是否在允许的目录内（防止路径遍历攻击）
+func (t *AIGCTool) validatePath(path string) error {
+	if !t.sandboxed || t.workspace == "" {
+		return nil // 未启用沙箱，跳过验证
+	}
+
+	// 获取绝对路径
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+
+	// 获取工作区绝对路径
+	absWorkspace, err := filepath.Abs(t.workspace)
+	if err != nil {
+		return fmt.Errorf("failed to resolve workspace: %w", err)
+	}
+
+	// 解析符号链接
+	evalPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		// 如果路径不存在，检查父目录
+		evalPath, err = t.resolveParentPath(absPath)
+		if err != nil {
+			return fmt.Errorf("path validation failed: %w", err)
+		}
+	}
+
+	// 解析工作区的符号链接
+	evalWorkspace, err := filepath.EvalSymlinks(absWorkspace)
+	if err != nil {
+		evalWorkspace = absWorkspace
+	}
+
+	// 使用相对路径检查
+	rel, err := filepath.Rel(evalWorkspace, evalPath)
+	if err != nil {
+		return fmt.Errorf("failed to check path relation: %w", err)
+	}
+
+	// 检查是否尝试逃逸工作区
+	if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return fmt.Errorf("path outside workspace: %s", path)
+	}
+
+	return nil
+}
+
+// resolveParentPath 解析父目录路径（用于新文件场景）
+func (t *AIGCTool) resolveParentPath(path string) (string, error) {
+	dir := filepath.Dir(path)
+	for {
+		evalDir, err := filepath.EvalSymlinks(dir)
+		if err == nil {
+			remaining := strings.TrimPrefix(path, dir)
+			if remaining != "" {
+				return filepath.Join(evalDir, remaining), nil
+			}
+			return evalDir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("cannot resolve path: %s", path)
+		}
+		dir = parent
+	}
 }
