@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/lingguard/pkg/embedding"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite" // 纯 Go SQLite，无需 CGO
 )
 
 // VectorRecord 向量记录
