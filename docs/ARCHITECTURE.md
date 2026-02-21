@@ -454,6 +454,99 @@ func (a *Agent) runLoop(ctx context.Context, sessionID string, messages []llm.Me
 }
 ```
 
+#### 4.3.3 会话隔离机制
+
+LingGuard 的会话管理实现了精细的隔离机制，确保不同群的对话互不影响：
+
+**SessionID 生成规则：**
+
+| 场景 | SessionID 格式 | 说明 |
+|------|----------------|------|
+| 群聊 | `feishu-{chatID}` | 基于群 ID，不同群隔离 |
+| 私聊 | `feishu-{senderID}` | 基于发送者 ID，不同人隔离 |
+| 定时任务 | `cron-{jobID}` | 基于任务 ID |
+| 心跳 | `heartbeat-main` | 独立会话 |
+
+**会话锁机制：**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Session Lock                                │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
+│  │ TryLock     │───▶│ 处理消息    │───▶│ Unlock      │         │
+│  │ (10min超时) │    │ (defer)     │    │             │         │
+│  └─────────────┘    └─────────────┘    └─────────────┘         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**设计要点：**
+- 每个会话独立的 `processingMu` 锁
+- 同一会话内消息串行处理，防止历史错乱
+- 不同会话之间完全隔离，可并行处理
+- 10 分钟超时机制，防止长时间阻塞
+
+**会话生命周期日志：**
+
+| 事件 | 日志级别 | 说明 |
+|------|----------|------|
+| `Session created` | INFO | 会话首次创建 |
+| `Session accessed` | DEBUG | 访问已有会话 |
+| `Session locked` | DEBUG | 会话锁定开始处理 |
+| `Session unlocked` | DEBUG | 会话解锁（含锁定时长） |
+| `Session lock timeout` | WARN | 锁超时强制释放 |
+| `Session busy` | WARN | 会话繁忙拒绝请求 |
+
+**实现代码：**
+
+```go
+// internal/session/manager.go
+
+type Session struct {
+    Key       string
+    Messages  []*memory.Message
+    CreatedAt time.Time
+    UpdatedAt time.Time
+
+    processingMu  sync.Mutex  // 每个会话独立的锁
+    isProcessing  bool
+    lockedAt      time.Time   // 锁定时间，用于超时检测
+}
+
+// 带超时的锁定
+func (s *Session) TryLockWithTimeout(timeout time.Duration) bool {
+    if s.processingMu.TryLock() {
+        s.isProcessing = true
+        s.lockedAt = time.Now()
+        return true
+    }
+
+    // 检查是否超时
+    if time.Since(s.lockedAt) > timeout {
+        // 强制释放并重新获取
+        s.isProcessing = false
+        s.processingMu.Unlock()
+        if s.processingMu.TryLock() {
+            s.isProcessing = true
+            s.lockedAt = time.Now()
+            return true
+        }
+    }
+    return false
+}
+```
+
+**飞书渠道 SessionID 生成：**
+
+```go
+// internal/channels/feishu.go
+
+// SessionID: 群聊使用 chatID，私聊使用 senderID
+sessionID := "feishu-" + chatID
+if chatType == "p2p" {
+    sessionID = "feishu-" + senderID
+}
+```
+
 ### 4.4 定时任务系统 (Cron)
 
 #### 4.4.1 与 nanobot 的差异
