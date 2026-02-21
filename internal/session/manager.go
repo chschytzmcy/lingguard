@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lingguard/pkg/logger"
 	"github.com/lingguard/pkg/memory"
 )
 
@@ -50,6 +51,7 @@ func (m *Manager) GetOrCreate(key string) *Session {
 	defer m.mu.Unlock()
 
 	if s, ok := m.sessions[key]; ok {
+		logger.Debug("Session accessed", "key", key, "messageCount", len(s.Messages), "age", time.Since(s.CreatedAt).Round(time.Second))
 		return s
 	}
 
@@ -60,6 +62,7 @@ func (m *Manager) GetOrCreate(key string) *Session {
 		UpdatedAt: time.Now(),
 	}
 	m.sessions[key] = s
+	logger.Info("Session created", "key", key)
 	return s
 }
 
@@ -106,8 +109,10 @@ func (s *Session) TryLockForProcessing() bool {
 	if s.processingMu.TryLock() {
 		s.isProcessing = true
 		s.lockedAt = time.Now()
+		logger.Debug("Session locked", "key", s.Key)
 		return true
 	}
+	logger.Warn("Session busy, lock failed", "key", s.Key, "lockedAt", s.lockedAt)
 	return false
 }
 
@@ -118,6 +123,7 @@ func (s *Session) TryLockWithTimeout(timeout time.Duration) bool {
 	if s.processingMu.TryLock() {
 		s.isProcessing = true
 		s.lockedAt = time.Now()
+		logger.Debug("Session locked", "key", s.Key)
 		return true
 	}
 
@@ -125,15 +131,18 @@ func (s *Session) TryLockWithTimeout(timeout time.Duration) bool {
 	if s.lockedAt.IsZero() || time.Since(s.lockedAt) > timeout {
 		// 超时了，尝试强制释放并重新获取
 		// 注意：这是一个妥协方案，可能导致并发问题，但比完全阻塞好
+		logger.Warn("Session lock timeout, force releasing", "key", s.Key, "lockedAt", s.lockedAt, "timeout", timeout)
 		s.isProcessing = false
 		s.processingMu.Unlock()
 		if s.processingMu.TryLock() {
 			s.isProcessing = true
 			s.lockedAt = time.Now()
+			logger.Info("Session re-locked after timeout", "key", s.Key)
 			return true
 		}
 	}
 
+	logger.Warn("Session busy, lock failed", "key", s.Key, "lockedAt", s.lockedAt)
 	return false
 }
 
@@ -147,8 +156,10 @@ func (s *Session) LockForProcessing() {
 // UnlockAfterProcessing 释放会话处理锁
 func (s *Session) UnlockAfterProcessing() {
 	s.isProcessing = false
+	lockedDuration := time.Since(s.lockedAt)
 	s.lockedAt = time.Time{} // 清除锁定时间
 	s.processingMu.Unlock()
+	logger.Debug("Session unlocked", "key", s.Key, "lockedDuration", lockedDuration.Round(time.Millisecond))
 }
 
 // IsProcessing 检查会话是否正在处理消息

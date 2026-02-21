@@ -325,10 +325,17 @@ func (f *FeishuChannel) handleMessage(ctx context.Context, event *larkim.P2Messa
 		replyTo = senderID
 	}
 
+	// SessionID: 群聊使用 chatID，私聊使用 senderID
+	// 这样不同群的消息互不阻塞
+	sessionID := "feishu-" + chatID
+	if chatType == "p2p" {
+		sessionID = "feishu-" + senderID
+	}
+
 	// Build Message
 	channelMsg := &Message{
 		ID:        messageID,
-		SessionID: "feishu-" + senderID,
+		SessionID: sessionID,
 		Content:   strings.TrimSpace(content),
 		Media:     mediaPaths,
 		Channel:   "feishu",
