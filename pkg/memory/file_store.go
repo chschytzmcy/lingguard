@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -146,29 +146,19 @@ func (s *FileStore) GetMemory() (string, error) {
 	return string(data), nil
 }
 
-// SearchMemory 使用 grep 搜索记忆（参考 nanobot）
+// SearchMemory 搜索记忆（使用 Go 原生实现，避免命令注入）
 func (s *FileStore) SearchMemory(query string) ([]string, error) {
 	if err := s.ensureInit(); err != nil {
 		return nil, err
 	}
 
-	// 使用 grep 搜索
-	cmd := exec.Command("grep", "-i", "-n", query, s.memoryFile)
-	output, err := cmd.Output()
+	// 读取文件内容
+	data, err := os.ReadFile(s.memoryFile)
 	if err != nil {
-		// grep 返回非零表示没有匹配
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("grep search: %w", err)
+		return nil, fmt.Errorf("read memory file: %w", err)
 	}
 
-	var results []string
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		results = append(results, scanner.Text())
-	}
-	return results, nil
+	return grepSearch(string(data), query)
 }
 
 // History operations
@@ -237,27 +227,19 @@ func (s *FileStore) GetRecentHistory(lines int) ([]string, error) {
 	return result, nil
 }
 
-// SearchHistory 搜索历史记录
+// SearchHistory 搜索历史记录（使用 Go 原生实现）
 func (s *FileStore) SearchHistory(query string) ([]string, error) {
 	if err := s.ensureInit(); err != nil {
 		return nil, err
 	}
 
-	cmd := exec.Command("grep", "-i", "-n", query, s.historyFile)
-	output, err := cmd.Output()
+	// 读取文件内容
+	data, err := os.ReadFile(s.historyFile)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("grep search: %w", err)
+		return nil, fmt.Errorf("read history file: %w", err)
 	}
 
-	var results []string
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		results = append(results, scanner.Text())
-	}
-	return results, nil
+	return grepSearch(string(data), query)
 }
 
 // Session operations (实现 Store 接口)
@@ -282,38 +264,40 @@ func (s *FileStore) Add(ctx context.Context, sessionID string, msg *Message) err
 	return s.AddHistory(fmt.Sprintf("Message/%s", msg.Role), msg.Content, details)
 }
 
-// Get 获取会话消息（从历史中提取）
+// Get 获取会话消息（从历史中提取，使用 Go 原生实现）
 func (s *FileStore) Get(ctx context.Context, sessionID string, limit int) ([]*Message, error) {
 	if err := s.ensureInit(); err != nil {
 		return nil, err
 	}
 
-	// 使用 grep 过滤特定 session 的消息
-	cmd := exec.Command("grep", "-A1", fmt.Sprintf("session_id: %s", sessionID), s.historyFile)
-	output, err := cmd.Output()
+	// 读取文件内容
+	data, err := os.ReadFile(s.historyFile)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("grep search: %w", err)
+		return nil, fmt.Errorf("read history file: %w", err)
 	}
 
-	// 解析输出
+	// 搜索包含 session_id 的行及其下一行
+	sessionPattern := fmt.Sprintf("session_id: %s", sessionID)
 	var messages []*Message
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "Message/") {
-			msg := &Message{
-				Timestamp: time.Now(),
-			}
-			// 简化解析：从上下文提取
-			if strings.Contains(line, "user") {
-				msg.Role = "user"
-			} else if strings.Contains(line, "assistant") {
-				msg.Role = "assistant"
-			}
-			if msg.Role != "" {
-				messages = append(messages, msg)
+	lines := strings.Split(string(data), "\n")
+
+	for i, line := range lines {
+		if strings.Contains(line, sessionPattern) {
+			// 找到匹配，检查上下文寻找消息类型
+			for j := max(0, i-5); j < min(len(lines), i+3); j++ {
+				if strings.Contains(lines[j], "Message/") {
+					msg := &Message{
+						Timestamp: time.Now(),
+					}
+					if strings.Contains(lines[j], "user") {
+						msg.Role = "user"
+					} else if strings.Contains(lines[j], "assistant") {
+						msg.Role = "assistant"
+					}
+					if msg.Role != "" {
+						messages = append(messages, msg)
+					}
+				}
 			}
 		}
 	}
@@ -433,7 +417,7 @@ func (s *FileStore) GetRecentDailyLogs(days int) (map[string]string, error) {
 	return logs, nil
 }
 
-// SearchAll 搜索所有记忆文件
+// SearchAll 搜索所有记忆文件（使用 Go 原生实现）
 func (s *FileStore) SearchAll(query string) (map[string][]string, error) {
 	results := make(map[string][]string)
 
@@ -447,28 +431,26 @@ func (s *FileStore) SearchAll(query string) (map[string][]string, error) {
 		results["HISTORY.md"] = histResults
 	}
 
-	// 搜索每日日志
-	cmd := exec.Command("grep", "-r", "-i", "-l", query, s.memoryDir)
-	output, err := cmd.Output()
-	if err == nil {
-		scanner := bufio.NewScanner(strings.NewReader(string(output)))
-		for scanner.Scan() {
-			filePath := scanner.Text()
-			if strings.HasSuffix(filePath, ".md") {
-				fileName := filepath.Base(filePath)
-				if _, ok := results[fileName]; !ok {
-					// 获取匹配行
-					lineCmd := exec.Command("grep", "-i", "-n", query, filePath)
-					lineOutput, _ := lineCmd.Output()
-					var lines []string
-					lineScanner := bufio.NewScanner(strings.NewReader(string(lineOutput)))
-					for lineScanner.Scan() {
-						lines = append(lines, lineScanner.Text())
-					}
-					if len(lines) > 0 {
-						results[fileName] = lines
-					}
-				}
+	// 搜索每日日志文件
+	entries, err := os.ReadDir(s.memoryDir)
+	if err != nil {
+		return results, nil
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		fileName := entry.Name()
+		// 只搜索 .md 文件，排除 MEMORY.md 和 HISTORY.md（已搜索）
+		if strings.HasSuffix(fileName, ".md") && fileName != "MEMORY.md" && fileName != "HISTORY.md" {
+			filePath := filepath.Join(s.memoryDir, fileName)
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				continue
+			}
+			if lines, err := grepSearch(string(data), query); err == nil && len(lines) > 0 {
+				results[fileName] = lines
 			}
 		}
 	}
@@ -490,4 +472,37 @@ func expandHome(path string) string {
 		return filepath.Join(home, path[1:])
 	}
 	return path
+}
+
+// grepSearch 模拟 grep -i -n 的搜索功能（Go 原生实现，避免命令注入）
+func grepSearch(content, query string) ([]string, error) {
+	if query == "" {
+		return nil, nil
+	}
+
+	// 转义正则特殊字符，进行安全的字符串匹配
+	pattern := "(?i)" + regexp.QuoteMeta(query)
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid search pattern: %w", err)
+	}
+
+	var results []string
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if re.MatchString(line) {
+			// 格式：行号:匹配内容（类似 grep -n 输出）
+			results = append(results, fmt.Sprintf("%d:%s", i+1, line))
+		}
+	}
+
+	return results, nil
+}
+
+// max 返回两个整数中的较大值
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
