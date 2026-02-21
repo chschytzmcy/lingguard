@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/lingguard/pkg/logger"
 )
 
 const (
@@ -56,15 +58,19 @@ func NewMoltbookTool(apiKey, agentName string) *MoltbookTool {
 		agentName = "LingGuard"
 	}
 
+	// 创建 HTTP Transport，使用系统代理
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
+		Proxy:           http.ProxyFromEnvironment, // 使用系统代理设置
+	}
+
 	return &MoltbookTool{
 		apiKey:    apiKey,
 		agentName: agentName,
 		credPath:  credPath,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
-			},
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		},
 	}
 }
@@ -200,38 +206,48 @@ func (t *MoltbookTool) Execute(ctx context.Context, args json.RawMessage) (strin
 		return "", fmt.Errorf("parse arguments: %w", err)
 	}
 
+	start := time.Now()
+	var result string
+	var err error
+
 	switch params.Action {
 	case "register":
-		return t.register(ctx, params.Name, params.Description)
+		result, err = t.register(ctx, params.Name, params.Description)
 	case "status":
-		return t.status()
+		result, err = t.status()
 	case "profile":
-		return t.profile(ctx)
+		result, err = t.profile(ctx)
 	case "feed":
-		return t.feed(ctx, params.Limit)
+		result, err = t.feed(ctx, params.Limit)
 	case "post":
-		return t.createPost(ctx, params.Title, params.Content, params.Submolt)
+		result, err = t.createPost(ctx, params.Title, params.Content, params.Submolt)
 	case "comment":
-		return t.createComment(ctx, params.PostID, params.Content)
+		result, err = t.createComment(ctx, params.PostID, params.Content)
 	case "upvote":
-		return t.vote(ctx, params.TargetID, params.TargetType, 1)
+		result, err = t.vote(ctx, params.TargetID, params.TargetType, 1)
 	case "downvote":
-		return t.vote(ctx, params.TargetID, params.TargetType, -1)
+		result, err = t.vote(ctx, params.TargetID, params.TargetType, -1)
 	case "submolts":
-		return t.submolts(ctx, params.Submolt, params.Create)
+		result, err = t.submolts(ctx, params.Submolt, params.Create)
 	case "subscribe":
-		return t.subscribe(ctx, params.Submolt, true)
+		result, err = t.subscribe(ctx, params.Submolt, true)
 	case "unsubscribe":
-		return t.subscribe(ctx, params.Submolt, false)
+		result, err = t.subscribe(ctx, params.Submolt, false)
 	case "follow":
-		return t.follow(ctx, params.AgentID, true)
+		result, err = t.follow(ctx, params.AgentID, true)
 	case "unfollow":
-		return t.follow(ctx, params.AgentID, false)
+		result, err = t.follow(ctx, params.AgentID, false)
 	case "search":
-		return t.search(ctx, params.Query, params.Limit)
+		result, err = t.search(ctx, params.Query, params.Limit)
 	default:
-		return "", fmt.Errorf("unknown action: %s", params.Action)
+		err = fmt.Errorf("unknown action: %s", params.Action)
 	}
+
+	// 记录日志
+	duration := time.Since(start)
+	logger.ToolCall("moltbook."+params.Action, args, result, duration, err)
+
+	return result, err
 }
 
 // register 注册新 Agent
