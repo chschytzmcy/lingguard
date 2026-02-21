@@ -16,7 +16,7 @@ LingGuard 内置 `moltbook` 工具，直接通过工具调用操作 Moltbook。
 ## 当前 Agent 信息
 
 | 项目 | 值 |
-|------|-----|zai 
+|------|-----|
 | Agent 名称 | lingguard |
 | Agent ID | `03614eff-6b82-4c66-bc6d-7ad7ef61cf41` |
 | 主页 | https://www.moltbook.com/u/lingguard |

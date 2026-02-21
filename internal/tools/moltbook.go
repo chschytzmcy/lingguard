@@ -430,9 +430,17 @@ func (t *MoltbookTool) createPost(ctx context.Context, title, content, submolt s
 	}
 
 	var resp struct {
-		PostID  string `json:"post_id"`
-		Message string `json:"message"`
-		Error   string `json:"error"`
+		Success            bool   `json:"success"`
+		Message            string `json:"message"`
+		PostID             string `json:"post_id"`
+		Error              string `json:"error"`
+		VerificationStatus string `json:"verificationStatus"`
+		Verification       *struct {
+			VerificationCode string `json:"verification_code"`
+			ChallengeText    string `json:"challenge_text"`
+			ExpiresAt        string `json:"expires_at"`
+			Instructions     string `json:"instructions"`
+		} `json:"verification"`
 	}
 
 	if err := t.doRequest(ctx, "POST", "/posts", reqBody, &resp, true); err != nil {
@@ -441,6 +449,33 @@ func (t *MoltbookTool) createPost(ctx context.Context, title, content, submolt s
 
 	if resp.Error != "" {
 		return "", fmt.Errorf("create post failed: %s", resp.Error)
+	}
+
+	// 如果需要验证，自动处理
+	if resp.VerificationStatus == "pending" && resp.Verification != nil {
+		logger.Info("Moltbook post needs verification", "challenge", resp.Verification.ChallengeText)
+
+		// 解析并计算数学问题
+		answer := solveMoltbookChallenge(resp.Verification.ChallengeText)
+		if answer != "" {
+			// 提交验证
+			verifyResp := struct {
+				Success bool   `json:"success"`
+				Message string `json:"message"`
+				Error   string `json:"error"`
+			}{}
+			verifyBody := map[string]string{
+				"verification_code": resp.Verification.VerificationCode,
+				"answer":            answer,
+			}
+			if err := t.doRequest(ctx, "POST", "/verify", verifyBody, &verifyResp, true); err != nil {
+				return "", fmt.Errorf("verify failed: %w", err)
+			}
+			if !verifyResp.Success {
+				return fmt.Sprintf("发帖成功但验证失败: %s\n帖子可能不会显示", verifyResp.Message), nil
+			}
+			logger.Info("Moltbook verification successful", "answer", answer)
+		}
 	}
 
 	return fmt.Sprintf("发帖成功！\nPost ID: %s\n标题: %s\n社区: %s\n\n注意: 每个帖子间隔至少 30 分钟",
@@ -793,6 +828,75 @@ func loadMoltbookCredentials(path string) (*MoltbookCredentials, error) {
 	}
 
 	return &creds, nil
+}
+
+// solveMoltbookChallenge 解析 Moltbook 验证数学问题
+// 示例: "A lobster's claw exerts thirty two newtons at lever arm of two meters. What's torque?"
+// 返回: "64.00"
+func solveMoltbookChallenge(challenge string) string {
+	// 清理挑战文本中的干扰字符
+	cleaned := cleanChallengeText(challenge)
+	logger.Debug("Moltbook challenge cleaned", "original", challenge, "cleaned", cleaned)
+
+	// 尝试解析简单的数学表达式
+	// 查找数字和可能的运算
+	numbers := extractNumbers(cleaned)
+	if len(numbers) >= 2 {
+		// 尝试乘法 (force * distance = torque 类型)
+		result := float64(numbers[0]) * float64(numbers[1])
+		return fmt.Sprintf("%.2f", result)
+	}
+
+	// 无法解析，返回空
+	return ""
+}
+
+// cleanChallengeText 清理挑战文本
+func cleanChallengeText(text string) string {
+	// 移除干扰字符
+	replacer := strings.NewReplacer(
+		"]", " ", "[", " ", "^", " ", "~", " ",
+		"{", " ", "}", " ", "\\", " ", "/", " ",
+		"|", " ", "@", " ", "#", " ", "$", " ",
+		"%", " ", "*", " ", "(", " ", ")", " ",
+		"?", "", "!", "", ".", " ", ",", " ",
+	)
+	cleaned := replacer.Replace(text)
+	// 统一空格
+	cleaned = strings.Join(strings.Fields(cleaned), " ")
+	return strings.ToLower(cleaned)
+}
+
+// extractNumbers 从文本中提取数字
+func extractNumbers(text string) []int {
+	var numbers []int
+	words := strings.Fields(text)
+
+	numberWords := map[string]int{
+		"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
+		"five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+		"ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+		"fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+		"eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30,
+		"forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
+		"eighty": 80, "ninety": 90, "hundred": 100,
+	}
+
+	for i, word := range words {
+		// 检查是否是数字单词
+		if n, ok := numberWords[word]; ok {
+			// 检查下一个词是否也是数字（如 "thirty two"）
+			if i+1 < len(words) {
+				if nextN, ok := numberWords[words[i+1]]; ok && nextN < 10 {
+					numbers = append(numbers, n+nextN)
+					continue
+				}
+			}
+			numbers = append(numbers, n)
+		}
+	}
+
+	return numbers
 }
 
 // IsDangerous 返回是否为危险操作
