@@ -22,6 +22,9 @@ type Session struct {
 
 	// isProcessing 标记是否正在处理消息
 	isProcessing bool
+
+	// lockedAt 锁定时间，用于超时检测
+	lockedAt time.Time
 }
 
 // Manager 会话管理器
@@ -102,8 +105,35 @@ func (s *Session) Clear() {
 func (s *Session) TryLockForProcessing() bool {
 	if s.processingMu.TryLock() {
 		s.isProcessing = true
+		s.lockedAt = time.Now()
 		return true
 	}
+	return false
+}
+
+// TryLockWithTimeout 尝试锁定会话，如果锁被持有超过 timeout 则强制释放
+// 用于处理长时间运行操作导致的会话阻塞
+func (s *Session) TryLockWithTimeout(timeout time.Duration) bool {
+	// 首先尝试正常获取锁
+	if s.processingMu.TryLock() {
+		s.isProcessing = true
+		s.lockedAt = time.Now()
+		return true
+	}
+
+	// 如果锁被持有，检查是否超时
+	if s.lockedAt.IsZero() || time.Since(s.lockedAt) > timeout {
+		// 超时了，尝试强制释放并重新获取
+		// 注意：这是一个妥协方案，可能导致并发问题，但比完全阻塞好
+		s.isProcessing = false
+		s.processingMu.Unlock()
+		if s.processingMu.TryLock() {
+			s.isProcessing = true
+			s.lockedAt = time.Now()
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -117,6 +147,7 @@ func (s *Session) LockForProcessing() {
 // UnlockAfterProcessing 释放会话处理锁
 func (s *Session) UnlockAfterProcessing() {
 	s.isProcessing = false
+	s.lockedAt = time.Time{} // 清除锁定时间
 	s.processingMu.Unlock()
 }
 

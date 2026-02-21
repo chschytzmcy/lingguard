@@ -252,8 +252,10 @@ func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMess
 	// 1. 获取或创建会话
 	s := a.sessions.GetOrCreate(sessionID)
 
-	// 尝试锁定会话，如果失败则返回友好提示
-	if !s.TryLockForProcessing() {
+	// 尝试锁定会话，如果锁被持有超过 10 分钟则强制释放
+	// 这可以处理长时间运行操作（如视频生成）后的会话阻塞问题
+	const sessionLockTimeout = 10 * time.Minute
+	if !s.TryLockWithTimeout(sessionLockTimeout) {
 		logger.Warn("Session is busy, please wait", "session", sessionID)
 		return "⏳ 正在处理上一条消息，请稍后再试...", nil
 	}
@@ -300,8 +302,9 @@ func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, us
 	// 1. 获取或创建会话
 	s := a.sessions.GetOrCreate(sessionID)
 
-	// 尝试锁定会话，如果失败则返回友好提示
-	if !s.TryLockForProcessing() {
+	// 尝试锁定会话，如果锁被持有超过 10 分钟则强制释放
+	const sessionLockTimeout = 10 * time.Minute
+	if !s.TryLockWithTimeout(sessionLockTimeout) {
 		logger.Warn("Session is busy, please wait", "session", sessionID)
 		// 发送友好提示给用户
 		callback(stream.NewTextEvent("⏳ 正在处理上一条消息，请稍后再试..."))
