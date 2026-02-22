@@ -37,7 +37,7 @@ func NewWebSearchTool(apiKey string, maxResults int) *WebSearchTool {
 func (t *WebSearchTool) Name() string { return "web_search" }
 
 func (t *WebSearchTool) Description() string {
-	return "Search the web using Tavily AI. Returns titles, URLs, and content snippets optimized for AI applications."
+	return "网页搜索"
 }
 
 func (t *WebSearchTool) Parameters() map[string]interface{} {
@@ -195,7 +195,7 @@ func NewWebFetchTool(maxChars int) *WebFetchTool {
 func (t *WebFetchTool) Name() string { return "web_fetch" }
 
 func (t *WebFetchTool) Description() string {
-	return "Fetch URL and extract readable content (HTML to markdown/text)."
+	return "网页抓取"
 }
 
 func (t *WebFetchTool) Parameters() map[string]interface{} {

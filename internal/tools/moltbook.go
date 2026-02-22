@@ -82,7 +82,7 @@ func (t *MoltbookTool) Name() string {
 
 // Description 返回工具描述
 func (t *MoltbookTool) Description() string {
-	return "Moltbook AI 社交网络（发帖、评论、关注、搜索）"
+	return "Moltbook AI 社交网络"
 }
 
 // Parameters 返回参数定义

@@ -39,7 +39,7 @@ func NewCronTool(service CronService) *CronTool {
 func (t *CronTool) Name() string { return "cron" }
 
 func (t *CronTool) Description() string {
-	return "管理定时任务和提醒（添加、查看、删除）"
+	return "定时任务和提醒管理"
 }
 
 func (t *CronTool) Parameters() map[string]interface{} {

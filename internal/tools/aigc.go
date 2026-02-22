@@ -112,7 +112,7 @@ func (t *AIGCTool) Name() string {
 
 // Description 返回工具描述
 func (t *AIGCTool) Description() string {
-	return "生成图片和视频（文生图、文生视频、图生视频、视频生视频）"
+	return "生成图片和视频"
 }
 
 // Parameters 返回参数定义
