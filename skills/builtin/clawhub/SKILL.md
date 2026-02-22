@@ -68,9 +68,16 @@ npx --yes clawhub@latest search "web scraping" --limit 5
 npx --yes clawhub@latest whoami 2>&1 | grep -q "Not logged in" && \
   npx --yes clawhub@latest login --token "$(grep -o '"apiToken"[[:space:]]*:[[:space:]]*"[^"]*"' ~/.lingguard/config.json | sed 's/.*"\([^"]*\)"$/\1')" --no-browser
 
-# 2. Install skill
+# 2. Try to install skill
 npx --yes clawhub@latest install <slug> --workdir ~/.lingguard/workspace
 ```
+
+**If security warning appears:**
+1. Show the warning to user and ask for confirmation
+2. If user confirms, run with `--force`:
+   ```bash
+   npx --yes clawhub@latest install <slug> --workdir ~/.lingguard/workspace --force
+   ```
 
 ### Update All (requires login)
 
@@ -97,18 +104,23 @@ npx --yes clawhub@latest list --workdir ~/.lingguard/workspace
 ## Example Flow
 
 ```
-User: 从 ClawHub 安装一个天气技能
+User: 从 ClawHub 安装 apewisdom 技能
 You: [使用 shell 工具]
      # 搜索
-     npx --yes clawhub@latest search "weather" --limit 5
+     npx --yes clawhub@latest search "apewisdom" --limit 5
 
-     [展示搜索结果，选择合适的]
+     [展示搜索结果]
 
-     # 安装（自动登录）
-     npx --yes clawhub@latest whoami 2>&1 | grep -q "Not logged in" && \
-       npx --yes clawhub@latest login --token "$(grep -o '"apiToken"[[:space:]]*:[[:space:]]*"[^"]*"' ~/.lingguard/config.json | sed 's/.*"\([^"]*\)"$/\1')" --no-browser
+     # 尝试安装
+     npx --yes clawhub@latest install apewisdom --workdir ~/.lingguard/workspace
 
-     npx --yes clawhub@latest install weather-api --workdir ~/.lingguard/workspace
+     # 如果出现安全警告：
+     "⚠️ 安全警告: apewisdom 被标记为可疑，可能包含外部 API 调用等风险。
+      是否继续安装？(y/n)"
+
+User: 确认安装
+You: [使用 --force 安装]
+     npx --yes clawhub@latest install apewisdom --workdir ~/.lingguard/workspace --force
 
      [告知用户重启会话]
 ```
