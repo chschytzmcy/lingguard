@@ -39,7 +39,7 @@ func NewCronTool(service CronService) *CronTool {
 func (t *CronTool) Name() string { return "cron" }
 
 func (t *CronTool) Description() string {
-	return "定时任务和提醒管理"
+	return "任务调度"
 }
 
 func (t *CronTool) Parameters() map[string]interface{} {
@@ -49,23 +49,23 @@ func (t *CronTool) Parameters() map[string]interface{} {
 			"action": map[string]interface{}{
 				"type":        "string",
 				"enum":        []string{"list", "add", "remove", "enable", "disable"},
-				"description": "操作类型",
+				"description": "操作",
 			},
 			"name": map[string]interface{}{
 				"type":        "string",
-				"description": "任务名称",
+				"description": "名称",
 			},
 			"schedule": map[string]interface{}{
 				"type":        "string",
-				"description": "时间格式（详见 skill）",
+				"description": "时间",
 			},
 			"message": map[string]interface{}{
 				"type":        "string",
-				"description": "提醒内容",
+				"description": "内容",
 			},
 			"job_id": map[string]interface{}{
 				"type":        "string",
-				"description": "任务 ID",
+				"description": "ID",
 			},
 			"timezone": map[string]interface{}{
 				"type":        "string",

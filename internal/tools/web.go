@@ -37,7 +37,7 @@ func NewWebSearchTool(apiKey string, maxResults int) *WebSearchTool {
 func (t *WebSearchTool) Name() string { return "web_search" }
 
 func (t *WebSearchTool) Description() string {
-	return "网页搜索"
+	return "搜索"
 }
 
 func (t *WebSearchTool) Parameters() map[string]interface{} {
@@ -195,7 +195,7 @@ func NewWebFetchTool(maxChars int) *WebFetchTool {
 func (t *WebFetchTool) Name() string { return "web_fetch" }
 
 func (t *WebFetchTool) Description() string {
-	return "网页抓取"
+	return "抓取"
 }
 
 func (t *WebFetchTool) Parameters() map[string]interface{} {

@@ -50,7 +50,7 @@ func (t *TTSTool) Name() string {
 
 // Description 返回工具描述
 func (t *TTSTool) Description() string {
-	return "文字转语音"
+	return "语音合成"
 }
 
 // Parameters 返回参数定义
