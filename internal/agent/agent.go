@@ -488,6 +488,9 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 	var videoPaths []string
 	var imagePaths []string
 
+	// 视频大小限制：5MB（base64 编码后约 6.7MB）
+	const maxVideoSize = 5 * 1024 * 1024
+
 	// 添加图片/视频
 	for _, path := range mediaPaths {
 		// 读取媒体文件并转换为 base64
@@ -501,17 +504,28 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 		// 如果是视频文件，使用 video_url 格式（Qwen-Omni 模型）
 		if isVideoFile(ext) {
 			mimeType := detectVideoMimeType(ext)
-			base64Data := encodeBase64(data)
-			logger.Info("Processing video file for multimodal", "path", path, "mimeType", mimeType, "size", len(data))
-
-			// 使用 video_url 格式（支持 Qwen-Omni 模型）
-			parts = append(parts, llm.ContentPart{
-				Type: "video_url",
-				VideoURL: &llm.VideoURL{
-					URL: fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data),
-				},
-			})
 			videoPaths = append(videoPaths, path)
+
+			// 检查视频大小，超过限制则不发送 base64
+			if len(data) > maxVideoSize {
+				logger.Warn("Video too large, skipping base64 encoding", "path", path, "size", len(data), "maxSize", maxVideoSize)
+				// 只添加提示文本，不发送视频内容
+				parts = append(parts, llm.ContentPart{
+					Type: "text",
+					Text: fmt.Sprintf("[视频文件: %s，大小: %.1fMB，超过限制无法直接查看]", filepath.Base(path), float64(len(data))/1024/1024),
+				})
+			} else {
+				base64Data := encodeBase64(data)
+				logger.Info("Processing video file for multimodal", "path", path, "mimeType", mimeType, "size", len(data))
+
+				// 使用 video_url 格式（支持 Qwen-Omni 模型）
+				parts = append(parts, llm.ContentPart{
+					Type: "video_url",
+					VideoURL: &llm.VideoURL{
+						URL: fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data),
+					},
+				})
+			}
 		} else {
 			// 图片使用 image_url 格式
 			mimeType := detectMimeType(data)
