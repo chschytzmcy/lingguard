@@ -229,29 +229,55 @@ func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace strin
 // createCronJobCallback 创建定时任务执行回调
 func createCronJobCallback(ag *agent.Agent, mgr *channels.Manager) cron.JobCallback {
 	return func(job *cron.CronJob) (string, error) {
-		ctx := context.Background()
-		sessionID := fmt.Sprintf("cron-%s", job.ID)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
 
-		response, err := ag.ProcessMessage(ctx, sessionID, job.Payload.Message)
+		// 使用独立的 session ID，每次都是新会话（不保留历史）
+		// 这样可以避免历史消息堆积导致的超时问题
+		sessionID := fmt.Sprintf("cron-%s-%d", job.ID, time.Now().Unix())
 
-		// 如果需要投递消息到渠道
-		if job.Payload.Deliver && job.Payload.Channel != "" && job.Payload.To != "" {
+		// 调试日志：检查投递条件
+		logger.Info("Cron job starting",
+			"name", job.Name,
+			"deliver", job.Payload.Deliver,
+			"channel", job.Payload.Channel,
+			"to", job.Payload.To)
+
+		// 用于存储 LLM 响应
+		var response string
+		var execErr error
+
+		// 使用 defer 确保通知一定会发送（即使发生 panic）
+		defer func() {
+			if !job.Payload.Deliver || job.Payload.Channel == "" || job.Payload.To == "" {
+				logger.Warn("Cron job delivery skipped",
+					"name", job.Name,
+					"deliver", job.Payload.Deliver,
+					"channel", job.Payload.Channel,
+					"to", job.Payload.To)
+				return
+			}
+
 			var content string
-			if err != nil {
-				// LLM 调用失败时，也要发送通知（包含错误信息）
-				content = fmt.Sprintf("⏰ **定时任务: %s**\n\n%s\n\n⚠️ 执行出错: %s", job.Name, job.Payload.Message, err.Error())
-				logger.Error("Cron job LLM call failed, sending error notification", "name", job.Name, "error", err)
+			if execErr != nil {
+				content = fmt.Sprintf("⏰ **定时任务: %s**\n\n%s\n\n⚠️ 执行出错: %s", job.Name, job.Payload.Message, execErr.Error())
+				logger.Error("Cron job LLM call failed, sending error notification", "name", job.Name, "error", execErr)
 			} else {
 				content = fmt.Sprintf("⏰ **定时任务: %s**\n\n%s", job.Name, response)
 			}
 
+			logger.Info("Sending cron job notification", "channel", job.Payload.Channel, "to", job.Payload.To)
 			if sendErr := mgr.SendMessage(job.Payload.Channel, job.Payload.To, content); sendErr != nil {
 				logger.Error("Failed to deliver cron job response", "error", sendErr)
+			} else {
+				logger.Info("Cron job notification sent successfully", "name", job.Name)
 			}
-		}
+		}()
 
-		if err != nil {
-			return "", err
+		// 执行 LLM 处理
+		response, execErr = ag.ProcessMessage(ctx, sessionID, job.Payload.Message)
+		if execErr != nil {
+			return "", execErr
 		}
 		return response, nil
 	}
