@@ -134,6 +134,8 @@ type ToolsConfig struct {
 	// Web tools
 	TavilyAPIKey string `json:"tavilyApiKey,omitempty"` // Tavily Search API Key
 	WebMaxChars  int    `json:"webMaxChars,omitempty"`  // 网页抓取最大字符数，默认 50000
+	// ClawHub - 技能仓库
+	ClawHub *ClawHubConfig `json:"clawhub,omitempty"` // ClawHub 配置
 	// MCP (Model Context Protocol) servers
 	MCPServers map[string]MCPServerConfig `json:"mcpServers,omitempty"` // MCP 服务器配置
 	// OpenCode integration
@@ -144,6 +146,12 @@ type ToolsConfig struct {
 	TTS *TTSConfig `json:"tts,omitempty"` // 语音合成配置
 	// Moltbook - AI 社交网络
 	Moltbook *MoltbookConfig `json:"moltbook,omitempty"` // Moltbook 配置
+}
+
+// ClawHubConfig ClawHub 技能仓库配置
+type ClawHubConfig struct {
+	Enabled  bool   `json:"enabled"`            // 是否启用 ClawHub
+	APIToken string `json:"apiToken,omitempty"` // API Token，用于自动登录
 }
 
 // MoltbookConfig Moltbook AI 社交网络配置

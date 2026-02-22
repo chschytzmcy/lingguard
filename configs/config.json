@@ -109,6 +109,10 @@
     },
     "moltbook": {
       "enabled": true
+    },
+    "clawhub": {
+      "enabled": true,
+      "apiToken": "clh_xxxxxxxxxxxx"
     }
   },
   "storage": {

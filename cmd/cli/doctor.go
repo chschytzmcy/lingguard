@@ -434,6 +434,25 @@ func (d *Doctor) checkWorkspace() {
 	d.addResult("Workspace", "ok",
 		fmt.Sprintf("Workspace exists: %s", workspace), "", false)
 
+	// 检查/创建技能目录 (ClawHub 安装的技能)
+	skillsDir := filepath.Join(workspace, "skills")
+	if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
+		if d.fixMode {
+			if err := os.MkdirAll(skillsDir, 0755); err == nil {
+				d.addResult("Workspace Skills", "ok",
+					fmt.Sprintf("Created skills directory: %s", skillsDir), "", true)
+				d.results[len(d.results)-1].Fixed = true
+			}
+		} else {
+			d.addResult("Workspace Skills", "info",
+				fmt.Sprintf("Skills directory not found: %s", skillsDir),
+				"Run 'lingguard doctor --fix' to create", false)
+		}
+	} else {
+		d.addResult("Workspace Skills", "ok",
+			fmt.Sprintf("Skills directory exists: %s", skillsDir), "", false)
+	}
+
 	// 检查写入权限
 	testFile := filepath.Join(workspace, ".write_test")
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {

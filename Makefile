@@ -13,9 +13,6 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
 
-# 纯 Go 编译（使用 modernc.org/sqlite，无需 CGO）
-CGO_ENABLED := 0
-
 # 安装配置
 PREFIX ?= $(HOME)/.local
 
@@ -29,7 +26,7 @@ deps:
 
 # 构建 - 输出到当前目录（当前平台）
 build:
-	CGO_ENABLED=$(CGO_ENABLED) go build $(LDFLAGS) -o $(PROJECT) ./$(CMD_DIR)
+	go build $(LDFLAGS) -o $(PROJECT) ./$(CMD_DIR)
 
 # 构建并运行
 run: build
@@ -67,7 +64,9 @@ install-bin: build
 # ============================================================
 
 # 打包所有平台
-package-all: package-linux package-darwin package-windows
+package-all:
+	@rm -rf dist
+	@$(MAKE) package-linux package-darwin package-windows
 	@echo ""
 	@echo "============================================"
 	@echo "所有平台打包完成！"
@@ -75,7 +74,9 @@ package-all: package-linux package-darwin package-windows
 	@ls -lh dist/
 
 # 默认打包 Linux + macOS
-package: package-linux package-darwin
+package:
+	@rm -rf dist
+	@$(MAKE) package-linux package-darwin
 	@echo ""
 	@echo "============================================"
 	@echo "打包完成！"
@@ -93,8 +94,7 @@ package-linux-amd64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=linux GOARCH=amd64 \
-		go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
 	cd dist && tar -czf $(PROJECT)-$(VERSION)-linux-amd64.tar.gz -C pkg .
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-linux-amd64.tar.gz"
 	@rm -rf dist/pkg
@@ -105,8 +105,7 @@ package-linux-arm64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=linux GOARCH=arm64 \
-		go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
+	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
 	cd dist && tar -czf $(PROJECT)-$(VERSION)-linux-arm64.tar.gz -C pkg .
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-linux-arm64.tar.gz"
 	@rm -rf dist/pkg
@@ -122,8 +121,7 @@ package-darwin-amd64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=darwin GOARCH=amd64 \
-		go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
 	cd dist && tar -czf $(PROJECT)-$(VERSION)-darwin-amd64.tar.gz -C pkg .
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-darwin-amd64.tar.gz"
 	@rm -rf dist/pkg
@@ -134,8 +132,7 @@ package-darwin-arm64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=darwin GOARCH=arm64 \
-		go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
 	cd dist && tar -czf $(PROJECT)-$(VERSION)-darwin-arm64.tar.gz -C pkg .
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-darwin-arm64.tar.gz"
 	@rm -rf dist/pkg
@@ -151,8 +148,7 @@ package-windows-amd64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=windows GOARCH=amd64 \
-		go build $(LDFLAGS) -o dist/pkg/$(PROJECT).exe ./$(CMD_DIR)
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT).exe ./$(CMD_DIR)
 	cd dist && zip -r $(PROJECT)-$(VERSION)-windows-amd64.zip pkg/
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-windows-amd64.zip"
 	@rm -rf dist/pkg
@@ -163,8 +159,7 @@ package-windows-arm64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=windows GOARCH=arm64 \
-		go build $(LDFLAGS) -o dist/pkg/$(PROJECT).exe ./$(CMD_DIR)
+	GOOS=windows GOARCH=arm64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT).exe ./$(CMD_DIR)
 	cd dist && zip -r $(PROJECT)-$(VERSION)-windows-arm64.zip pkg/
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-windows-arm64.zip"
 	@rm -rf dist/pkg

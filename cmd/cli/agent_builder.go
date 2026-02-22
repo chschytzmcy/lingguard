@@ -93,8 +93,16 @@ func (b *AgentBuilder) InitSkills(verbose bool) {
 		}
 	}
 
-	if len(skillDirs) > 0 {
-		b.skillsLoader = skills.NewLoader(skillDirs, "")
+	// 工作区技能目录 (ClawHub 安装的技能)
+	workspaceSkillsDir := filepath.Join(home, ".lingguard", "workspace", "skills")
+	if _, err := os.Stat(workspaceSkillsDir); err == nil {
+		if verbose {
+			fmt.Printf("Workspace skills: %s\n", workspaceSkillsDir)
+		}
+	}
+
+	if len(skillDirs) > 0 || workspaceSkillsDir != "" {
+		b.skillsLoader = skills.NewLoader(skillDirs, workspaceSkillsDir)
 	}
 }
 
