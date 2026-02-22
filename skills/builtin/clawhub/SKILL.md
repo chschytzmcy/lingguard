@@ -9,8 +9,13 @@ metadata: {"lingguard":{"emoji":"🦞"}}
 
 ClawHub is a public skill registry for AI agents. Search by natural language (vector search).
 
-**⚠️ Important: Use `shell` tool to run clawhub commands, NOT opencode!**
-This is NOT a coding task - just execute npm commands directly.
+**⚠️ CRITICAL RULES:**
+1. **Use `shell` tool ONLY** - run commands directly
+2. **Do NOT use opencode** - this is NOT a coding task
+3. **Do NOT use git-workflow** - this is NOT a git operation
+4. **Do NOT load other skills** - just execute npm commands
+
+This task only requires running `npx` commands. Nothing else.
 
 ## When to use
 
