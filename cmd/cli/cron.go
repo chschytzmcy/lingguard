@@ -269,7 +269,7 @@ func initCronService() (*config.Config, *cron.Service, error) {
 		storePath = utils.ExpandHome(cfg.Cron.StorePath)
 	}
 
-	service := cron.NewService(storePath, nil)
+	service := cron.NewService(storePath, nil, nil)
 	if err := service.Start(); err != nil {
 		return nil, nil, fmt.Errorf("start cron service: %w", err)
 	}

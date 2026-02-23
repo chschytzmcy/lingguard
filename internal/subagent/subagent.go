@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lingguard/internal/providers"
+	taskSyncPkg "github.com/lingguard/internal/tasksync"
 	"github.com/lingguard/internal/tools"
 	"github.com/lingguard/pkg/llm"
 	"github.com/lingguard/pkg/logger"
@@ -24,6 +25,9 @@ const (
 	StatusCompleted TaskStatus = "completed"
 	StatusFailed    TaskStatus = "failed"
 )
+
+// SyncCallback 同步回调函数类型
+type SyncCallback func(event taskSyncPkg.TaskEvent, status taskSyncPkg.TaskStatus, result, errMsg string)
 
 // Subagent 子代理
 type Subagent struct {
@@ -44,6 +48,9 @@ type Subagent struct {
 	provider     providers.Provider
 	toolRegistry *tools.Registry
 	config       *SubagentConfig
+
+	// 同步回调
+	syncCallback SyncCallback
 
 	// 并发控制
 	mu sync.RWMutex
@@ -132,12 +139,32 @@ func (s *Subagent) setError(err string) {
 	s.error = err
 }
 
+// SetSyncCallback 设置同步回调
+func (s *Subagent) SetSyncCallback(callback SyncCallback) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.syncCallback = callback
+}
+
+// Context 返回任务上下文
+func (s *Subagent) Context() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.context
+}
+
 // Run 执行子代理任务（阻塞）
 func (s *Subagent) Run(ctx context.Context) {
 	s.setStatus(StatusRunning)
 	s.mu.Lock()
 	s.startedAt = time.Now()
+	callback := s.syncCallback
 	s.mu.Unlock()
+
+	// 同步任务开始状态
+	if callback != nil {
+		callback(taskSyncPkg.TaskEventStarted, taskSyncPkg.TaskStatusRunning, "", "")
+	}
 
 	defer func() {
 		s.mu.Lock()
@@ -150,6 +177,10 @@ func (s *Subagent) Run(ctx context.Context) {
 	if err != nil {
 		s.setStatus(StatusFailed)
 		s.setError(fmt.Sprintf("failed to build messages: %s", err))
+		// 同步任务失败状态
+		if callback != nil {
+			callback(taskSyncPkg.TaskEventFailed, taskSyncPkg.TaskStatusFailed, "", s.error)
+		}
 		return
 	}
 
@@ -158,11 +189,19 @@ func (s *Subagent) Run(ctx context.Context) {
 	if err != nil {
 		s.setStatus(StatusFailed)
 		s.setError(err.Error())
+		// 同步任务失败状态
+		if callback != nil {
+			callback(taskSyncPkg.TaskEventFailed, taskSyncPkg.TaskStatusFailed, "", err.Error())
+		}
 		return
 	}
 
 	s.setStatus(StatusCompleted)
 	s.setResult(result)
+	// 同步任务完成状态
+	if callback != nil {
+		callback(taskSyncPkg.TaskEventCompleted, taskSyncPkg.TaskStatusCompleted, result, "")
+	}
 }
 
 // buildMessages 构建消息列表

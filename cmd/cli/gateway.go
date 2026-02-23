@@ -13,6 +13,7 @@ import (
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/internal/cron"
 	"github.com/lingguard/internal/heartbeat"
+	taskSyncPkg "github.com/lingguard/internal/tasksync"
 	"github.com/lingguard/internal/tools"
 	"github.com/lingguard/pkg/logger"
 	"github.com/lingguard/pkg/utils"
@@ -60,8 +61,20 @@ func runGateway() error {
 		Compress:   cfg.Logging.Compress,
 	})
 
+	// 创建任务看板同步器（提前创建，供 cron、heartbeat、subagent 使用）
+	var taskSyncer taskSyncPkg.TaskSyncer = &taskSyncPkg.NoopTaskSyncer{}
+	if cfg.Tools.TasksBoard != nil && cfg.Tools.TasksBoard.Enabled && cfg.Tools.TasksBoard.URL != "" {
+		tasksBoardTool := tools.NewTasksBoardTool(&tools.TasksBoardConfig{
+			URL:    cfg.Tools.TasksBoard.URL,
+			APIKey: cfg.Tools.TasksBoard.APIKey,
+		})
+		taskSyncer = tools.NewTasksBoardSyncer(tasksBoardTool)
+		logger.Info("TasksBoard syncer enabled", "url", cfg.Tools.TasksBoard.URL)
+	}
+
 	// 创建 Agent（使用 AgentBuilder）
 	builder := NewAgentBuilder(cfg)
+	builder.SetTaskSyncer(taskSyncer)
 	builder.InitSkills(false)
 	if err := builder.InitProvider(); err != nil {
 		return fmt.Errorf("init provider: %w", err)
@@ -71,6 +84,11 @@ func runGateway() error {
 	ag, err := builder.Build()
 	if err != nil {
 		return fmt.Errorf("create agent: %w", err)
+	}
+
+	// 设置子代理管理器的任务同步器
+	if subMgr := ag.SubagentManager(); subMgr != nil {
+		subMgr.SetTaskSyncer(taskSyncer)
 	}
 
 	// 创建 Channel Manager
@@ -95,7 +113,7 @@ func runGateway() error {
 			storePath = utils.ExpandHome("~/.lingguard/cron/jobs.json")
 		}
 
-		cronService = cron.NewService(storePath, createCronJobCallback(ag, mgr))
+		cronService = cron.NewService(storePath, createCronJobCallback(ag, mgr), taskSyncer)
 		if err := cronService.Start(); err != nil {
 			return fmt.Errorf("start cron service: %w", err)
 		}
@@ -116,7 +134,7 @@ func runGateway() error {
 		heartbeatService = heartbeat.NewService(&heartbeat.Config{
 			Enabled:  true,
 			Interval: interval,
-		}, createHeartbeatCallback(ag))
+		}, createHeartbeatCallback(ag), taskSyncer)
 
 		hbWorkspace := cfg.Agents.Workspace
 		if hbWorkspace == "" {

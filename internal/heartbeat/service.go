@@ -3,12 +3,14 @@ package heartbeat
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	taskSyncPkg "github.com/lingguard/internal/tasksync"
 	"github.com/lingguard/pkg/logger"
 )
 
@@ -45,7 +47,8 @@ func DefaultConfig() *Config {
 type Service struct {
 	config       *Config
 	onHeartbeat  AgentCallback
-	heartbeatDir string // HEARTBEAT.md 所在目录
+	taskSyncer   taskSyncPkg.TaskSyncer // 任务看板同步器
+	heartbeatDir string                 // HEARTBEAT.md 所在目录
 
 	mu      sync.RWMutex
 	running bool
@@ -60,17 +63,21 @@ type Service struct {
 }
 
 // NewService 创建心跳服务
-func NewService(cfg *Config, onHeartbeat AgentCallback) *Service {
+func NewService(cfg *Config, onHeartbeat AgentCallback, taskSyncer taskSyncPkg.TaskSyncer) *Service {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
 	if cfg.Interval <= 0 {
 		cfg.Interval = DefaultInterval
 	}
+	if taskSyncer == nil {
+		taskSyncer = &taskSyncPkg.NoopTaskSyncer{}
+	}
 
 	return &Service{
 		config:      cfg,
 		onHeartbeat: onHeartbeat,
+		taskSyncer:  taskSyncer,
 		stopCh:      make(chan struct{}),
 	}
 }
@@ -157,6 +164,12 @@ func (s *Service) tick() {
 
 	logger.Info("Heartbeat: checking for tasks...")
 
+	// 生成任务 ID
+	taskID := fmt.Sprintf("heartbeat-%d", time.Now().Unix())
+
+	// 同步任务开始到看板
+	s.syncTaskToBoard(taskID, taskSyncPkg.TaskEventStarted, taskSyncPkg.TaskStatusRunning, "", "")
+
 	// 执行心跳回调
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -173,18 +186,49 @@ func (s *Service) tick() {
 		s.lastStatus = "error"
 		s.lastResponse = err.Error()
 		logger.Error("Heartbeat failed", "duration", duration, "error", err)
+		// 同步任务失败到看板
+		s.syncTaskToBoard(taskID, taskSyncPkg.TaskEventFailed, taskSyncPkg.TaskStatusFailed, "", err.Error())
 	} else {
 		s.lastResponse = response
 		// 检查是否包含 HEARTBEAT_OK
 		if strings.Contains(strings.ToUpper(response), HeartbeatOKToken) {
 			s.lastStatus = "ok"
 			logger.Info("Heartbeat OK (no action needed)", "duration", duration)
+			// 同步任务完成到看板（无任务需要处理）
+			s.syncTaskToBoard(taskID, taskSyncPkg.TaskEventCompleted, taskSyncPkg.TaskStatusCompleted, "无任务需要处理", "")
 		} else {
 			s.lastStatus = "completed"
 			logger.Info("Heartbeat completed task", "duration", duration)
+			// 同步任务完成到看板
+			s.syncTaskToBoard(taskID, taskSyncPkg.TaskEventCompleted, taskSyncPkg.TaskStatusCompleted, response, "")
 		}
 	}
 	s.mu.Unlock()
+}
+
+// syncTaskToBoard 同步任务状态到看板
+func (s *Service) syncTaskToBoard(taskID string, event taskSyncPkg.TaskEvent, status taskSyncPkg.TaskStatus, result, errMsg string) {
+	if s.taskSyncer == nil {
+		return
+	}
+
+	ctx := context.Background()
+	syncEvent := &taskSyncPkg.TaskSyncEvent{
+		Source:      taskSyncPkg.TaskSourceHeartbeat,
+		Event:       event,
+		ExternalID:  taskID,
+		Title:       "[心跳] 定期检查任务",
+		Description: "检查 HEARTBEAT.md 中的任务",
+		Status:      status,
+		Assignee:    taskSyncPkg.TaskAssigneeAI,
+		Result:      result,
+		Error:       errMsg,
+		Tags:        []string{"心跳任务"},
+	}
+
+	if err := s.taskSyncer.Sync(ctx, syncEvent); err != nil {
+		logger.Warn("Failed to sync heartbeat task to board", "error", err)
+	}
 }
 
 // readHeartbeatFile 读取 HEARTBEAT.md 文件

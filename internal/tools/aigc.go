@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	taskSyncPkg "github.com/lingguard/internal/tasksync"
 	"github.com/lingguard/pkg/logger"
 )
 
@@ -33,6 +34,7 @@ type AIGCTool struct {
 	outputDir            string
 	workspace            string // 工作目录，用于路径验证
 	sandboxed            bool   // 是否启用沙箱
+	taskSyncer           taskSyncPkg.TaskSyncer
 }
 
 // AIGCConfig 图像/视频生成配置
@@ -179,18 +181,58 @@ func (t *AIGCTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 		return "", fmt.Errorf("parse arguments: %w", err)
 	}
 
+	// 生成任务 ID
+	taskID := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	// 获取操作描述
+	actionDesc := ""
 	switch params.Action {
 	case "generate_image":
-		return t.generateImage(ctx, params.Prompt, params.Model, params.Size, params.Style)
+		actionDesc = "生成图片"
 	case "generate_video":
-		return t.generateVideo(ctx, params.Prompt, params.Duration)
+		actionDesc = "生成视频"
 	case "generate_video_from_image":
-		return t.generateVideoFromImage(ctx, params.ImagePath, params.Prompt, params.Duration)
+		actionDesc = "图生视频"
 	case "generate_video_from_video":
-		return t.generateVideoFromVideo(ctx, params.VideoPath, params.Prompt, params.Duration)
+		actionDesc = "视频生视频"
 	default:
 		return "", fmt.Errorf("unknown action: %s", params.Action)
 	}
+
+	// 同步任务开始
+	title := fmt.Sprintf("%s: %s", actionDesc, truncatePrompt(params.Prompt, 30))
+	t.syncTaskToBoard(taskID, taskSyncPkg.TaskEventStarted, taskSyncPkg.TaskStatusRunning, title, params.Prompt, "", "")
+
+	var result string
+	var err error
+
+	switch params.Action {
+	case "generate_image":
+		result, err = t.generateImage(ctx, params.Prompt, params.Model, params.Size, params.Style)
+	case "generate_video":
+		result, err = t.generateVideo(ctx, params.Prompt, params.Duration)
+	case "generate_video_from_image":
+		result, err = t.generateVideoFromImage(ctx, params.ImagePath, params.Prompt, params.Duration)
+	case "generate_video_from_video":
+		result, err = t.generateVideoFromVideo(ctx, params.VideoPath, params.Prompt, params.Duration)
+	}
+
+	// 同步任务结果
+	if err != nil {
+		t.syncTaskToBoard(taskID, taskSyncPkg.TaskEventFailed, taskSyncPkg.TaskStatusFailed, title, params.Prompt, "", err.Error())
+	} else {
+		t.syncTaskToBoard(taskID, taskSyncPkg.TaskEventCompleted, taskSyncPkg.TaskStatusCompleted, title, params.Prompt, result, "")
+	}
+
+	return result, err
+}
+
+// truncatePrompt 截断提示字符串
+func truncatePrompt(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // generateImage 生成图片
@@ -1036,6 +1078,36 @@ func (t *AIGCTool) IsDangerous() bool {
 // SetAPIKey 设置 API Key
 func (t *AIGCTool) SetAPIKey(key string) {
 	t.apiKey = key
+}
+
+// SetTaskSyncer 设置任务同步器
+func (t *AIGCTool) SetTaskSyncer(syncer taskSyncPkg.TaskSyncer) {
+	t.taskSyncer = syncer
+}
+
+// syncTaskToBoard 同步任务状态到看板
+func (t *AIGCTool) syncTaskToBoard(taskID string, event taskSyncPkg.TaskEvent, status taskSyncPkg.TaskStatus, title, desc, result, errMsg string) {
+	if t.taskSyncer == nil {
+		return
+	}
+
+	ctx := context.Background()
+	syncEvent := &taskSyncPkg.TaskSyncEvent{
+		Source:      taskSyncPkg.TaskSourceAgent,
+		Event:       event,
+		ExternalID:  "aigc-" + taskID,
+		Title:       "[AIGC] " + title,
+		Description: desc,
+		Status:      status,
+		Assignee:    taskSyncPkg.TaskAssigneeAI,
+		Tags:        []string{"内容生成"},
+		Result:      result,
+		Error:       errMsg,
+	}
+
+	if err := t.taskSyncer.Sync(ctx, syncEvent); err != nil {
+		logger.Warn("Failed to sync AIGC task to board", "error", err)
+	}
 }
 
 // validatePath 验证路径是否在允许的目录内（防止路径遍历攻击）
