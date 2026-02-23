@@ -143,7 +143,7 @@ func NewAgentWithMultimodalAndConfig(cfg *config.AgentsConfig, provider provider
 	}
 
 	// 初始化子代理管理器
-	agent.subagentMgr = subagent.NewSubagentManager(provider, toolRegistry, nil, nil)
+	agent.subagentMgr = subagent.NewSubagentManager(provider, toolRegistry, nil)
 
 	return agent
 }

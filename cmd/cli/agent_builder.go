@@ -12,7 +12,6 @@ import (
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/internal/providers"
 	"github.com/lingguard/internal/skills"
-	taskSyncPkg "github.com/lingguard/internal/tasksync"
 	"github.com/lingguard/internal/tools"
 	"github.com/lingguard/pkg/logger"
 	ttspkg "github.com/lingguard/pkg/tts"
@@ -28,7 +27,6 @@ type AgentBuilder struct {
 	workspaceMgr       *tools.WorkspaceManager
 	mcpManager         *tools.MCPManager
 	cronService        tools.CronService
-	taskSyncer         taskSyncPkg.TaskSyncer // 任务看板同步器
 	enableMCP          bool
 	enableCron         bool
 	enableMessage      bool
@@ -137,12 +135,6 @@ func (b *AgentBuilder) EnableMessage(mgr *tools.MessageTool) *AgentBuilder {
 	return b
 }
 
-// SetTaskSyncer 设置任务同步器
-func (b *AgentBuilder) SetTaskSyncer(syncer taskSyncPkg.TaskSyncer) *AgentBuilder {
-	b.taskSyncer = syncer
-	return b
-}
-
 // SetMCPManager 设置 MCP 管理器（用于后续关闭）
 func (b *AgentBuilder) SetMCPManager(mgr *tools.MCPManager) {
 	b.mcpManager = mgr
@@ -226,11 +218,7 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 		}
 		aigcCfg.Sandboxed = b.cfg.Tools.RestrictToWorkspace
 
-		aigcTool := tools.NewAIGCTool(aigcCfg)
-		if b.taskSyncer != nil {
-			aigcTool.SetTaskSyncer(b.taskSyncer)
-		}
-		ag.RegisterTool(aigcTool)
+		ag.RegisterTool(tools.NewAIGCTool(aigcCfg))
 		logger.Info("AIGC tool enabled", "textToImage", aigcCfg.TextToImage, "textToVideo", aigcCfg.TextToVideo, "imageToVideo", aigcCfg.ImageToVideo, "videoToVideo", aigcCfg.VideoToVideo, "imageToVideoDuration", aigcCfg.ImageToVideoDuration)
 	}
 

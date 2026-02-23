@@ -11,34 +11,37 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	taskSyncPkg "github.com/lingguard/internal/tasksync"
+	"github.com/lingguard/internal/to
 	"github.com/lingguard/pkg/logger"
 	"github.com/robfig/cron/v3"
 )
 
+
+)
+
 // Service 定时任务服务
-type Service struct {
-	storePath  string
-	onJob      JobCallback
-	taskSyncer taskSyncPkg.TaskSyncer // 任务看板同步器
+type Service struct 
+	taskSyncer tools.TaskSyncer // 任务看板同步器
+	storePath string
+	onJob     JobCallback
 
 	mu       sync.RWMutex
 	store    *CronStore
 	timer    *time.Timer
 	running  bool
 	stopChan chan struct{}
-}
-
-// NewService 创建定时任务服务
-func NewService(storePath string, onJob JobCallback, taskSyncer taskSyncPkg.TaskSyncer) *Service {
+func NewService(storePath string, onJob JobCallback, taskSyncer tools.TaskSyncer) *Service {
 	if taskSyncer == nil {
-		taskSyncer = &taskSyncPkg.NoopTaskSyncer{}
+		taskSyncer = &tools.NoopTaskSyncer{}
 	}
-	return &Service{
+
 		storePath:  storePath,
 		onJob:      onJob,
 		taskSyncer: taskSyncer,
 		stopChan:   make(chan struct{}),
+		storePath: storePath,
+		onJob:     onJob,
+		stopChan:  make(chan struct{}),
 	}
 }
 
@@ -145,6 +148,8 @@ func computeNextRun(schedule *CronSchedule, nowMs int64) int64 {
 		if schedule.Expr == "" {
 			return 0
 		}
+		// 使用简单的 cron 解析（需要导入 cron 库）
+		// 这里先返回 0，后续可以集成 robfig/cron
 		return parseCronNextRun(schedule.Expr, schedule.TZ, nowMs)
 	}
 
@@ -153,7 +158,8 @@ func computeNextRun(schedule *CronSchedule, nowMs int64) int64 {
 
 // parseCronNextRun 解析 cron 表达式并计算下次执行时间
 func parseCronNextRun(expr, tz string, nowMs int64) int64 {
-	loc := time.Local
+	// 解析时区
+	loc := time.Local // 默认使用本地时区
 	if tz != "" {
 		var err error
 		loc, err = time.LoadLocation(tz)
@@ -163,13 +169,18 @@ func parseCronNextRun(expr, tz string, nowMs int64) int64 {
 		}
 	}
 
+	// 使用 robfig/cron 库解析表达式
+	// 使用 WithSeconds 支持可选的秒字段，或使用标准5字段
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+
+	// 创建带时区的 cron 调度器
 	cronSchedule, err := parser.Parse(expr)
 	if err != nil {
 		logger.Warn("Invalid cron expression", "expr", expr, "error", err)
 		return 0
 	}
 
+	// 将当前时间转换到目标时区
 	now := time.UnixMilli(nowMs).In(loc)
 	next := cronSchedule.Next(now)
 	return next.UnixMilli()
@@ -256,9 +267,6 @@ func (s *Service) executeJob(job *CronJob) {
 	startMs := nowMs()
 	logger.Info("Cron executing job", "name", job.Name, "id", job.ID)
 
-	// 同步任务开始状态到看板
-	s.syncTaskToBoard(job, taskSyncPkg.TaskEventStarted, taskSyncPkg.TaskStatusRunning, "", "")
-
 	var response string
 	var err error
 
@@ -270,15 +278,11 @@ func (s *Service) executeJob(job *CronJob) {
 		job.State.LastStatus = JobStatusError
 		job.State.LastError = err.Error()
 		logger.Error("Cron job failed", "name", job.Name, "error", err)
-		// 同步任务失败状态到看板
-		s.syncTaskToBoard(job, taskSyncPkg.TaskEventFailed, taskSyncPkg.TaskStatusFailed, "", err.Error())
 	} else {
 		job.State.LastStatus = JobStatusOK
 		job.State.LastError = ""
 		job.State.LastResponse = response
 		logger.Info("Cron job completed", "name", job.Name)
-		// 同步任务完成状态到看板
-		s.syncTaskToBoard(job, taskSyncPkg.TaskEventCompleted, taskSyncPkg.TaskStatusCompleted, response, "")
 	}
 
 	job.State.LastRunAtMs = startMs
@@ -293,32 +297,8 @@ func (s *Service) executeJob(job *CronJob) {
 			job.State.NextRunAtMs = 0
 		}
 	} else {
+		// 计算下次执行时间
 		job.State.NextRunAtMs = computeNextRun(&job.Schedule, nowMs())
-	}
-}
-
-// syncTaskToBoard 同步任务状态到看板
-func (s *Service) syncTaskToBoard(job *CronJob, event taskSyncPkg.TaskEvent, status taskSyncPkg.TaskStatus, result, errMsg string) {
-	if s.taskSyncer == nil {
-		return
-	}
-
-	ctx := context.Background()
-	syncEvent := &taskSyncPkg.TaskSyncEvent{
-		Source:      taskSyncPkg.TaskSourceCron,
-		Event:       event,
-		ExternalID:  "cron-" + job.ID,
-		Title:       "[定时] " + job.Name,
-		Description: job.Payload.Message,
-		Status:      status,
-		Assignee:    taskSyncPkg.TaskAssigneeAI,
-		Result:      result,
-		Error:       errMsg,
-		Tags:        []string{"定时任务"},
-	}
-
-	if err := s.taskSyncer.Sync(ctx, syncEvent); err != nil {
-		logger.Warn("Failed to sync task to board", "job", job.Name, "error", err)
 	}
 }
 
@@ -354,6 +334,7 @@ func (s *Service) ListJobs(includeDisabled bool) []*CronJob {
 		}
 	}
 
+	// 按下次执行时间排序
 	sort.Slice(jobs, func(i, j int) bool {
 		if jobs[i].State.NextRunAtMs == 0 {
 			return false
@@ -405,6 +386,7 @@ func (s *Service) AddJob(name string, schedule CronSchedule, message string, opt
 		UpdatedAtMs: now,
 	}
 
+	// 应用选项
 	for _, opt := range opts {
 		opt(job)
 	}
@@ -413,34 +395,8 @@ func (s *Service) AddJob(name string, schedule CronSchedule, message string, opt
 	s.saveStore()
 	s.armTimer()
 
-	// 同步任务创建到看板
-	s.syncTaskCreated(job)
-
 	logger.Info("Cron added job", "name", name, "id", job.ID)
 	return job, nil
-}
-
-// syncTaskCreated 同步任务创建到看板
-func (s *Service) syncTaskCreated(job *CronJob) {
-	if s.taskSyncer == nil {
-		return
-	}
-
-	ctx := context.Background()
-	syncEvent := &taskSyncPkg.TaskSyncEvent{
-		Source:      taskSyncPkg.TaskSourceCron,
-		Event:       taskSyncPkg.TaskEventCreated,
-		ExternalID:  "cron-" + job.ID,
-		Title:       "[定时] " + job.Name,
-		Description: job.Payload.Message,
-		Status:      taskSyncPkg.TaskStatusPending,
-		Assignee:    taskSyncPkg.TaskAssigneeAI,
-		Tags:        []string{"定时任务"},
-	}
-
-	if err := s.taskSyncer.Sync(ctx, syncEvent); err != nil {
-		logger.Warn("Failed to sync task creation to board", "job", job.Name, "error", err)
-	}
 }
 
 // JobOption 任务选项函数

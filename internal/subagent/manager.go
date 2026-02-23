@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/lingguard/internal/providers"
-	taskSyncPkg "github.com/lingguard/internal/tasksync"
 	"github.com/lingguard/internal/tools"
 )
 
@@ -15,7 +14,6 @@ type SubagentManager struct {
 	provider     providers.Provider
 	toolRegistry *tools.Registry
 	config       *SubagentConfig
-	taskSyncer   taskSyncPkg.TaskSyncer // 任务看板同步器
 
 	mu    sync.RWMutex
 	tasks map[string]*Subagent
@@ -25,19 +23,15 @@ type SubagentManager struct {
 }
 
 // NewSubagentManager 创建子代理管理器
-func NewSubagentManager(provider providers.Provider, toolRegistry *tools.Registry, config *SubagentConfig, taskSyncer taskSyncPkg.TaskSyncer) *SubagentManager {
+func NewSubagentManager(provider providers.Provider, toolRegistry *tools.Registry, config *SubagentConfig) *SubagentManager {
 	if config == nil {
 		config = DefaultSubagentConfig()
-	}
-	if taskSyncer == nil {
-		taskSyncer = &taskSyncPkg.NoopTaskSyncer{}
 	}
 
 	return &SubagentManager{
 		provider:     provider,
 		toolRegistry: toolRegistry,
 		config:       config,
-		taskSyncer:   taskSyncer,
 		tasks:        make(map[string]*Subagent),
 		notify:       make(chan *Subagent, 100), // 带缓冲的通道
 	}
@@ -51,18 +45,10 @@ func (m *SubagentManager) Spawn(ctx context.Context, task, context string) (*Sub
 	// 创建子代理
 	sub := NewSubagent(task, context, m.provider, subToolRegistry, m.config)
 
-	// 设置同步回调
-	sub.SetSyncCallback(func(event taskSyncPkg.TaskEvent, status taskSyncPkg.TaskStatus, result, errMsg string) {
-		m.syncTaskToBoard(sub, event, status, result, errMsg)
-	})
-
 	// 注册任务
 	m.mu.Lock()
 	m.tasks[sub.ID()] = sub
 	m.mu.Unlock()
-
-	// 同步任务创建到看板
-	m.syncTaskToBoard(sub, taskSyncPkg.TaskEventCreated, taskSyncPkg.TaskStatusPending, "", "")
 
 	// 在 goroutine 中执行
 	go func() {
@@ -188,43 +174,6 @@ func (m *SubagentManager) CountByStatus(status TaskStatus) int {
 		}
 	}
 	return count
-}
-
-// syncTaskToBoard 同步任务状态到看板
-func (m *SubagentManager) syncTaskToBoard(sub *Subagent, event taskSyncPkg.TaskEvent, status taskSyncPkg.TaskStatus, result, errMsg string) {
-	if m.taskSyncer == nil {
-		return
-	}
-
-	ctx := context.Background()
-	syncEvent := &taskSyncPkg.TaskSyncEvent{
-		Source:      taskSyncPkg.TaskSourceSubagent,
-		Event:       event,
-		ExternalID:  "subagent-" + sub.ID(),
-		Title:       "[子代理] " + sub.Task(),
-		Description: sub.Context(),
-		Status:      status,
-		Assignee:    taskSyncPkg.TaskAssigneeAI,
-		SubagentID:  sub.ID(),
-		Tags:        []string{"子代理任务"},
-		Result:      result,
-		Error:       errMsg,
-	}
-
-	if err := m.taskSyncer.Sync(ctx, syncEvent); err != nil {
-		// 记录错误但不影响任务执行
-		fmt.Printf("Failed to sync subagent task to board: %v\n", err)
-	}
-}
-
-// SetTaskSyncer 设置任务同步器
-func (m *SubagentManager) SetTaskSyncer(syncer taskSyncPkg.TaskSyncer) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if syncer == nil {
-		syncer = &taskSyncPkg.NoopTaskSyncer{}
-	}
-	m.taskSyncer = syncer
 }
 
 // TaskSummary 任务摘要信息

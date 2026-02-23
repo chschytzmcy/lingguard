@@ -147,7 +147,7 @@ func TestSubagentManagerSpawn(t *testing.T) {
 		EnabledTools:  []string{"shell"}, // 只允许 shell，过滤掉 task
 	}
 
-	manager := NewSubagentManager(provider, registry, cfg, nil)
+	manager := NewSubagentManager(provider, registry, cfg)
 
 	ctx := context.Background()
 	sub, err := manager.Spawn(ctx, "Test task", "Test context")
@@ -182,7 +182,7 @@ func TestSubagentManagerGetStatus(t *testing.T) {
 
 	provider := &MockProvider{name: "mock", model: "mock-model"}
 
-	manager := NewSubagentManager(provider, registry, nil, nil)
+	manager := NewSubagentManager(provider, registry, nil)
 
 	ctx := context.Background()
 	sub, _ := manager.Spawn(ctx, "Test task", "")
@@ -207,7 +207,7 @@ func TestSubagentManagerListTasks(t *testing.T) {
 
 	provider := &MockProvider{name: "mock", model: "mock-model"}
 
-	manager := NewSubagentManager(provider, registry, nil, nil)
+	manager := NewSubagentManager(provider, registry, nil)
 
 	ctx := context.Background()
 
@@ -237,7 +237,7 @@ func TestSubagentManagerRemove(t *testing.T) {
 
 	provider := &MockProvider{name: "mock", model: "mock-model"}
 
-	manager := NewSubagentManager(provider, registry, nil, nil)
+	manager := NewSubagentManager(provider, registry, nil)
 
 	ctx := context.Background()
 	sub, _ := manager.Spawn(ctx, "Test task", "")
@@ -264,7 +264,7 @@ func TestSubagentManagerNotifyChannel(t *testing.T) {
 
 	provider := &MockProvider{name: "mock", model: "mock-model"}
 
-	manager := NewSubagentManager(provider, registry, nil, nil)
+	manager := NewSubagentManager(provider, registry, nil)
 
 	// 验证通知通道存在
 	notifyCh := manager.NotifyChannel()
@@ -310,7 +310,7 @@ func TestFilteredRegistry(t *testing.T) {
 		EnabledTools:  []string{"shell", "read"}, // 白名单
 	}
 
-	manager := NewSubagentManager(provider, registry, cfg, nil)
+	manager := NewSubagentManager(provider, registry, cfg)
 
 	ctx := context.Background()
 	sub, _ := manager.Spawn(ctx, "Test task", "")
@@ -355,7 +355,7 @@ func TestManagerListSummaries(t *testing.T) {
 
 	provider := &MockProvider{name: "mock", model: "mock-model"}
 
-	manager := NewSubagentManager(provider, registry, nil, nil)
+	manager := NewSubagentManager(provider, registry, nil)
 
 	ctx := context.Background()
 	manager.Spawn(ctx, "Task 1", "")
@@ -374,7 +374,7 @@ func TestManagerCountByStatus(t *testing.T) {
 
 	provider := &MockProvider{name: "mock", model: "mock-model"}
 
-	manager := NewSubagentManager(provider, registry, nil, nil)
+	manager := NewSubagentManager(provider, registry, nil)
 
 	ctx := context.Background()
 	manager.Spawn(ctx, "Task 1", "")
@@ -420,7 +420,7 @@ func TestManagerGetResult(t *testing.T) {
 
 	provider := &MockProvider{name: "mock", model: "mock-model"}
 
-	manager := NewSubagentManager(provider, registry, nil, nil)
+	manager := NewSubagentManager(provider, registry, nil)
 
 	// 测试不存在的任务
 	_, err := manager.GetResult("non-existent")
