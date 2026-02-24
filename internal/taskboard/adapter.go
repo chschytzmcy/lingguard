@@ -2,6 +2,8 @@ package taskboard
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lingguard/internal/cron"
@@ -96,14 +98,11 @@ func (a *CronAdapter) OnCronJobCreated(job *cron.CronJob) {
 	scheduleExpr := ""
 	if job.Schedule.Kind == cron.ScheduleKindAt {
 		scheduleType = "单次"
-		scheduleExpr = time.UnixMilli(job.Schedule.AtMs).Format("2006-01-02 15:04:05")
+		scheduleExpr = formatScheduleTime(job.Schedule.AtMs)
 	} else if job.Schedule.Kind == cron.ScheduleKindCron {
-		scheduleExpr = job.Schedule.Expr
-		if job.Schedule.TZ != "" {
-			scheduleExpr += " (TZ: " + job.Schedule.TZ + ")"
-		}
+		scheduleExpr = formatCronExpr(job.Schedule.Expr, job.Schedule.TZ)
 	} else if job.Schedule.Kind == cron.ScheduleKindEvery {
-		scheduleExpr = fmt.Sprintf("每 %s", time.Duration(job.Schedule.EveryMs)*time.Millisecond)
+		scheduleExpr = formatEveryDuration(job.Schedule.EveryMs)
 	}
 
 	task := &Task{
@@ -314,4 +313,86 @@ func (a *CronAdapter) OnCronJobRemoved(job *cron.CronJob) {
 // ptrSource 返回 TaskSource 指针
 func ptrSource(s TaskSource) *TaskSource {
 	return &s
+}
+
+// formatScheduleTime 格式化单次任务时间
+func formatScheduleTime(atMs int64) string {
+	return time.UnixMilli(atMs).Format("2006-01-02 15:04")
+}
+
+// formatCronExpr 格式化 cron 表达式为可读文本
+func formatCronExpr(expr, tz string) string {
+	// 解析 cron 表达式: minute hour day month weekday
+	parts := strings.Fields(expr)
+	if len(parts) != 5 {
+		return expr // 无法解析，返回原始表达式
+	}
+
+	minute, hour, day, month, weekday := parts[0], parts[1], parts[2], parts[3], parts[4]
+
+	var result strings.Builder
+
+	// 处理星期
+	if weekday != "*" {
+		weekdayNames := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+		if strings.Contains(weekday, ",") {
+			days := strings.Split(weekday, ",")
+			var dayNames []string
+			for _, d := range days {
+				if idx, err := strconv.Atoi(d); err == nil && idx >= 0 && idx <= 6 {
+					dayNames = append(dayNames, weekdayNames[idx])
+				}
+			}
+			result.WriteString(strings.Join(dayNames, ","))
+		} else if idx, err := strconv.Atoi(weekday); err == nil && idx >= 0 && idx <= 6 {
+			result.WriteString(weekdayNames[idx])
+		} else {
+			result.WriteString("每")
+		}
+	} else if month != "*" || day != "*" {
+		// 处理月份或日期
+		if month != "*" && day != "*" {
+			result.WriteString(fmt.Sprintf("%s月%s日", month, day))
+		} else if day != "*" {
+			result.WriteString(fmt.Sprintf("每月%s日", day))
+		} else {
+			result.WriteString("每天")
+		}
+	} else {
+		result.WriteString("每天")
+	}
+
+	// 处理时间
+	if hour == "*" {
+		if minute == "*" {
+			result.WriteString(" 每分钟")
+		} else {
+			result.WriteString(fmt.Sprintf(" 每小时%s分", minute))
+		}
+	} else {
+		if minute == "*" {
+			result.WriteString(fmt.Sprintf(" %s点每分钟", hour))
+		} else {
+			result.WriteString(fmt.Sprintf(" %s:%s", hour, minute))
+		}
+	}
+
+	if tz != "" {
+		result.WriteString(fmt.Sprintf(" (%s)", tz))
+	}
+
+	return result.String()
+}
+
+// formatEveryDuration 格式化周期性时间间隔
+func formatEveryDuration(everyMs int64) string {
+	d := time.Duration(everyMs) * time.Millisecond
+	if d < time.Minute {
+		return fmt.Sprintf("每 %d 秒", int(d.Seconds()))
+	} else if d < time.Hour {
+		return fmt.Sprintf("每 %d 分钟", int(d.Minutes()))
+	} else if d < 24*time.Hour {
+		return fmt.Sprintf("每 %d 小时", int(d.Hours()))
+	}
+	return fmt.Sprintf("每 %s", d)
 }

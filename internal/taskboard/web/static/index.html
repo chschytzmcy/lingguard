@@ -334,7 +334,7 @@
                             {{ selectedTask.metadata?.scheduleType || '未知' }}
                         </el-tag>
                     </el-descriptions-item>
-                    <el-descriptions-item label="调度表达式" :span="2" v-if="selectedTask.metadata?.scheduleExpr">
+                    <el-descriptions-item label="定时" :span="2" v-if="selectedTask.metadata?.scheduleExpr">
                         {{ selectedTask.metadata.scheduleExpr }}
                     </el-descriptions-item>
                     <el-descriptions-item label="执行内容" :span="2">{{ selectedTask.description || '无' }}</el-descriptions-item>
