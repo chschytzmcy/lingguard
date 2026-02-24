@@ -225,29 +225,6 @@ func (a *CronAdapter) OnCronJobCompleted(job *cron.CronJob, result string, errMs
 			logger.Info("Cron task completed", "taskId", targetTask.ID, "cronId", job.ID, "name", job.Name)
 		}
 	}
-
-	// 同时完成源任务（用户请求任务）
-	if job.Payload.SourceTaskID != "" {
-		sourceTask, err := a.service.GetTask(job.Payload.SourceTaskID)
-		if err != nil {
-			logger.Warn("Failed to find source task", "sourceTaskId", job.Payload.SourceTaskID, "error", err)
-		} else if sourceTask.Status == TaskStatusRunning {
-			// 完成源任务
-			if errMsg != "" {
-				if err := a.service.FailTask(sourceTask.ID, errMsg); err != nil {
-					logger.Warn("Failed to fail source task", "taskId", sourceTask.ID, "error", err)
-				} else {
-					logger.Info("Source task completed (via cron)", "taskId", sourceTask.ID, "cronId", job.ID)
-				}
-			} else {
-				if err := a.service.CompleteTask(sourceTask.ID, result); err != nil {
-					logger.Warn("Failed to complete source task", "taskId", sourceTask.ID, "error", err)
-				} else {
-					logger.Info("Source task completed (via cron)", "taskId", sourceTask.ID, "cronId", job.ID)
-				}
-			}
-		}
-	}
 }
 
 // OnCronJobRemoved 定时任务删除时调用
