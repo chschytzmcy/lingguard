@@ -167,6 +167,12 @@ func runGateway() error {
 		}
 
 		webUIServer = taskboard.NewServer(host, port, taskboardService)
+
+		// 设置 cron 删除器，用于删除看板任务时同时删除 cron 任务
+		if cronService != nil {
+			webUIServer.SetCronDeleter(cronService)
+		}
+
 		if err := webUIServer.Start(); err != nil {
 			return fmt.Errorf("start web ui server: %w", err)
 		}

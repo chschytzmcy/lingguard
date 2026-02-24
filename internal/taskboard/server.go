@@ -89,6 +89,11 @@ func (s *Server) Address() string {
 	return fmt.Sprintf("http://%s:%d", s.host, s.port)
 }
 
+// SetCronDeleter 设置 cron 删除器
+func (s *Server) SetCronDeleter(deleter CronDeleter) {
+	s.handler.SetCronDeleter(deleter)
+}
+
 // corsMiddleware CORS 中间件
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -9,14 +9,25 @@ import (
 	"github.com/lingguard/pkg/logger"
 )
 
+// CronDeleter 删除 cron 任务的接口
+type CronDeleter interface {
+	RemoveJob(id string) bool
+}
+
 // HTTPHandler 任务看板 HTTP 处理器
 type HTTPHandler struct {
-	service *Service
+	service     *Service
+	cronDeleter CronDeleter
 }
 
 // NewHTTPHandler 创建 HTTP 处理器
 func NewHTTPHandler(service *Service) *HTTPHandler {
 	return &HTTPHandler{service: service}
+}
+
+// SetCronDeleter 设置 cron 删除器
+func (h *HTTPHandler) SetCronDeleter(deleter CronDeleter) {
+	h.cronDeleter = deleter
 }
 
 // RegisterRoutes 注册路由
@@ -149,6 +160,20 @@ func (h *HTTPHandler) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 先获取任务信息，检查是否是 cron 任务
+	task, err := h.service.GetTask(id)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// 如果是 cron 任务，同时删除 cron job
+	if task.Source == TaskSourceCron && task.SourceRef != "" && h.cronDeleter != nil {
+		logger.Info("Deleting cron job along with taskboard task", "taskId", id, "cronId", task.SourceRef)
+		h.cronDeleter.RemoveJob(task.SourceRef)
+	}
+
+	// 删除看板任务
 	if err := h.service.DeleteTask(id); err != nil {
 		h.writeError(w, http.StatusInternalServerError, err.Error())
 		return

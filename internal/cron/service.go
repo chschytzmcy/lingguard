@@ -286,15 +286,7 @@ func (s *Service) executeJob(job *CronJob) {
 		logger.Info("Cron job completed", "name", job.Name)
 	}
 
-	// 执行后回调
-	if s.onEvent != nil {
-		errMsg := ""
-		if err != nil {
-			errMsg = err.Error()
-		}
-		s.onEvent(job, "after", response, errMsg)
-	}
-
+	// 先更新状态
 	job.State.LastRunAtMs = startMs
 	job.UpdatedAtMs = nowMs()
 
@@ -309,6 +301,15 @@ func (s *Service) executeJob(job *CronJob) {
 	} else {
 		// 计算下次执行时间
 		job.State.NextRunAtMs = computeNextRun(&job.Schedule, nowMs())
+	}
+
+	// 执行后回调（在状态更新之后调用，这样回调可以获取最新的状态）
+	if s.onEvent != nil {
+		errMsg := ""
+		if err != nil {
+			errMsg = err.Error()
+		}
+		s.onEvent(job, "after", response, errMsg)
 	}
 }
 
