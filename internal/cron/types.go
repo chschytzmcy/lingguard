@@ -55,6 +55,9 @@ type CronPayload struct {
 	Deliver bool   `json:"deliver"`
 	Channel string `json:"channel,omitempty"` // 如 "feishu"
 	To      string `json:"to,omitempty"`      // 如用户 ID
+
+	// 源任务ID（用于关联用户请求任务，定时任务完成后同时完成源任务）
+	SourceTaskID string `json:"sourceTaskId,omitempty"`
 }
 
 // CronJobState 任务运行时状态

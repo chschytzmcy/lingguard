@@ -185,6 +185,7 @@ func (s *Service) CreateCronTask(cronID, name, message string) (*Task, error) {
 		SourceRef:    cronID,
 		Assignee:     "cron-service",
 		AssigneeType: AssigneeTypeAgent,
+		Metadata:     make(map[string]interface{}), // 初始化 Metadata 防止 panic
 	}
 
 	if err := s.store.Create(t); err != nil {
@@ -261,11 +262,6 @@ func truncateTitle(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
-}
-
-// ptrSource 返回 TaskSource 指针
-func ptrSource(s TaskSource) *TaskSource {
-	return &s
 }
 
 // ptrStatus 返回 TaskStatus 指针

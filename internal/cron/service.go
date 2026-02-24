@@ -434,6 +434,13 @@ func WithDeleteAfterRun() JobOption {
 	}
 }
 
+// WithSourceTaskID 设置源任务ID（用于关联用户请求任务）
+func WithSourceTaskID(taskID string) JobOption {
+	return func(j *CronJob) {
+		j.Payload.SourceTaskID = taskID
+	}
+}
+
 // RemoveJob 删除任务
 func (s *Service) RemoveJob(id string) bool {
 	s.mu.Lock()

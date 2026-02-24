@@ -104,6 +104,7 @@ func runGateway() error {
 
 		cronWrapper = tools.NewCronServiceWrapper(cronService)
 		ag.RegisterCronTool(cronWrapper)
+		ag.SetCronWrapper(cronWrapper)
 	}
 
 	// 启动 Web UI 和任务看板服务

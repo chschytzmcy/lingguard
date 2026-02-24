@@ -24,6 +24,7 @@ type CronService interface {
 type CronServiceWithChannel interface {
 	CronService
 	SetChannelContext(channel, to string)
+	SetSourceTaskID(taskID string)
 }
 
 // CronTool 定时任务管理工具

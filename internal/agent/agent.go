@@ -49,6 +49,13 @@ type Agent struct {
 	hybridStore        *memory.HybridStore    // 混合存储（文件+向量），可选
 	memoryBuilder      *memory.ContextBuilder // 记忆上下文构建器
 	taskboard          *taskboard.Service     // 任务看板服务
+	cronWrapper        CronWrapper            // cron 包装器（用于检查是否创建了定时任务）
+}
+
+// CronWrapper cron 包装器接口
+type CronWrapper interface {
+	SetSourceTaskID(taskID string)
+	WasJobCreatedWithSourceTask() bool
 }
 
 // NewAgent 创建新代理
@@ -200,6 +207,11 @@ func (a *Agent) SetTaskboard(service *taskboard.Service) {
 	a.taskboard = service
 }
 
+// SetCronWrapper 设置 cron 包装器
+func (a *Agent) SetCronWrapper(wrapper CronWrapper) {
+	a.cronWrapper = wrapper
+}
+
 // GetTaskboard 获取任务看板服务
 func (a *Agent) GetTaskboard() *taskboard.Service {
 	return a.taskboard
@@ -326,6 +338,10 @@ func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, us
 			logger.Warn("Failed to create task from user request", "error", err)
 		} else {
 			taskID = task.ID
+			// 设置 cron wrapper 的源任务ID
+			if a.cronWrapper != nil {
+				a.cronWrapper.SetSourceTaskID(taskID)
+			}
 		}
 	}
 	// ==========================
@@ -397,7 +413,13 @@ func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, us
 		if runErr != nil {
 			a.taskboard.FailTask(taskID, runErr.Error())
 		} else {
-			a.taskboard.CompleteTask(taskID, "")
+			// 检查是否创建了带源任务ID的定时任务
+			// 如果是，则不立即完成用户请求任务，等待定时任务执行完成
+			if a.cronWrapper != nil && a.cronWrapper.WasJobCreatedWithSourceTask() {
+				logger.Info("User request task waiting for cron completion", "taskId", taskID)
+			} else {
+				a.taskboard.CompleteTask(taskID, "")
+			}
 		}
 	}
 	// ================================
