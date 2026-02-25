@@ -843,9 +843,9 @@ func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messa
 		var llmSpan *trace.Span
 		if a.traceCollector != nil {
 			if tr := trace.GetTrace(ctx); tr != nil {
-				// 构建输入预览
-				inputPreview := fmt.Sprintf("messages: %d", len(messages))
-				llmSpan, ctx = a.traceCollector.StartLLMSpan(ctx, tr.ID, provider.Name(), provider.Model(), inputPreview)
+				// 序列化完整的消息作为输入
+				inputJSON, _ := json.MarshalIndent(messages, "", "  ")
+				llmSpan, ctx = a.traceCollector.StartLLMSpan(ctx, tr.ID, provider.Name(), provider.Model(), string(inputJSON))
 			}
 		}
 
@@ -855,16 +855,24 @@ func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messa
 		// 结束 LLM Span
 		if llmSpan != nil && a.traceCollector != nil {
 			var inputTokens, outputTokens int
-			var outputPreview string
+			var outputStr string
 			if resp != nil {
 				inputTokens = resp.Usage.PromptTokens
 				outputTokens = resp.Usage.CompletionTokens
-				outputPreview = resp.GetContent()
-				if len(outputPreview) > 200 {
-					outputPreview = outputPreview[:200] + "..."
+				// 记录完整输出（包含工具调用信息）
+				outputData := map[string]interface{}{
+					"content": resp.GetContent(),
+				}
+				if resp.HasToolCalls() {
+					outputData["toolCalls"] = resp.GetToolCalls()
+				}
+				if outputJSON, err := json.MarshalIndent(outputData, "", "  "); err == nil {
+					outputStr = string(outputJSON)
+				} else {
+					outputStr = resp.GetContent()
 				}
 			}
-			a.traceCollector.EndLLMSpan(llmSpan, outputPreview, inputTokens, outputTokens, err)
+			a.traceCollector.EndLLMSpan(llmSpan, outputStr, inputTokens, outputTokens, err)
 		}
 
 		if err != nil {
@@ -962,8 +970,9 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 		var llmSpan *trace.Span
 		if a.traceCollector != nil {
 			if tr := trace.GetTrace(ctx); tr != nil {
-				inputPreview := fmt.Sprintf("messages: %d", len(messages))
-				llmSpan, ctx = a.traceCollector.StartLLMSpan(ctx, tr.ID, provider.Name(), provider.Model(), inputPreview)
+				// 序列化完整的消息作为输入
+				inputJSON, _ := json.MarshalIndent(messages, "", "  ")
+				llmSpan, ctx = a.traceCollector.StartLLMSpan(ctx, tr.ID, provider.Name(), provider.Model(), string(inputJSON))
 			}
 		}
 
@@ -1038,11 +1047,20 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 
 		// 结束 LLM Span
 		if llmSpan != nil && a.traceCollector != nil {
-			outputPreview := assistantContent
-			if len(outputPreview) > 200 {
-				outputPreview = outputPreview[:200] + "..."
+			// 构建完整输出（包含工具调用信息）
+			outputData := map[string]interface{}{
+				"content": assistantContent,
 			}
-			a.traceCollector.EndLLMSpan(llmSpan, outputPreview, totalInputTokens, totalOutputTokens, nil)
+			if len(toolCalls) > 0 {
+				outputData["toolCalls"] = toolCalls
+			}
+			var outputStr string
+			if outputJSON, err := json.MarshalIndent(outputData, "", "  "); err == nil {
+				outputStr = string(outputJSON)
+			} else {
+				outputStr = assistantContent
+			}
+			a.traceCollector.EndLLMSpan(llmSpan, outputStr, totalInputTokens, totalOutputTokens, nil)
 		}
 
 		assistantMsg := llm.Message{
@@ -1128,12 +1146,8 @@ func (a *Agent) executeTool(ctx context.Context, tc *llm.ToolCall) (string, erro
 
 	// 结束 Tool Span
 	if toolSpan != nil && a.traceCollector != nil {
-		// 截断结果以避免过长
-		resultPreview := result
-		if len(resultPreview) > 500 {
-			resultPreview = resultPreview[:500] + "..."
-		}
-		a.traceCollector.EndToolSpan(toolSpan, resultPreview, err)
+		// 记录完整结果
+		a.traceCollector.EndToolSpan(toolSpan, result, err)
 	}
 
 	// 记录工具调用

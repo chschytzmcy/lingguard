@@ -279,14 +279,18 @@
             margin-bottom: 4px;
         }
         .span-io-content {
-            background: #fff;
-            padding: 8px;
+            background: #f8f9fa;
+            padding: 12px;
             border-radius: 4px;
             font-size: 12px;
-            max-height: 200px;
+            max-height: 400px;
             overflow-y: auto;
+        }
+        .span-io-content pre {
+            margin: 0;
             white-space: pre-wrap;
             word-break: break-all;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
         }
     </style>
 </head>
@@ -477,10 +481,14 @@
                             <!-- Input/Output -->
                             <el-collapse style="margin-top: 8px;">
                                 <el-collapse-item title="查看输入" v-if="span.input">
-                                    <div class="span-io-content">{{ span.input }}</div>
+                                    <div class="span-io-content">
+                                        <pre>{{ formatJSON(span.input) }}</pre>
+                                    </div>
                                 </el-collapse-item>
                                 <el-collapse-item title="查看输出" v-if="span.output">
-                                    <div class="span-io-content">{{ span.output }}</div>
+                                    <div class="span-io-content">
+                                        <pre>{{ formatJSON(span.output) }}</pre>
+                                    </div>
                                 </el-collapse-item>
                             </el-collapse>
                         </div>
@@ -492,10 +500,14 @@
                     <div class="timeline-title">输入/输出</div>
                     <el-collapse>
                         <el-collapse-item title="用户输入" v-if="selectedTrace.input">
-                            <div class="span-io-content">{{ selectedTrace.input }}</div>
+                            <div class="span-io-content">
+                                <pre>{{ formatJSON(selectedTrace.input) }}</pre>
+                            </div>
                         </el-collapse-item>
                         <el-collapse-item title="最终输出" v-if="selectedTrace.output">
-                            <div class="span-io-content">{{ selectedTrace.output }}</div>
+                            <div class="span-io-content">
+                                <pre>{{ formatJSON(selectedTrace.output) }}</pre>
+                            </div>
                         </el-collapse-item>
                     </el-collapse>
                 </div>
@@ -669,6 +681,19 @@
                     return (ms / 60000).toFixed(1) + 'm';
                 };
 
+                // Format JSON for display
+                const formatJSON = (str) => {
+                    if (!str) return '';
+                    try {
+                        // Try to parse and re-format as JSON
+                        const parsed = JSON.parse(str);
+                        return JSON.stringify(parsed, null, 2);
+                    } catch (e) {
+                        // If not valid JSON, return as-is
+                        return str;
+                    }
+                };
+
                 const formatTokens = (tokens) => {
                     if (!tokens) return '0';
                     if (tokens < 1000) return tokens.toString();
@@ -706,7 +731,8 @@
                     cleanupTraces,
                     formatTimeFull,
                     formatDuration,
-                    formatTokens
+                    formatTokens,
+                    formatJSON
                 };
             }
         });
