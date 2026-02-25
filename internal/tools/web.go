@@ -15,22 +15,32 @@ import (
 	"time"
 )
 
-// WebSearchTool 网页搜索工具 (使用 Tavily API)
+// searchParams 搜索参数
+type searchParams struct {
+	Query         string `json:"query"`
+	Count         int    `json:"count"`
+	SearchDepth   string `json:"searchDepth"`
+	IncludeAnswer bool   `json:"includeAnswer"`
+}
+
+// WebSearchTool 网页搜索工具 (支持 Tavily 和博查 AI 搜索)
 type WebSearchTool struct {
-	apiKey     string
-	maxResults int
-	httpClient *http.Client
+	tavilyAPIKey string
+	bochaAPIKey  string
+	maxResults   int
+	httpClient   *http.Client
 }
 
 // NewWebSearchTool 创建网页搜索工具
-func NewWebSearchTool(apiKey string, maxResults int) *WebSearchTool {
+func NewWebSearchTool(tavilyAPIKey, bochaAPIKey string, maxResults int) *WebSearchTool {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
 	return &WebSearchTool{
-		apiKey:     apiKey,
-		maxResults: maxResults,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		tavilyAPIKey: tavilyAPIKey,
+		bochaAPIKey:  bochaAPIKey,
+		maxResults:   maxResults,
+		httpClient:   &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -71,17 +81,7 @@ func (t *WebSearchTool) Parameters() map[string]interface{} {
 }
 
 func (t *WebSearchTool) Execute(ctx context.Context, params json.RawMessage) (string, error) {
-	if t.apiKey == "" {
-		return "Error: TAVILY_API_KEY not configured. Set it in config (tools.tavilyApiKey) or environment variable.", nil
-	}
-
-	var p struct {
-		Query         string `json:"query"`
-		Count         int    `json:"count"`
-		SearchDepth   string `json:"searchDepth"`
-		IncludeAnswer bool   `json:"includeAnswer"`
-	}
-
+	var p searchParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("invalid parameters: %w", err)
 	}
@@ -96,9 +96,31 @@ func (t *WebSearchTool) Execute(ctx context.Context, params json.RawMessage) (st
 		p.SearchDepth = "basic"
 	}
 
-	// Build Tavily API request
+	// 优先使用 Tavily，失败则回退到博查
+	if t.tavilyAPIKey != "" {
+		result, err := t.searchWithTavily(ctx, &p)
+		if err == nil {
+			return result, nil
+		}
+		// Tavily 失败，尝试博查
+		if t.bochaAPIKey != "" {
+			return t.searchWithBocha(ctx, &p)
+		}
+		return fmt.Sprintf("Error: Tavily search failed: %v", err), nil
+	}
+
+	// 没有 Tavily，使用博查
+	if t.bochaAPIKey != "" {
+		return t.searchWithBocha(ctx, &p)
+	}
+
+	return "Error: No search API key configured. Set tavilyApiKey or bochaApiKey in config.", nil
+}
+
+// searchWithTavily 使用 Tavily API 搜索
+func (t *WebSearchTool) searchWithTavily(ctx context.Context, p *searchParams) (string, error) {
 	reqBody := map[string]interface{}{
-		"api_key":        t.apiKey,
+		"api_key":        t.tavilyAPIKey,
 		"query":          p.Query,
 		"max_results":    p.Count,
 		"search_depth":   p.SearchDepth,
@@ -120,13 +142,13 @@ func (t *WebSearchTool) Execute(ctx context.Context, params json.RawMessage) (st
 
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
-		return fmt.Sprintf("Error: Search request failed: %v", err), nil
+		return "", fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Sprintf("Error: Tavily API returned status %d: %s", resp.StatusCode, string(body)), nil
+		return "", fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -147,11 +169,10 @@ func (t *WebSearchTool) Execute(ctx context.Context, params json.RawMessage) (st
 		return fmt.Sprintf("No results for: %s", p.Query), nil
 	}
 
-	// Format results
+	// 格式化结果
 	var lines []string
-	lines = append(lines, fmt.Sprintf("Search results for: %s\n", p.Query))
+	lines = append(lines, fmt.Sprintf("Search results for: %s (via Tavily)\n", p.Query))
 
-	// Include AI answer if available
 	if result.Answer != "" {
 		lines = append(lines, fmt.Sprintf("📋 Answer: %s\n", result.Answer))
 	}
@@ -164,6 +185,107 @@ func (t *WebSearchTool) Execute(ctx context.Context, params json.RawMessage) (st
 		lines = append(lines, fmt.Sprintf("   🔗 %s", item.URL))
 		if item.Content != "" {
 			lines = append(lines, fmt.Sprintf("   📄 %s", item.Content))
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
+// searchWithBocha 使用博查 AI 搜索 API
+func (t *WebSearchTool) searchWithBocha(ctx context.Context, p *searchParams) (string, error) {
+	reqBody := map[string]interface{}{
+		"query":      p.Query,
+		"count":      p.Count,
+		"summary":    p.IncludeAnswer,
+		"freshness":  "noLimit",
+		"searchMode": "standard",
+	}
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.bocha.cn/v1/web-search", bytes.NewReader(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+t.bochaAPIKey)
+
+	resp, err := t.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Code    int    `json:"code"`
+		Message string `json:"msg"`
+		Data    struct {
+			WebPages struct {
+				Value []struct {
+					ID         string `json:"id"`
+					Name       string `json:"name"`
+					URL        string `json:"url"`
+					Snippet    string `json:"snippet"`
+					Summary    string `json:"summary"`
+					SiteName   string `json:"siteName"`
+					DisplayURL string `json:"displayUrl"`
+				} `json:"value"`
+			} `json:"webPages"`
+			Summary string `json:"summary"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+
+	// 博查 API 成功返回 code: 200
+	if result.Code != 200 {
+		msg := result.Message
+		if msg == "" {
+			msg = fmt.Sprintf("API returned code %d", result.Code)
+		}
+		return "", fmt.Errorf("API error: %s", msg)
+	}
+
+	if len(result.Data.WebPages.Value) == 0 {
+		return fmt.Sprintf("No results for: %s", p.Query), nil
+	}
+
+	// 格式化结果
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Search results for: %s (via 博查AI)\n", p.Query))
+
+	if result.Data.Summary != "" {
+		lines = append(lines, fmt.Sprintf("📋 摘要: %s\n", result.Data.Summary))
+	}
+
+	for i, item := range result.Data.WebPages.Value {
+		if i >= p.Count {
+			break
+		}
+		title := item.Name
+		if title == "" {
+			title = item.SiteName
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s", i+1, title))
+		lines = append(lines, fmt.Sprintf("   🔗 %s", item.URL))
+		content := item.Summary
+		if content == "" {
+			content = item.Snippet
+		}
+		if content != "" {
+			lines = append(lines, fmt.Sprintf("   📄 %s", content))
 		}
 	}
 

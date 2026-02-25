@@ -61,7 +61,14 @@
   },
   "tools": {
     "restrictToWorkspace": false,
-    "tavilyApiKey": "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",
+    "websearch": {
+      "tavilyApiKey": "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",
+      "bochaApiKey": "sk-445f2765d1a8499db01a953b45b48ea8",
+      "maxResults": 5
+    },
+    "webfetch": {
+      "maxChars": 50000
+    },
     "mcpServers": {
       "filesystem": {
         "command": "npx",

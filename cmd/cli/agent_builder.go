@@ -180,12 +180,33 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 	ag.RegisterTool(tools.NewWorkspaceTool(b.workspaceMgr))
 
 	// 注册 Web 工具
-	tavilyAPIKey := b.cfg.Tools.TavilyAPIKey
+	var tavilyAPIKey, bochaAPIKey string
+	var maxResults int = 5
+	var webFetchMaxChars int = 50000
+
+	// 从配置读取
+	if b.cfg.Tools.WebSearch != nil {
+		tavilyAPIKey = b.cfg.Tools.WebSearch.TavilyAPIKey
+		bochaAPIKey = b.cfg.Tools.WebSearch.BochaAPIKey
+		if b.cfg.Tools.WebSearch.MaxResults > 0 {
+			maxResults = b.cfg.Tools.WebSearch.MaxResults
+		}
+	}
+	if b.cfg.Tools.WebFetch != nil && b.cfg.Tools.WebFetch.MaxChars > 0 {
+		webFetchMaxChars = b.cfg.Tools.WebFetch.MaxChars
+	}
+
+	// 环境变量覆盖
 	if tavilyAPIKey == "" {
 		tavilyAPIKey = os.Getenv("TAVILY_API_KEY")
 	}
-	ag.RegisterTool(tools.NewWebSearchTool(tavilyAPIKey, 5))
-	ag.RegisterTool(tools.NewWebFetchTool(b.cfg.Tools.WebMaxChars))
+	if bochaAPIKey == "" {
+		bochaAPIKey = os.Getenv("BOCHA_API_KEY")
+	}
+
+	// 优先使用 Tavily，失败时回退到博查
+	ag.RegisterTool(tools.NewWebSearchTool(tavilyAPIKey, bochaAPIKey, maxResults))
+	ag.RegisterTool(tools.NewWebFetchTool(webFetchMaxChars))
 
 	// 注册技能工具
 	ag.RegisterSkillTool()

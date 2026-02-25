@@ -130,7 +130,7 @@ func TestWebFetchTool_JSONContent(t *testing.T) {
 }
 
 func TestWebSearchTool_Basic(t *testing.T) {
-	tool := NewWebSearchTool("", 5)
+	tool := NewWebSearchTool("", "", 5)
 
 	// Test tool metadata
 	if tool.Name() != "web_search" {
@@ -143,7 +143,7 @@ func TestWebSearchTool_Basic(t *testing.T) {
 }
 
 func TestWebSearchTool_NoAPIKey(t *testing.T) {
-	tool := NewWebSearchTool("", 5) // No API key
+	tool := NewWebSearchTool("", "", 5) // No API key
 	ctx := context.Background()
 
 	testParams := map[string]interface{}{

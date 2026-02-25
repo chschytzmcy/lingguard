@@ -133,8 +133,8 @@ type ToolsConfig struct {
 	RestrictToWorkspace bool   `json:"restrictToWorkspace"`
 	Workspace           string `json:"workspace,omitempty"`
 	// Web tools
-	TavilyAPIKey string `json:"tavilyApiKey,omitempty"` // Tavily Search API Key
-	WebMaxChars  int    `json:"webMaxChars,omitempty"`  // 网页抓取最大字符数，默认 50000
+	WebSearch *WebSearchConfig `json:"websearch,omitempty"` // 网页搜索配置
+	WebFetch  *WebFetchConfig  `json:"webfetch,omitempty"`  // 网页抓取配置
 	// ClawHub - 技能仓库
 	ClawHub *ClawHubConfig `json:"clawhub,omitempty"` // ClawHub 配置
 	// MCP (Model Context Protocol) servers
@@ -147,6 +147,20 @@ type ToolsConfig struct {
 	TTS *TTSConfig `json:"tts,omitempty"` // 语音合成配置
 	// Moltbook - AI 社交网络
 	Moltbook *MoltbookConfig `json:"moltbook,omitempty"` // Moltbook 配置
+}
+
+// WebSearchConfig 网页搜索配置
+type WebSearchConfig struct {
+	Enabled      bool   `json:"enabled,omitempty"`      // 是否启用，默认 true
+	TavilyAPIKey string `json:"tavilyApiKey,omitempty"` // Tavily Search API Key
+	BochaAPIKey  string `json:"bochaApiKey,omitempty"`  // 博查AI搜索 API Key
+	MaxResults   int    `json:"maxResults,omitempty"`   // 最大返回结果数，默认 5
+}
+
+// WebFetchConfig 网页抓取配置
+type WebFetchConfig struct {
+	Enabled  bool `json:"enabled,omitempty"`  // 是否启用，默认 true
+	MaxChars int  `json:"maxChars,omitempty"` // 网页抓取最大字符数，默认 50000
 }
 
 // ClawHubConfig ClawHub 技能仓库配置
