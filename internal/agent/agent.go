@@ -843,8 +843,14 @@ func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messa
 		var llmSpan *trace.Span
 		if a.traceCollector != nil {
 			if tr := trace.GetTrace(ctx); tr != nil {
-				// 序列化完整的消息作为输入
-				inputJSON, _ := json.MarshalIndent(messages, "", "  ")
+				// 构建完整的输入信息（包含消息和工具定义）
+				inputData := map[string]interface{}{
+					"messages": messages,
+				}
+				if req.Tools != nil && len(req.Tools) > 0 {
+					inputData["tools"] = req.Tools
+				}
+				inputJSON, _ := json.MarshalIndent(inputData, "", "  ")
 				llmSpan, ctx = a.traceCollector.StartLLMSpan(ctx, tr.ID, provider.Name(), provider.Model(), string(inputJSON))
 			}
 		}
@@ -970,8 +976,14 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 		var llmSpan *trace.Span
 		if a.traceCollector != nil {
 			if tr := trace.GetTrace(ctx); tr != nil {
-				// 序列化完整的消息作为输入
-				inputJSON, _ := json.MarshalIndent(messages, "", "  ")
+				// 构建完整的输入信息（包含消息和工具定义）
+				inputData := map[string]interface{}{
+					"messages": messages,
+				}
+				if req.Tools != nil && len(req.Tools) > 0 {
+					inputData["tools"] = req.Tools
+				}
+				inputJSON, _ := json.MarshalIndent(inputData, "", "  ")
 				llmSpan, ctx = a.traceCollector.StartLLMSpan(ctx, tr.ID, provider.Name(), provider.Model(), string(inputJSON))
 			}
 		}
