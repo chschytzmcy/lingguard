@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/lingguard/internal/trace"
 	"github.com/lingguard/pkg/logger"
 )
 
@@ -354,6 +356,230 @@ func (h *HTTPHandler) writeJSON(w http.ResponseWriter, data interface{}) {
 }
 
 func (h *HTTPHandler) writeError(w http.ResponseWriter, code int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+// ==================== Trace HTTP Handler ====================
+
+// TraceHTTPHandler 追踪 HTTP 处理器
+type TraceHTTPHandler struct {
+	service *trace.Service
+}
+
+// NewTraceHTTPHandler 创建追踪 HTTP 处理器
+func NewTraceHTTPHandler(service *trace.Service) *TraceHTTPHandler {
+	return &TraceHTTPHandler{service: service}
+}
+
+// RegisterRoutes 注册追踪路由
+func (h *TraceHTTPHandler) RegisterRoutes(mux *http.ServeMux) {
+	// Trace API 路由
+	mux.HandleFunc("GET /api/traces", h.handleListTraces)
+	mux.HandleFunc("GET /api/traces/stats", h.handleGetTraceStats)
+	mux.HandleFunc("GET /api/traces/{id}", h.handleGetTrace)
+	mux.HandleFunc("GET /api/traces/{id}/spans", h.handleGetTraceSpans)
+	mux.HandleFunc("DELETE /api/traces/{id}", h.handleDeleteTrace)
+	mux.HandleFunc("DELETE /api/traces/cleanup", h.handleCleanupTraces)
+	mux.HandleFunc("GET /api/spans/{id}", h.handleGetSpan)
+	mux.HandleFunc("GET /api/trace/events", h.handleTraceSSE)
+}
+
+// handleListTraces 列出追踪
+func (h *TraceHTTPHandler) handleListTraces(w http.ResponseWriter, r *http.Request) {
+	filter := &trace.TraceFilter{}
+
+	// 解析查询参数
+	if sessionID := r.URL.Query().Get("sessionId"); sessionID != "" {
+		filter.SessionID = sessionID
+	}
+	if statusStr := r.URL.Query().Get("status"); statusStr != "" {
+		status := trace.Status(statusStr)
+		filter.Status = &status
+	}
+	if typeStr := r.URL.Query().Get("type"); typeStr != "" {
+		traceType := trace.TraceType(typeStr)
+		filter.TraceType = &traceType
+	}
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+			filter.Limit = limit
+		}
+	}
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if offset, err := strconv.Atoi(offsetStr); err == nil && offset >= 0 {
+			filter.Offset = offset
+		}
+	}
+
+	// 设置默认 limit
+	if filter.Limit == 0 {
+		filter.Limit = 50
+	}
+
+	traces, err := h.service.ListTraces(filter)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.writeJSON(w, traces)
+}
+
+// handleGetTrace 获取追踪详情
+func (h *TraceHTTPHandler) handleGetTrace(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		h.writeError(w, http.StatusBadRequest, "trace id is required")
+		return
+	}
+
+	detail, err := h.service.GetTraceDetail(id)
+	if err != nil {
+		h.writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	h.writeJSON(w, detail)
+}
+
+// handleGetTraceSpans 获取追踪的 Spans
+func (h *TraceHTTPHandler) handleGetTraceSpans(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		h.writeError(w, http.StatusBadRequest, "trace id is required")
+		return
+	}
+
+	spans, err := h.service.GetSpansByTrace(id)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.writeJSON(w, spans)
+}
+
+// handleGetTraceStats 获取追踪统计
+func (h *TraceHTTPHandler) handleGetTraceStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.service.GetTraceStats()
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.writeJSON(w, stats)
+}
+
+// handleDeleteTrace 删除追踪
+func (h *TraceHTTPHandler) handleDeleteTrace(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		h.writeError(w, http.StatusBadRequest, "trace id is required")
+		return
+	}
+
+	if err := h.service.DeleteTrace(id); err != nil {
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.writeJSON(w, map[string]string{"message": "trace deleted"})
+}
+
+// handleCleanupTraces 清理旧追踪
+func (h *TraceHTTPHandler) handleCleanupTraces(w http.ResponseWriter, r *http.Request) {
+	days := 7 // 默认 7 天
+	if daysStr := r.URL.Query().Get("days"); daysStr != "" {
+		if d, err := strconv.Atoi(daysStr); err == nil && d > 0 {
+			days = d
+		}
+	}
+
+	count, err := h.service.CleanupOldTraces(days)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.writeJSON(w, map[string]interface{}{
+		"message": "cleanup completed",
+		"deleted": count,
+	})
+}
+
+// handleGetSpan 获取 Span 详情
+func (h *TraceHTTPHandler) handleGetSpan(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		h.writeError(w, http.StatusBadRequest, "span id is required")
+		return
+	}
+
+	span, err := h.service.GetStore().GetSpan(id)
+	if err != nil {
+		h.writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	h.writeJSON(w, span)
+}
+
+// handleTraceSSE Trace SSE 事件流
+func (h *TraceHTTPHandler) handleTraceSSE(w http.ResponseWriter, r *http.Request) {
+	// 设置 SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		h.writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
+	// 订阅事件
+	eventCh := h.service.Subscribe()
+
+	// 发送初始连接消息
+	fmt.Fprintf(w, "event: connected\ndata: {\"message\":\"connected\"}\n\n")
+	flusher.Flush()
+
+	// 心跳定时器
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case event := <-eventCh:
+			data, err := json.Marshal(event)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "event: trace\ndata: %s\n\n", data)
+			flusher.Flush()
+		case <-ticker.C:
+			// 发送心跳
+			fmt.Fprintf(w, "event: ping\ndata: {\"time\":%d}\n\n", time.Now().Unix())
+			flusher.Flush()
+		}
+	}
+}
+
+// Helper methods for TraceHTTPHandler
+
+func (h *TraceHTTPHandler) writeJSON(w http.ResponseWriter, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		logger.Warn("Failed to encode response", "error", err)
+	}
+}
+
+func (h *TraceHTTPHandler) writeError(w http.ResponseWriter, code int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})

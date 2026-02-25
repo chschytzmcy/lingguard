@@ -258,6 +258,7 @@ type WebUIConfig struct {
 	Port      int              `json:"port,omitempty"`      // 端口，默认 8080
 	Host      string           `json:"host,omitempty"`      // 主机，默认 127.0.0.1
 	TaskBoard *TaskBoardConfig `json:"taskboard,omitempty"` // 任务看板配置
+	Trace     *TraceConfig     `json:"trace,omitempty"`     // LLM 追踪配置
 }
 
 // TaskBoardConfig 任务看板功能配置
@@ -266,6 +267,12 @@ type TaskBoardConfig struct {
 	TrackUserRequests bool   `json:"trackUserRequests,omitempty"` // 追踪用户请求，默认 true
 	SyncSubagent      bool   `json:"syncSubagent,omitempty"`      // 同步子代理任务，默认 true
 	SyncCron          bool   `json:"syncCron,omitempty"`          // 同步定时任务，默认 true
+}
+
+// TraceConfig LLM 追踪配置
+type TraceConfig struct {
+	Enabled bool   `json:"enabled,omitempty"` // 是否启用追踪，默认 true
+	DBPath  string `json:"dbPath,omitempty"`  // 数据库路径，默认 ~/.lingguard/webui/trace.db
 }
 
 // DefaultConfig 默认配置
@@ -319,6 +326,10 @@ func DefaultConfig() *Config {
 				TrackUserRequests: true,
 				SyncSubagent:      true,
 				SyncCron:          true,
+			},
+			Trace: &TraceConfig{
+				Enabled: true,
+				DBPath:  "~/.lingguard/webui/trace.db",
 			},
 		},
 	}

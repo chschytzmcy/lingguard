@@ -15,6 +15,7 @@ import (
 	"github.com/lingguard/internal/heartbeat"
 	"github.com/lingguard/internal/taskboard"
 	"github.com/lingguard/internal/tools"
+	"github.com/lingguard/internal/trace"
 	"github.com/lingguard/pkg/logger"
 	"github.com/lingguard/pkg/utils"
 	"github.com/spf13/cobra"
@@ -107,6 +108,26 @@ func runGateway() error {
 		ag.SetCronWrapper(cronWrapper)
 	}
 
+	// 初始化追踪服务
+	var traceService *trace.Service
+	var traceCollector trace.Collector
+	if cfg.WebUI != nil && cfg.WebUI.Enabled && cfg.WebUI.Trace != nil && cfg.WebUI.Trace.Enabled {
+		traceDBPath := utils.ExpandHome(cfg.WebUI.Trace.DBPath)
+		if traceDBPath == "" {
+			traceDBPath = utils.ExpandHome("~/.lingguard/webui/trace.db")
+		}
+
+		traceStore, err := trace.NewSQLiteStore(traceDBPath)
+		if err != nil {
+			return fmt.Errorf("create trace store: %w", err)
+		}
+
+		traceService = trace.NewService(traceStore)
+		traceCollector = trace.NewCollector(traceStore)
+		ag.SetTraceCollector(traceCollector)
+		logger.Info("Trace service initialized", "db", traceDBPath)
+	}
+
 	// 启动 Web UI 和任务看板服务
 	var webUIServer *taskboard.Server
 	var taskboardService *taskboard.Service
@@ -166,7 +187,12 @@ func runGateway() error {
 			port = 8080
 		}
 
-		webUIServer = taskboard.NewServer(host, port, taskboardService)
+		// 如果启用了追踪服务，使用带追踪的服务器
+		if traceService != nil {
+			webUIServer = taskboard.NewServerWithTrace(host, port, taskboardService, traceService)
+		} else {
+			webUIServer = taskboard.NewServer(host, port, taskboardService)
+		}
 
 		// 设置 cron 删除器，用于删除看板任务时同时删除 cron 任务
 		if cronService != nil {

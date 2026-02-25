@@ -7,15 +7,17 @@ import (
 	"time"
 
 	"github.com/lingguard/internal/taskboard/web"
+	"github.com/lingguard/internal/trace"
 	"github.com/lingguard/pkg/logger"
 )
 
 // Server Web UI 服务器
 type Server struct {
-	host    string
-	port    int
-	handler *HTTPHandler
-	server  *http.Server
+	host         string
+	port         int
+	handler      *HTTPHandler
+	traceHandler *TraceHTTPHandler
+	server       *http.Server
 }
 
 // NewServer 创建 Web UI 服务器
@@ -27,12 +29,27 @@ func NewServer(host string, port int, service *Service) *Server {
 	}
 }
 
+// NewServerWithTrace 创建带追踪功能的 Web UI 服务器
+func NewServerWithTrace(host string, port int, service *Service, traceService *trace.Service) *Server {
+	return &Server{
+		host:         host,
+		port:         port,
+		handler:      NewHTTPHandler(service),
+		traceHandler: NewTraceHTTPHandler(traceService),
+	}
+}
+
 // Start 启动服务器
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
-	// 注册 API 路由
+	// 注册 TaskBoard API 路由
 	s.handler.RegisterRoutes(mux)
+
+	// 注册 Trace API 路由（如果启用）
+	if s.traceHandler != nil {
+		s.traceHandler.RegisterRoutes(mux)
+	}
 
 	// 静态文件服务
 	staticFS, err := fs.Sub(web.StaticFiles, "static")

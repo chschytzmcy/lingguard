@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LingGuard - LLM 追踪</title>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- Element Plus -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <script src="https://unpkg.com/element-plus"></script>
+    <!-- Element Plus Icons -->
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f7fa;
+        }
+        .app-container {
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .nav-links {
+            display: flex;
+            gap: 16px;
+            margin-left: 24px;
+        }
+        .nav-links a {
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .nav-links a:hover, .nav-links a.active {
+            color: white;
+            background: rgba(255,255,255,0.2);
+        }
+        .stats-bar {
+            background: white;
+            padding: 16px 24px;
+            display: flex;
+            gap: 32px;
+            border-bottom: 1px solid #ebeef5;
+        }
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #409eff;
+        }
+        .stat-label {
+            color: #909399;
+            font-size: 13px;
+        }
+        .filter-bar {
+            background: white;
+            padding: 12px 24px;
+            border-bottom: 1px solid #ebeef5;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+        .main-content {
+            padding: 16px;
+        }
+        .trace-list {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .trace-item {
+            padding: 16px;
+            border-bottom: 1px solid #ebeef5;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .trace-item:hover {
+            background: #f5f7fa;
+        }
+        .trace-item:last-child {
+            border-bottom: none;
+        }
+        .trace-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .trace-name {
+            font-weight: 500;
+            color: #303133;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .trace-time {
+            color: #909399;
+            font-size: 13px;
+        }
+        .trace-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            color: #606266;
+        }
+        .trace-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-running { background: #409eff; animation: pulse 1.5s infinite; }
+        .status-success { background: #67c23a; }
+        .status-error { background: #f56c6c; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .empty-state {
+            text-align: center;
+            padding: 48px;
+            color: #909399;
+        }
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+        .connected { color: #67c23a; }
+        .disconnected { color: #f56c6c; }
+
+        /* Detail View */
+        .detail-header {
+            background: white;
+            padding: 16px 24px;
+            border-bottom: 1px solid #ebeef5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .detail-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #303133;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .detail-stats {
+            display: flex;
+            gap: 24px;
+            margin: 16px 24px;
+        }
+        .detail-stat-card {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .detail-stat-label {
+            font-size: 13px;
+            color: #909399;
+        }
+        .detail-stat-value {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        /* Span Timeline */
+        .timeline-container {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 0 24px 16px;
+        }
+        .timeline-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #303133;
+        }
+        .span-item {
+            display: flex;
+            margin-bottom: 12px;
+            padding: 12px;
+            border-radius: 6px;
+            background: #f5f7fa;
+        }
+        .span-item.llm { border-left: 3px solid #409eff; }
+        .span-item.tool { border-left: 3px solid #e6a23c; }
+        .span-item.context { border-left: 3px solid #67c23a; }
+        .span-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-size: 14px;
+        }
+        .span-icon.llm { background: #ecf5ff; color: #409eff; }
+        .span-icon.tool { background: #fdf6ec; color: #e6a23c; }
+        .span-icon.context { background: #f0f9eb; color: #67c23a; }
+        .span-content {
+            flex: 1;
+        }
+        .span-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .span-name {
+            font-weight: 500;
+            color: #303133;
+        }
+        .span-duration {
+            font-size: 12px;
+            color: #909399;
+        }
+        .span-details {
+            font-size: 13px;
+            color: #606266;
+        }
+        .span-model {
+            font-size: 12px;
+            color: #409eff;
+            margin-top: 4px;
+        }
+        .span-tokens {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+            font-size: 12px;
+        }
+        .span-io {
+            margin-top: 8px;
+        }
+        .span-io-title {
+            font-size: 12px;
+            color: #909399;
+            margin-bottom: 4px;
+        }
+        .span-io-content {
+            background: #fff;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="app-container">
+            <!-- Header -->
+            <div class="header">
+                <div style="display: flex; align-items: center;">
+                    <h1>🔍 LLM 追踪</h1>
+                    <nav class="nav-links">
+                        <a href="/">📋 任务看板</a>
+                        <a href="/trace.html" class="active">🔍 LLM 追踪</a>
+                    </nav>
+                </div>
+                <div class="header-actions">
+                    <div class="connection-status" :class="connected ? 'connected' : 'disconnected'">
+                        <span class="status-dot" :class="connected ? 'status-success' : 'status-error'"></span>
+                        {{ connected ? '已连接' : '未连接' }}
+                    </div>
+                    <el-button @click="loadTraces" :loading="loading">
+                        <el-icon><refresh /></el-icon>
+                        刷新
+                    </el-button>
+                    <el-button v-if="selectedTrace" @click="selectedTrace = null">
+                        <el-icon><back /></el-icon>
+                        返回列表
+                    </el-button>
+                </div>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <span class="stat-value">{{ stats.totalTraces || 0 }}</span>
+                    <span class="stat-label">总请求数</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">{{ formatTokens(stats.totalTokens) }}</span>
+                    <span class="stat-label">总 Token</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">{{ formatDuration(stats.avgDurationMs) }}</span>
+                    <span class="stat-label">平均耗时</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" :style="{ color: stats.successRate >= 90 ? '#67c23a' : stats.successRate >= 70 ? '#e6a23c' : '#f56c6c' }">
+                        {{ (stats.successRate || 0).toFixed(1) }}%
+                    </span>
+                    <span class="stat-label">成功率</span>
+                </div>
+            </div>
+
+            <!-- List View -->
+            <template v-if="!selectedTrace">
+                <!-- Filter Bar -->
+                <div class="filter-bar">
+                    <el-input v-model="filters.sessionId" placeholder="Session ID" style="width: 200px;" clearable @change="loadTraces" />
+                    <el-select v-model="filters.status" placeholder="状态" style="width: 120px;" clearable @change="loadTraces">
+                        <el-option label="运行中" value="running" />
+                        <el-option label="成功" value="success" />
+                        <el-option label="失败" value="error" />
+                    </el-select>
+                    <el-select v-model="filters.type" placeholder="类型" style="width: 120px;" clearable @change="loadTraces">
+                        <el-option label="Chat" value="chat" />
+                        <el-option label="Stream" value="stream" />
+                    </el-select>
+                    <el-button @click="cleanupTraces" type="danger" plain>
+                        <el-icon><delete /></el-icon>
+                        清理 7 天前数据
+                    </el-button>
+                </div>
+
+                <!-- Trace List -->
+                <div class="main-content">
+                    <div class="trace-list" v-loading="loading">
+                        <div v-if="!traces.length" class="empty-state">
+                            暂无追踪数据
+                        </div>
+                        <div v-for="trace in traces" :key="trace.id" class="trace-item" @click="showTraceDetail(trace)">
+                            <div class="trace-header">
+                                <div class="trace-name">
+                                    <span class="status-dot" :class="'status-' + trace.status"></span>
+                                    {{ trace.name || '未命名' }}
+                                </div>
+                                <div class="trace-time">
+                                    {{ formatTimeFull(trace.startTime) }}
+                                </div>
+                            </div>
+                            <div class="trace-meta">
+                                <div class="trace-meta-item">
+                                    <el-tag size="small" :type="trace.traceType === 'stream' ? 'warning' : ''">
+                                        {{ trace.traceType === 'stream' ? 'Stream' : 'Chat' }}
+                                    </el-tag>
+                                </div>
+                                <div class="trace-meta-item">
+                                    <el-icon><timer /></el-icon>
+                                    {{ formatDuration(trace.durationMs) }}
+                                </div>
+                                <div class="trace-meta-item">
+                                    <el-icon><coin /></el-icon>
+                                    {{ formatTokens(trace.totalTokens) }} tokens
+                                </div>
+                                <div class="trace-meta-item" v-if="trace.sessionId">
+                                    <el-icon><connection /></el-icon>
+                                    {{ trace.sessionId.slice(0, 8) }}...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div style="display: flex; justify-content: center; margin-top: 16px;">
+                        <el-pagination
+                            v-model:current-page="currentPage"
+                            :page-size="pageSize"
+                            :total="totalTraces"
+                            layout="prev, pager, next"
+                            @current-change="loadTraces"
+                        />
+                    </div>
+                </div>
+            </template>
+
+            <!-- Detail View -->
+            <template v-else>
+                <div class="detail-header">
+                    <div class="detail-title">
+                        <span class="status-dot" :class="'status-' + selectedTrace.status"></span>
+                        {{ selectedTrace.name || '追踪详情' }}
+                    </div>
+                    <el-button type="danger" size="small" @click="deleteTrace(selectedTrace)">
+                        <el-icon><delete /></el-icon>
+                        删除
+                    </el-button>
+                </div>
+
+                <!-- Detail Stats -->
+                <div class="detail-stats">
+                    <div class="detail-stat-card">
+                        <span class="detail-stat-label">会话 ID</span>
+                        <span class="detail-stat-value" style="font-size: 14px;">{{ selectedTrace.sessionId }}</span>
+                    </div>
+                    <div class="detail-stat-card">
+                        <span class="detail-stat-label">总耗时</span>
+                        <span class="detail-stat-value">{{ formatDuration(selectedTrace.durationMs) }}</span>
+                    </div>
+                    <div class="detail-stat-card">
+                        <span class="detail-stat-label">总 Token</span>
+                        <span class="detail-stat-value">{{ formatTokens(selectedTrace.totalTokens) }}</span>
+                    </div>
+                    <div class="detail-stat-card">
+                        <span class="detail-stat-label">输入/输出</span>
+                        <span class="detail-stat-value" style="font-size: 16px;">
+                            {{ selectedTrace.inputTokens }} / {{ selectedTrace.outputTokens }}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Span Timeline -->
+                <div class="timeline-container">
+                    <div class="timeline-title">执行链路</div>
+                    <div v-if="!spans.length" class="empty-state">暂无 Span 数据</div>
+                    <div v-for="span in spans" :key="span.id" class="span-item" :class="span.spanType">
+                        <div class="span-icon" :class="span.spanType">
+                            {{ span.spanType === 'llm' ? '🤖' : span.spanType === 'tool' ? '🔧' : '📝' }}
+                        </div>
+                        <div class="span-content">
+                            <div class="span-header">
+                                <span class="span-name">{{ span.name }}</span>
+                                <span class="span-duration">{{ formatDuration(span.durationMs) }}</span>
+                            </div>
+                            <div class="span-details">
+                                <span class="status-dot" :class="'status-' + span.status"></span>
+                                {{ span.status === 'success' ? '成功' : span.status === 'error' ? '失败' : '运行中' }}
+                            </div>
+                            <div v-if="span.provider && span.model" class="span-model">
+                                {{ span.provider }} / {{ span.model }}
+                            </div>
+                            <div v-if="span.spanType === 'llm'" class="span-tokens">
+                                <span>输入: {{ span.inputTokens }} tokens</span>
+                                <span>输出: {{ span.outputTokens }} tokens</span>
+                            </div>
+                            <div v-if="span.error" style="color: #f56c6c; margin-top: 8px;">
+                                ❌ {{ span.error }}
+                            </div>
+
+                            <!-- Input/Output -->
+                            <el-collapse style="margin-top: 8px;">
+                                <el-collapse-item title="查看输入" v-if="span.input">
+                                    <div class="span-io-content">{{ span.input }}</div>
+                                </el-collapse-item>
+                                <el-collapse-item title="查看输出" v-if="span.output">
+                                    <div class="span-io-content">{{ span.output }}</div>
+                                </el-collapse-item>
+                            </el-collapse>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trace Input/Output -->
+                <div class="timeline-container" style="margin-top: 0;">
+                    <div class="timeline-title">输入/输出</div>
+                    <el-collapse>
+                        <el-collapse-item title="用户输入" v-if="selectedTrace.input">
+                            <div class="span-io-content">{{ selectedTrace.input }}</div>
+                        </el-collapse-item>
+                        <el-collapse-item title="最终输出" v-if="selectedTrace.output">
+                            <div class="span-io-content">{{ selectedTrace.output }}</div>
+                        </el-collapse-item>
+                    </el-collapse>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, computed, onMounted, onUnmounted, watch } = Vue;
+        const { ElMessage, ElMessageBox } = ElementPlus;
+
+        const app = createApp({
+            setup() {
+                const loading = ref(false);
+                const connected = ref(false);
+                const traces = ref([]);
+                const spans = ref([]);
+                const stats = reactive({
+                    totalTraces: 0,
+                    totalSpans: 0,
+                    totalTokens: 0,
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    avgDurationMs: 0,
+                    successRate: 0
+                });
+                const selectedTrace = ref(null);
+                const filters = reactive({
+                    sessionId: '',
+                    status: '',
+                    type: ''
+                });
+                const currentPage = ref(1);
+                const pageSize = 50;
+                const totalTraces = ref(0);
+
+                let eventSource = null;
+                const apiBase = '';
+
+                // Load traces
+                const loadTraces = async () => {
+                    loading.value = true;
+                    try {
+                        const params = new URLSearchParams();
+                        params.set('limit', pageSize);
+                        params.set('offset', (currentPage.value - 1) * pageSize);
+                        if (filters.sessionId) params.set('sessionId', filters.sessionId);
+                        if (filters.status) params.set('status', filters.status);
+                        if (filters.type) params.set('type', filters.type);
+
+                        const res = await fetch(`${apiBase}/api/traces?${params}`);
+                        const data = await res.json();
+                        traces.value = Array.isArray(data) ? data : [];
+                        totalTraces.value = traces.value.length < pageSize ? (currentPage.value - 1) * pageSize + traces.value.length : currentPage.value * pageSize + 1;
+                    } catch (e) {
+                        ElMessage.error('加载追踪失败: ' + e.message);
+                        traces.value = [];
+                    }
+                    loading.value = false;
+                };
+
+                // Load stats
+                const loadStats = async () => {
+                    try {
+                        const res = await fetch(`${apiBase}/api/traces/stats`);
+                        const data = await res.json();
+                        if (data) {
+                            Object.assign(stats, data);
+                        }
+                    } catch (e) {
+                        console.error('Load stats error:', e);
+                    }
+                };
+
+                // Load trace detail
+                const loadTraceDetail = async (trace) => {
+                    try {
+                        const res = await fetch(`${apiBase}/api/traces/${trace.id}`);
+                        const data = await res.json();
+                        selectedTrace.value = data.trace;
+                        spans.value = data.spans || [];
+                    } catch (e) {
+                        ElMessage.error('加载详情失败: ' + e.message);
+                    }
+                };
+
+                // Show trace detail
+                const showTraceDetail = (trace) => {
+                    loadTraceDetail(trace);
+                };
+
+                // Delete trace
+                const deleteTrace = async (trace) => {
+                    try {
+                        await ElMessageBox.confirm('确定要删除此追踪吗？', '确认删除', {
+                            type: 'warning'
+                        });
+                        const res = await fetch(`${apiBase}/api/traces/${trace.id}`, {
+                            method: 'DELETE'
+                        });
+                        if (res.ok) {
+                            ElMessage.success('追踪已删除');
+                            selectedTrace.value = null;
+                            loadTraces();
+                            loadStats();
+                        } else {
+                            const err = await res.json();
+                            ElMessage.error('删除失败: ' + err.error);
+                        }
+                    } catch (e) {
+                        if (e !== 'cancel') {
+                            ElMessage.error('删除失败: ' + e.message);
+                        }
+                    }
+                };
+
+                // Cleanup old traces
+                const cleanupTraces = async () => {
+                    try {
+                        await ElMessageBox.confirm('确定要清理 7 天前的追踪数据吗？', '确认清理', {
+                            type: 'warning'
+                        });
+                        const res = await fetch(`${apiBase}/api/traces/cleanup?days=7`, {
+                            method: 'DELETE'
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            ElMessage.success(`已清理 ${data.deleted} 条追踪`);
+                            loadTraces();
+                            loadStats();
+                        }
+                    } catch (e) {
+                        if (e !== 'cancel') {
+                            ElMessage.error('清理失败: ' + e.message);
+                        }
+                    }
+                };
+
+                // Connect SSE
+                const connectSSE = () => {
+                    if (eventSource) {
+                        eventSource.close();
+                    }
+                    eventSource = new EventSource(`${apiBase}/api/trace/events`);
+
+                    eventSource.onopen = () => {
+                        connected.value = true;
+                    };
+
+                    eventSource.onerror = () => {
+                        connected.value = false;
+                        setTimeout(connectSSE, 3000);
+                    };
+
+                    eventSource.addEventListener('trace', (e) => {
+                        loadTraces();
+                        loadStats();
+                    });
+                };
+
+                // Formatters
+                const formatTimeFull = (ms) => {
+                    if (!ms) return '';
+                    return new Date(ms).toLocaleString();
+                };
+
+                const formatDuration = (ms) => {
+                    if (!ms) return '-';
+                    if (ms < 1000) return ms + 'ms';
+                    if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+                    return (ms / 60000).toFixed(1) + 'm';
+                };
+
+                const formatTokens = (tokens) => {
+                    if (!tokens) return '0';
+                    if (tokens < 1000) return tokens.toString();
+                    if (tokens < 1000000) return (tokens / 1000).toFixed(1) + 'K';
+                    return (tokens / 1000000).toFixed(2) + 'M';
+                };
+
+                // Lifecycle
+                onMounted(() => {
+                    loadTraces();
+                    loadStats();
+                    connectSSE();
+                });
+
+                onUnmounted(() => {
+                    if (eventSource) {
+                        eventSource.close();
+                    }
+                });
+
+                return {
+                    loading,
+                    connected,
+                    traces,
+                    spans,
+                    stats,
+                    selectedTrace,
+                    filters,
+                    currentPage,
+                    pageSize,
+                    totalTraces,
+                    loadTraces,
+                    showTraceDetail,
+                    deleteTrace,
+                    cleanupTraces,
+                    formatTimeFull,
+                    formatDuration,
+                    formatTokens
+                };
+            }
+        });
+
+        // Register Element Plus
+        app.use(ElementPlus);
+
+        // Register icons
+        for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+            app.component(key, component);
+        }
+
+        app.mount('#app');
+    </script>
+</body>
+</html>

@@ -24,6 +24,7 @@ import (
 	"github.com/lingguard/internal/subagent"
 	"github.com/lingguard/internal/taskboard"
 	"github.com/lingguard/internal/tools"
+	"github.com/lingguard/internal/trace"
 	"github.com/lingguard/pkg/llm"
 	"github.com/lingguard/pkg/logger"
 	"github.com/lingguard/pkg/memory"
@@ -60,6 +61,7 @@ type Agent struct {
 	memoryBuilder      *memory.ContextBuilder // 记忆上下文构建器
 	taskboard          *taskboard.Service     // 定时任务看板服务（仅用于定时任务跟踪和分析）
 	cronWrapper        CronWrapper            // 定时任务服务包装器
+	traceCollector     trace.Collector        // 追踪采集器，可选
 }
 
 // NewAgent 创建新代理
@@ -216,6 +218,16 @@ func (a *Agent) SetCronWrapper(wrapper CronWrapper) {
 	a.cronWrapper = wrapper
 }
 
+// SetTraceCollector 设置追踪采集器
+func (a *Agent) SetTraceCollector(collector trace.Collector) {
+	a.traceCollector = collector
+}
+
+// GetTraceCollector 获取追踪采集器
+func (a *Agent) GetTraceCollector() trace.Collector {
+	return a.traceCollector
+}
+
 // GetTaskboard 获取任务看板服务
 func (a *Agent) GetTaskboard() *taskboard.Service {
 	return a.taskboard
@@ -284,6 +296,28 @@ func (a *Agent) ProcessMessage(ctx context.Context, sessionID, userMessage strin
 
 // ProcessMessageWithMedia 处理带媒体的消息
 func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMessage string, mediaPaths []string) (string, error) {
+	// 开始追踪
+	var tr *trace.Trace
+	if a.traceCollector != nil {
+		traceType := trace.TraceTypeChat
+		if len(mediaPaths) > 0 {
+			traceType = trace.TraceTypeStream
+		}
+		// 截取用户消息前 50 字符作为名称
+		name := userMessage
+		if len(name) > 50 {
+			name = name[:50] + "..."
+		}
+		tr, ctx = a.traceCollector.StartTrace(ctx, sessionID, traceType, name, userMessage)
+	}
+
+	// 追踪结束处理
+	defer func() {
+		if tr != nil && a.traceCollector != nil {
+			a.traceCollector.EndTrace(tr, "", nil)
+		}
+	}()
+
 	// 1. 获取或创建会话
 	s := a.sessions.GetOrCreate(sessionID)
 
@@ -311,7 +345,16 @@ func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMess
 	}
 
 	// 2. 构建上下文
+	var ctxSpan *trace.Span
+	var ctxSpanCtx context.Context
+	if tr != nil && a.traceCollector != nil {
+		ctxSpan, ctxSpanCtx = a.traceCollector.StartContextSpan(ctx, tr.ID, "session: "+sessionID)
+		ctx = ctxSpanCtx
+	}
 	messages, err := a.buildContextWithMedia(sessionID, hasMedia)
+	if ctxSpan != nil && a.traceCollector != nil {
+		a.traceCollector.EndContextSpan(ctxSpan, fmt.Sprintf("messages: %d", len(messages)), err)
+	}
 	if err != nil {
 		return "", fmt.Errorf("failed to build context: %w", err)
 	}
@@ -324,7 +367,19 @@ func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMess
 	}
 
 	// 4. 执行代理循环
-	return a.runLoopWithProvider(ctx, sessionID, messages, provider)
+	result, err := a.runLoopWithProvider(ctx, sessionID, messages, provider)
+
+	// 更新追踪结果
+	if tr != nil && a.traceCollector != nil {
+		if err != nil {
+			a.traceCollector.EndTrace(tr, "", err)
+		} else {
+			a.traceCollector.EndTrace(tr, result, nil)
+		}
+		tr = nil // 防止 defer 再次结束
+	}
+
+	return result, err
 }
 
 // ProcessMessageStream 流式处理消息
@@ -334,6 +389,24 @@ func (a *Agent) ProcessMessageStream(ctx context.Context, sessionID, userMessage
 
 // ProcessMessageStreamWithMedia 流式处理带媒体的消息
 func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, userMessage string, mediaPaths []string, callback stream.StreamCallback) error {
+	// 开始追踪
+	var tr *trace.Trace
+	if a.traceCollector != nil {
+		traceType := trace.TraceTypeStream
+		name := userMessage
+		if len(name) > 50 {
+			name = name[:50] + "..."
+		}
+		tr, ctx = a.traceCollector.StartTrace(ctx, sessionID, traceType, name, userMessage)
+	}
+
+	// 追踪结束处理
+	defer func() {
+		if tr != nil && a.traceCollector != nil {
+			a.traceCollector.EndTrace(tr, "", nil)
+		}
+	}()
+
 	// 1. 获取或创建会话
 	s := a.sessions.GetOrCreate(sessionID)
 
@@ -362,7 +435,16 @@ func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, us
 	}
 
 	// 2. 构建上下文
+	var ctxSpan *trace.Span
+	var ctxSpanCtx context.Context
+	if tr != nil && a.traceCollector != nil {
+		ctxSpan, ctxSpanCtx = a.traceCollector.StartContextSpan(ctx, tr.ID, "session: "+sessionID)
+		ctx = ctxSpanCtx
+	}
 	messages, err := a.buildContextWithMedia(sessionID, hasMedia)
+	if ctxSpan != nil && a.traceCollector != nil {
+		a.traceCollector.EndContextSpan(ctxSpan, fmt.Sprintf("messages: %d", len(messages)), err)
+	}
 	if err != nil {
 		callback(stream.NewErrorEvent(fmt.Errorf("failed to build context: %w", err)))
 		return err
@@ -377,6 +459,12 @@ func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, us
 
 	// 4. 执行流式代理循环
 	runErr := a.runLoopStreamWithProvider(ctx, sessionID, messages, provider, callback)
+
+	// 更新追踪结果
+	if tr != nil && a.traceCollector != nil {
+		a.traceCollector.EndTrace(tr, "", runErr)
+		tr = nil // 防止 defer 再次结束
+	}
 
 	return runErr
 }
@@ -751,8 +839,34 @@ func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messa
 			req.Tools = a.toolRegistry.GetToolDefinitions()
 		}
 
+		// 开始 LLM Span
+		var llmSpan *trace.Span
+		if a.traceCollector != nil {
+			if tr := trace.GetTrace(ctx); tr != nil {
+				// 构建输入预览
+				inputPreview := fmt.Sprintf("messages: %d", len(messages))
+				llmSpan, ctx = a.traceCollector.StartLLMSpan(ctx, tr.ID, provider.Name(), provider.Model(), inputPreview)
+			}
+		}
+
 		// 调用 LLM
 		resp, err := provider.Complete(ctx, req)
+
+		// 结束 LLM Span
+		if llmSpan != nil && a.traceCollector != nil {
+			var inputTokens, outputTokens int
+			var outputPreview string
+			if resp != nil {
+				inputTokens = resp.Usage.PromptTokens
+				outputTokens = resp.Usage.CompletionTokens
+				outputPreview = resp.GetContent()
+				if len(outputPreview) > 200 {
+					outputPreview = outputPreview[:200] + "..."
+				}
+			}
+			a.traceCollector.EndLLMSpan(llmSpan, outputPreview, inputTokens, outputTokens, err)
+		}
+
 		if err != nil {
 			return "", fmt.Errorf("LLM call failed: %w", err)
 		}
@@ -844,9 +958,21 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 			req.Tools = a.toolRegistry.GetToolDefinitions()
 		}
 
+		// 开始 LLM Span
+		var llmSpan *trace.Span
+		if a.traceCollector != nil {
+			if tr := trace.GetTrace(ctx); tr != nil {
+				inputPreview := fmt.Sprintf("messages: %d", len(messages))
+				llmSpan, ctx = a.traceCollector.StartLLMSpan(ctx, tr.ID, provider.Name(), provider.Model(), inputPreview)
+			}
+		}
+
 		// 调用 LLM 流式接口
 		eventChan, err := provider.Stream(ctx, req)
 		if err != nil {
+			if llmSpan != nil && a.traceCollector != nil {
+				a.traceCollector.EndLLMSpan(llmSpan, "", 0, 0, err)
+			}
 			return fmt.Errorf("LLM stream call failed: %w", err)
 		}
 
@@ -854,6 +980,8 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 		var contentBuilder strings.Builder
 		// 用于累积流式工具调用（按 index 组织）
 		toolCallsAccumulator := make(map[int]*llm.ToolCall)
+		// 累积 token 使用（如果可用）
+		var totalInputTokens, totalOutputTokens int
 
 		// 处理流式事件
 		for event := range eventChan {
@@ -907,6 +1035,16 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 
 		// 构建助手消息
 		assistantContent := contentBuilder.String()
+
+		// 结束 LLM Span
+		if llmSpan != nil && a.traceCollector != nil {
+			outputPreview := assistantContent
+			if len(outputPreview) > 200 {
+				outputPreview = outputPreview[:200] + "..."
+			}
+			a.traceCollector.EndLLMSpan(llmSpan, outputPreview, totalInputTokens, totalOutputTokens, nil)
+		}
+
 		assistantMsg := llm.Message{
 			Role:      "assistant",
 			Content:   assistantContent,
@@ -969,13 +1107,34 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 func (a *Agent) executeTool(ctx context.Context, tc *llm.ToolCall) (string, error) {
 	start := time.Now()
 
+	// 开始 Tool Span
+	var toolSpan *trace.Span
+	if a.traceCollector != nil {
+		if tr := trace.GetTrace(ctx); tr != nil {
+			toolSpan, ctx = a.traceCollector.StartToolSpan(ctx, tr.ID, tc.Function.Name, string(tc.Function.Arguments))
+		}
+	}
+
 	tool, exists := a.toolRegistry.Get(tc.Function.Name)
 	if !exists {
+		if toolSpan != nil && a.traceCollector != nil {
+			a.traceCollector.EndToolSpan(toolSpan, "", fmt.Errorf("unknown tool: %s", tc.Function.Name))
+		}
 		return "", fmt.Errorf("unknown tool: %s", tc.Function.Name)
 	}
 
 	result, err := tool.Execute(ctx, tc.Function.Arguments)
 	duration := time.Since(start)
+
+	// 结束 Tool Span
+	if toolSpan != nil && a.traceCollector != nil {
+		// 截断结果以避免过长
+		resultPreview := result
+		if len(resultPreview) > 500 {
+			resultPreview = resultPreview[:500] + "..."
+		}
+		a.traceCollector.EndToolSpan(toolSpan, resultPreview, err)
+	}
 
 	// 记录工具调用
 	logger.ToolCall(tc.Function.Name, tc.Function.Arguments, result, duration, err)
