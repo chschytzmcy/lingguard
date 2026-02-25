@@ -309,6 +309,7 @@ type StreamEvent struct {
 		Delta        Delta  `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+	Usage *Usage `json:"usage,omitempty"` // 某些 API 在流式结束时会返回 usage
 }
 
 // Delta 流式增量

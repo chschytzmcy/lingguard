@@ -1006,6 +1006,12 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 
 		// 处理流式事件
 		for event := range eventChan {
+			// 提取 usage 信息（某些 API 在流式结束时会返回）
+			if event.Usage != nil {
+				totalInputTokens = event.Usage.PromptTokens
+				totalOutputTokens = event.Usage.CompletionTokens
+			}
+
 			if len(event.Choices) == 0 {
 				continue
 			}

@@ -134,6 +134,10 @@
       "trackUserRequests": true,
       "syncSubagent": true,
       "syncCron": true
+    },
+    "trace": {
+      "enabled": true,
+      "dbPath": "~/.lingguard/webui/trace.db"
     }
   }
 }
