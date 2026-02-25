@@ -94,6 +94,8 @@ package-linux-amd64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
+	@# 移除代理设置（打包发布时不包含本地代理配置）
+	@sed -i '/HTTP_PROXY\|HTTPS_PROXY\|NO_PROXY/d' dist/pkg/scripts/lingguard.service
 	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
 	cd dist && tar -czf $(PROJECT)-$(VERSION)-linux-amd64.tar.gz -C pkg .
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-linux-amd64.tar.gz"
@@ -105,6 +107,8 @@ package-linux-arm64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
+	@# 移除代理设置（打包发布时不包含本地代理配置）
+	@sed -i '/HTTP_PROXY\|HTTPS_PROXY\|NO_PROXY/d' dist/pkg/scripts/lingguard.service
 	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
 	cd dist && tar -czf $(PROJECT)-$(VERSION)-linux-arm64.tar.gz -C pkg .
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-linux-arm64.tar.gz"
@@ -121,6 +125,8 @@ package-darwin-amd64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
+	@# 移除代理设置（打包发布时不包含本地代理配置）
+	@sed -i '/HTTP_PROXY\|HTTPS_PROXY\|NO_PROXY/d' dist/pkg/scripts/lingguard.service
 	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
 	cd dist && tar -czf $(PROJECT)-$(VERSION)-darwin-amd64.tar.gz -C pkg .
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-darwin-amd64.tar.gz"
@@ -132,6 +138,8 @@ package-darwin-arm64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
+	@# 移除代理设置（打包发布时不包含本地代理配置）
+	@sed -i '/HTTP_PROXY\|HTTPS_PROXY\|NO_PROXY/d' dist/pkg/scripts/lingguard.service
 	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT) ./$(CMD_DIR)
 	cd dist && tar -czf $(PROJECT)-$(VERSION)-darwin-arm64.tar.gz -C pkg .
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-darwin-arm64.tar.gz"
@@ -148,6 +156,8 @@ package-windows-amd64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
+	@# 移除代理设置（打包发布时不包含本地代理配置）
+	@sed -i '/HTTP_PROXY\|HTTPS_PROXY\|NO_PROXY/d' dist/pkg/scripts/lingguard.service
 	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT).exe ./$(CMD_DIR)
 	cd dist && zip -r $(PROJECT)-$(VERSION)-windows-amd64.zip pkg/
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-windows-amd64.zip"
@@ -159,6 +169,8 @@ package-windows-arm64:
 	cp -r configs dist/pkg/
 	cp -r scripts dist/pkg/
 	cp -r skills dist/pkg/
+	@# 移除代理设置（打包发布时不包含本地代理配置）
+	@sed -i '/HTTP_PROXY\|HTTPS_PROXY\|NO_PROXY/d' dist/pkg/scripts/lingguard.service
 	GOOS=windows GOARCH=arm64 go build $(LDFLAGS) -o dist/pkg/$(PROJECT).exe ./$(CMD_DIR)
 	cd dist && zip -r $(PROJECT)-$(VERSION)-windows-arm64.zip pkg/
 	@echo "已创建: dist/$(PROJECT)-$(VERSION)-windows-arm64.zip"
