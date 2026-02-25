@@ -20,11 +20,12 @@ type Service struct {
 	onJob     JobCallback
 	onEvent   EventCallback // 事件回调（用于任务看板同步）
 
-	mu       sync.RWMutex
-	store    *CronStore
-	timer    *time.Timer
-	running  bool
-	stopChan chan struct{}
+	mu          sync.RWMutex
+	store       *CronStore
+	timer       *time.Timer
+	checkTicker *time.Ticker // 定期检查 ticker，补偿系统休眠后错过的任务
+	running     bool
+	stopChan    chan struct{}
 }
 
 // NewService 创建定时任务服务
@@ -63,8 +64,53 @@ func (s *Service) Start() error {
 	s.running = true
 	s.armTimer()
 
+	// 启动定期检查（每分钟检查一次，补偿系统休眠后错过的任务）
+	s.checkTicker = time.NewTicker(1 * time.Minute)
+	go s.runPeriodicCheck()
+
 	logger.Info("Cron service started", "jobs", len(s.store.Jobs))
 	return nil
+}
+
+// runPeriodicCheck 定期检查是否有错过的任务
+func (s *Service) runPeriodicCheck() {
+	for {
+		select {
+		case <-s.stopChan:
+			return
+		case <-s.checkTicker.C:
+			s.checkAndExecuteDueJobs()
+		}
+	}
+}
+
+// checkAndExecuteDueJobs 检查并执行到期的任务（补偿机制）
+func (s *Service) checkAndExecuteDueJobs() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.running || s.store == nil {
+		return
+	}
+
+	now := nowMs()
+	var dueJobs []*CronJob
+
+	for _, job := range s.store.Jobs {
+		// 检查是否有任务已经到期但还没执行
+		if job.Enabled && job.State.NextRunAtMs > 0 && now >= job.State.NextRunAtMs {
+			dueJobs = append(dueJobs, job)
+		}
+	}
+
+	if len(dueJobs) > 0 {
+		logger.Info("Periodic check found due jobs", "count", len(dueJobs))
+		for _, job := range dueJobs {
+			s.executeJob(job)
+		}
+		s.saveStore()
+		s.armTimer()
+	}
 }
 
 // Stop 停止定时任务服务
@@ -76,6 +122,10 @@ func (s *Service) Stop() {
 	if s.timer != nil {
 		s.timer.Stop()
 		s.timer = nil
+	}
+	if s.checkTicker != nil {
+		s.checkTicker.Stop()
+		s.checkTicker = nil
 	}
 	close(s.stopChan)
 	logger.Info("Cron service stopped")
