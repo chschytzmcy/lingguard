@@ -69,7 +69,8 @@
       "_docs": "https://help.aliyun.com/zh/model-studio/coding-plan",
       "apiKey": "sk-sp-xxx",
       "apiBase": "https://coding.dashscope.aliyuncs.com/v1",
-      "model": "qwen3-coder-plus"
+      "model": "qwen3-coder-plus",
+      "timeout": 120
     },
 
     "vllm": {

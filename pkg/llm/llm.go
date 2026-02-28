@@ -207,6 +207,39 @@ type FunctionCall struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
+// UnmarshalJSON 自定义反序列化，正确处理 arguments 字段
+// OpenAI 格式的 arguments 是一个 JSON 字符串，需要先解码字符串再存储
+func (f *FunctionCall) UnmarshalJSON(data []byte) error {
+	// 临时结构体
+	type tempFunc struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+
+	var temp tempFunc
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	f.Name = temp.Name
+
+	// 检查 arguments 是否是被引号包围的字符串
+	// 如果是，需要先解码字符串得到真正的 JSON
+	if len(temp.Arguments) > 0 && temp.Arguments[0] == '"' {
+		// arguments 是一个 JSON 字符串，需要解码
+		var unquoted string
+		if err := json.Unmarshal(temp.Arguments, &unquoted); err != nil {
+			return err
+		}
+		f.Arguments = json.RawMessage(unquoted)
+	} else {
+		// arguments 已经是 JSON 对象
+		f.Arguments = temp.Arguments
+	}
+
+	return nil
+}
+
 // ToolDefinition 工具定义
 type ToolDefinition struct {
 	Type     string       `json:"type"`
