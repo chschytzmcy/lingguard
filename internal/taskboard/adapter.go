@@ -147,6 +147,18 @@ func (a *CronAdapter) updateCronTaskMetadata(task *Task, job *cron.CronJob) {
 	task.Metadata["lastRunAtMs"] = job.State.LastRunAtMs
 	task.Metadata["lastStatus"] = job.State.LastStatus
 
+	// 更新调度表达式
+	if job.Schedule.Kind == cron.ScheduleKindAt {
+		task.Metadata["scheduleType"] = "单次"
+		task.Metadata["scheduleExpr"] = formatScheduleTime(job.Schedule.AtMs)
+	} else if job.Schedule.Kind == cron.ScheduleKindCron {
+		task.Metadata["scheduleType"] = "周期性"
+		task.Metadata["scheduleExpr"] = formatCronExpr(job.Schedule.Expr, job.Schedule.TZ)
+	} else if job.Schedule.Kind == cron.ScheduleKindEvery {
+		task.Metadata["scheduleType"] = "周期性"
+		task.Metadata["scheduleExpr"] = formatEveryDuration(job.Schedule.EveryMs)
+	}
+
 	// 更新任务状态
 	if job.Enabled {
 		if task.Status == TaskStatusPending {
@@ -160,6 +172,34 @@ func (a *CronAdapter) updateCronTaskMetadata(task *Task, job *cron.CronJob) {
 	if err := a.service.UpdateTask(task); err != nil {
 		logger.Warn("Failed to update cron task metadata", "taskId", task.ID, "error", err)
 	}
+}
+
+// OnCronJobUpdated 定时任务更新时调用
+func (a *CronAdapter) OnCronJobUpdated(job *cron.CronJob) {
+	if a.service == nil {
+		return
+	}
+
+	// 查找对应的看板任务
+	tasks, err := a.service.ListTasks(&TaskFilter{
+		Source: ptrSource(TaskSourceCron),
+		Limit:  100,
+	})
+	if err != nil {
+		logger.Warn("Failed to find cron task for update", "cronId", job.ID, "error", err)
+		return
+	}
+
+	for _, task := range tasks {
+		if task.SourceRef == job.ID {
+			a.updateCronTaskMetadata(task, job)
+			logger.Info("Cron task updated in taskboard", "taskId", task.ID, "cronId", job.ID, "name", job.Name)
+			return
+		}
+	}
+
+	// 如果没找到，可能是先创建了 cron 任务后才开始同步，创建一个新的看板任务
+	a.OnCronJobCreated(job)
 }
 
 // OnCronJobExecuting 定时任务执行时调用

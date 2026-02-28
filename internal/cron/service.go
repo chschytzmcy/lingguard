@@ -535,6 +535,70 @@ func (s *Service) RemoveJob(id string) bool {
 	return removed
 }
 
+// UpdateJobOptions 更新任务的选项
+type UpdateJobOptions struct {
+	Name     *string       // 新名称（可选）
+	Schedule *CronSchedule // 新调度（可选）
+	Message  *string       // 新消息（可选）
+	Enabled  *bool         // 启用/禁用（可选）
+}
+
+// UpdateJob 更新任务
+func (s *Service) UpdateJob(id string, opts UpdateJobOptions) (*CronJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.store == nil {
+		return nil, fmt.Errorf("store not loaded")
+	}
+
+	for _, job := range s.store.Jobs {
+		if job.ID == id {
+			// 更新名称
+			if opts.Name != nil {
+				job.Name = *opts.Name
+			}
+
+			// 更新调度
+			if opts.Schedule != nil {
+				job.Schedule = *opts.Schedule
+				job.State.NextRunAtMs = computeNextRun(opts.Schedule, nowMs())
+			}
+
+			// 更新消息
+			if opts.Message != nil {
+				job.Payload.Message = *opts.Message
+			}
+
+			// 更新启用状态
+			if opts.Enabled != nil {
+				job.Enabled = *opts.Enabled
+				if !*opts.Enabled {
+					job.State.NextRunAtMs = 0
+				} else if opts.Schedule == nil {
+					// 如果只更新启用状态，重新计算下次执行时间
+					job.State.NextRunAtMs = computeNextRun(&job.Schedule, nowMs())
+				}
+			}
+
+			job.UpdatedAtMs = nowMs()
+			s.saveStore()
+			s.armTimer()
+
+			logger.Info("Cron updated job", "id", id, "name", job.Name)
+
+			// 触发更新事件回调
+			if s.onEvent != nil {
+				s.onEvent(job, "updated", "", "")
+			}
+
+			return job, nil
+		}
+	}
+
+	return nil, fmt.Errorf("job not found: %s", id)
+}
+
 // EnableJob 启用/禁用任务
 func (s *Service) EnableJob(id string, enabled bool) *CronJob {
 	s.mu.Lock()

@@ -16,6 +16,7 @@ import (
 type CronService interface {
 	ListJobs(includeDisabled bool) []*cron.CronJob
 	AddJob(name string, schedule cron.CronSchedule, message string, opts ...cron.JobOption) (*cron.CronJob, error)
+	UpdateJob(id string, opts cron.UpdateJobOptions) (*cron.CronJob, error)
 	RemoveJob(id string) bool
 	EnableJob(id string, enabled bool) *cron.CronJob
 }
@@ -42,6 +43,7 @@ func (t *CronTool) Description() string {
 	return `定时任务调度管理。支持的操作：
 - list: 列出所有定时任务（用户询问定时任务列表时使用）
 - add: 添加新的定时任务
+- update: 更新现有任务（修改时间、名称、内容等）
 - remove: 删除定时任务
 - enable/disable: 启用/禁用任务
 重要：当任务需要执行操作（如搜索、收集、整理、分析等）时，必须设置execute=true`
@@ -53,8 +55,8 @@ func (t *CronTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"action": map[string]interface{}{
 				"type":        "string",
-				"enum":        []string{"list", "add", "remove", "enable", "disable"},
-				"description": "操作类型：list=查看所有定时任务，add=创建新任务，remove=删除任务，enable/disable=启用/禁用",
+				"enum":        []string{"list", "add", "update", "remove", "enable", "disable"},
+				"description": "操作类型：list=查看所有定时任务，add=创建新任务，update=更新任务，remove=删除任务，enable/disable=启用/禁用",
 			},
 			"name": map[string]interface{}{
 				"type":        "string",
@@ -70,7 +72,7 @@ func (t *CronTool) Parameters() map[string]interface{} {
 			},
 			"job_id": map[string]interface{}{
 				"type":        "string",
-				"description": "任务ID",
+				"description": "任务ID（更新/删除/启用/禁用时必填）",
 			},
 			"timezone": map[string]interface{}{
 				"type":        "string",
@@ -79,6 +81,10 @@ func (t *CronTool) Parameters() map[string]interface{} {
 			"execute": map[string]interface{}{
 				"type":        "boolean",
 				"description": "执行模式：true=先执行Agent处理任务再通知结果（用于搜索、收集、整理等需要执行操作的任务），false=仅发送通知（用于简单提醒）。默认false。",
+			},
+			"enabled": map[string]interface{}{
+				"type":        "boolean",
+				"description": "启用状态（更新任务时使用）",
 			},
 		},
 		"required": []string{"action"},
@@ -94,6 +100,7 @@ func (t *CronTool) Execute(ctx context.Context, params json.RawMessage) (string,
 		JobID    string `json:"job_id"`
 		Timezone string `json:"timezone"`
 		Execute  bool   `json:"execute"`
+		Enabled  *bool  `json:"enabled"` // 使用指针区分未设置和 false
 	}
 
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -105,6 +112,8 @@ func (t *CronTool) Execute(ctx context.Context, params json.RawMessage) (string,
 		return t.listJobs()
 	case "add":
 		return t.addJob(p.Name, p.Schedule, p.Message, p.Timezone, p.Execute)
+	case "update":
+		return t.updateJob(p.JobID, p.Name, p.Schedule, p.Message, p.Timezone, p.Enabled)
 	case "remove":
 		return t.removeJob(p.JobID)
 	case "enable":
@@ -215,6 +224,66 @@ func (t *CronTool) enableJob(id string, enabled bool) (string, error) {
 	if enabled {
 		result += fmt.Sprintf(" Next run: %s", formatTime(job.State.NextRunAtMs))
 	}
+	return result, nil
+}
+
+func (t *CronTool) updateJob(id, name, scheduleStr, message, timezone string, enabled *bool) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("job_id is required")
+	}
+
+	opts := cron.UpdateJobOptions{}
+
+	// 更新名称
+	if name != "" {
+		opts.Name = &name
+	}
+
+	// 更新调度
+	if scheduleStr != "" {
+		schedule, err := parseSchedule(scheduleStr, timezone)
+		if err != nil {
+			return "", err
+		}
+		opts.Schedule = schedule
+	}
+
+	// 更新消息
+	if message != "" {
+		opts.Message = &message
+	}
+
+	// 更新启用状态
+	if enabled != nil {
+		opts.Enabled = enabled
+	}
+
+	job, err := t.service.UpdateJob(id, opts)
+	if err != nil {
+		return "", err
+	}
+
+	var changes []string
+	if name != "" {
+		changes = append(changes, fmt.Sprintf("name=%s", job.Name))
+	}
+	if scheduleStr != "" {
+		changes = append(changes, fmt.Sprintf("schedule=%s", formatSchedule(job.Schedule)))
+	}
+	if message != "" {
+		changes = append(changes, "message updated")
+	}
+	if enabled != nil {
+		status := "disabled"
+		if *enabled {
+			status = "enabled"
+		}
+		changes = append(changes, status)
+	}
+
+	result := fmt.Sprintf("Task '%s' updated!\n- ID: %s\n- Changes: %s\n- Next Run: %s",
+		job.Name, job.ID, strings.Join(changes, ", "), formatTime(job.State.NextRunAtMs))
+
 	return result, nil
 }
 

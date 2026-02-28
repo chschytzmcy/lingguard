@@ -32,6 +32,11 @@ func (w *CronServiceWrapper) AddJob(name string, schedule cron.CronSchedule, mes
 	return w.Service.AddJob(name, schedule, message, opts...)
 }
 
+// UpdateJob 更新任务
+func (w *CronServiceWrapper) UpdateJob(id string, opts cron.UpdateJobOptions) (*cron.CronJob, error) {
+	return w.Service.UpdateJob(id, opts)
+}
+
 // RemoveJob 删除任务
 func (w *CronServiceWrapper) RemoveJob(id string) bool {
 	return w.Service.RemoveJob(id)

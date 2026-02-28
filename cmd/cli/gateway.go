@@ -169,6 +169,8 @@ func runGateway() error {
 						cronAdapter.OnCronJobCompleted(job, result, errMsg)
 					} else if eventType == "created" {
 						cronAdapter.OnCronJobCreated(job)
+					} else if eventType == "updated" {
+						cronAdapter.OnCronJobUpdated(job)
 					} else if eventType == "removed" {
 						cronAdapter.OnCronJobRemoved(job)
 					}
