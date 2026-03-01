@@ -688,36 +688,367 @@ if chatType == "p2p" {
 | **执行回调** | 函数闭包 | asyncio 协程 |
 | **时区支持** | ✅ time.LoadLocation | ✅ pytz |
 | **投递机制** | Channel.SendMessage | MessageBus.publish |
+| **补偿机制** | ✅ 定期检查 | ❌ |
 
-#### 4.4.2 核心实现
+#### 4.4.2 系统架构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Cron Service                                 │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                     Service Layer                            │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │   │
+│  │  │  Timer      │  │ Periodic    │  │  Store      │          │   │
+│  │  │  Scheduler  │  │  Checker    │  │  Manager    │          │   │
+│  │  │ (AfterFunc) │  │ (1min tick) │  │ (JSON file) │          │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘          │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│                              ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                     Job Execution                            │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │   │
+│  │  │ JobCallback │  │ EventNotify │  │ DeliverMsg  │          │   │
+│  │  │ (Agent)     │  │ (Web UI)    │  │ (Channel)   │          │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘          │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 4.4.3 核心数据结构
+
+**调度类型 (ScheduleKind)：**
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| `at` | 一次性任务，指定时间执行 | `at:2026-03-01T10:00:00` |
+| `every` | 重复任务，指定间隔执行（最小1分钟） | `every:1h30m` |
+| `cron` | Cron 表达式（5字段） | `cron:0 9 * * *` |
+
+**CronJob 结构：**
+
+```go
+type CronJob struct {
+    ID             string       // 8字符 UUID
+    Name           string       // 任务名称
+    Enabled        bool         // 启用状态
+    Schedule       CronSchedule // 调度定义
+    Payload        CronPayload  // 执行内容
+    State          CronJobState // 运行时状态
+    CreatedAtMs    int64        // 创建时间
+    UpdatedAtMs    int64        // 更新时间
+    DeleteAfterRun bool         // 执行后删除（一次性任务）
+}
+
+type CronSchedule struct {
+    Kind    ScheduleKind // at/every/cron
+    AtMs    int64        // at: 执行时间戳（毫秒）
+    EveryMs int64        // every: 间隔时间（毫秒）
+    Expr    string       // cron: 表达式
+    TZ      string       // 时区（如 Asia/Shanghai）
+}
+
+type CronPayload struct {
+    Kind         PayloadKind // agent_turn/system_event
+    Message      string      // 任务消息
+    Execute      bool        // true=执行Agent，false=仅通知
+    Deliver      bool        // 是否投递到渠道
+    Channel      string      // 投递渠道（如 feishu）
+    To           string      // 投递目标（用户ID）
+    SourceTaskID string      // 关联的源任务ID
+}
+
+type CronJobState struct {
+    NextRunAtMs  int64     // 下次执行时间
+    LastRunAtMs  int64     // 上次执行时间
+    LastStatus   JobStatus // ok/error/skipped
+    LastError    string    // 错误信息
+    LastResponse string    // 执行响应
+}
+```
+
+#### 4.4.4 双层调度机制
+
+LingGuard 使用 **Timer + Periodic Check** 双层调度机制，确保系统休眠后不错过任务：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      双层调度机制                                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 第一层：Timer 调度（精确）                                    │   │
+│  │                                                             │   │
+│  │  armTimer() ──▶ time.AfterFunc(delay, onTimer)             │   │
+│  │                     │                                       │   │
+│  │                     ▼                                       │   │
+│  │               执行到期任务                                   │   │
+│  │               更新 NextRunAtMs                              │   │
+│  │               重新 armTimer()                               │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 第二层：Periodic Check（补偿）                               │   │
+│  │                                                             │   │
+│  │  time.NewTicker(1min) ──▶ checkAndExecuteDueJobs()         │   │
+│  │                              │                              │   │
+│  │                              ▼                              │   │
+│  │                    检查是否有 NextRunAtMs <= now            │   │
+│  │                    如果有，执行补偿                          │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  场景：系统休眠后恢复，Timer 可能错过触发点                         │
+│        Periodic Check 会补偿执行错过的任务                          │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**核心实现：**
 
 ```go
 // internal/cron/service.go
 
 type Service struct {
-    storePath string
-    onJob     JobCallback  // 任务执行回调
-    store     *CronStore
-    timer     *time.Timer
-    running   bool
+    storePath   string
+    onJob       JobCallback      // 任务执行回调
+    onEvent     EventCallback    // 事件回调（任务看板）
+    mu          sync.RWMutex
+    store       *CronStore
+    timer       *time.Timer      // 第一层：精确调度
+    checkTicker *time.Ticker     // 第二层：补偿检查
+    running     bool
+    stopChan    chan struct{}
 }
 
-// 任务执行回调类型
-type JobCallback func(job *CronJob) (string, error)
+// 设置定时器（第一层）
+func (s *Service) armTimer() {
+    nextWake := s.getNextWakeMs()  // 获取最早的下次执行时间
+    if nextWake == 0 || !s.running {
+        return
+    }
+    
+    delay := time.Duration(nextWake-nowMs()) * time.Millisecond
+    s.timer = time.AfterFunc(delay, s.onTimer)
+}
 
-// 添加任务
-func (s *Service) AddJob(name string, schedule CronSchedule, message string, opts ...JobOption) (*CronJob, error)
+// 定时器触发
+func (s *Service) onTimer() {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    
+    now := nowMs()
+    for _, job := range s.store.Jobs {
+        if job.Enabled && job.State.NextRunAtMs > 0 && now >= job.State.NextRunAtMs {
+            s.executeJob(job)
+        }
+    }
+    
+    s.saveStore()
+    s.armTimer()  // 重新设置下次触发
+}
 
-// 调度类型
-type ScheduleKind string
-const (
-    ScheduleKindAt    ScheduleKind = "at"    // 一次性任务
-    ScheduleKindEvery ScheduleKind = "every" // 重复任务
-    ScheduleKindCron  ScheduleKind = "cron"  // cron 表达式
-)
+// 补偿检查（第二层）- 每分钟执行
+func (s *Service) checkAndExecuteDueJobs() {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    
+    now := nowMs()
+    var dueJobs []*CronJob
+    
+    for _, job := range s.store.Jobs {
+        if job.Enabled && job.State.NextRunAtMs > 0 && now >= job.State.NextRunAtMs {
+            dueJobs = append(dueJobs, job)
+        }
+    }
+    
+    if len(dueJobs) > 0 {
+        for _, job := range dueJobs {
+            s.executeJob(job)
+        }
+        s.saveStore()
+        s.armTimer()
+    }
+}
 ```
 
-#### 4.4.3 Gateway 集成
+#### 4.4.5 任务生命周期
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      CronJob 生命周期                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐      │
+│  │ Created  │───▶│ Scheduled│───▶│ Executing│───▶│ Completed│      │
+│  │          │    │ (等待)   │    │ (运行中) │    │ (更新)   │      │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘      │
+│       │               │               │               │            │
+│       │               │               │               │            │
+│       ▼               ▼               ▼               ▼            │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐      │
+│  │ 分配ID   │    │计算下次  │    │onEvent   │    │更新State │      │
+│  │ 设置默认 │    │执行时间  │    │(before)  │    │NextRun   │      │
+│  │ 选项     │    │          │    │调用回调  │    │LastStatus│      │
+│  │          │    │          │    │更新状态  │    │onEvent   │      │
+│  │          │    │          │    │          │    │(after)   │      │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘      │
+│                                                                     │
+│  特殊处理：                                                         │
+│  - at 类型 + DeleteAfterRun: 执行后删除任务                         │
+│  - at 类型 + !DeleteAfterRun: 执行后禁用任务                        │
+│  - every/cron 类型: 计算下次执行时间，继续调度                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**任务执行流程：**
+
+```go
+func (s *Service) executeJob(job *CronJob) {
+    startMs := nowMs()
+    
+    // 1. 执行前回调
+    if s.onEvent != nil {
+        s.onEvent(job, "before", "", "")
+    }
+    
+    // 2. 执行任务回调
+    var response string
+    var err error
+    if s.onJob != nil {
+        response, err = s.onJob(job)
+    }
+    
+    // 3. 更新状态
+    if err != nil {
+        job.State.LastStatus = JobStatusError
+        job.State.LastError = err.Error()
+    } else {
+        job.State.LastStatus = JobStatusOK
+        job.State.LastResponse = response
+    }
+    job.State.LastRunAtMs = startMs
+    
+    // 4. 处理调度更新
+    if job.Schedule.Kind == ScheduleKindAt {
+        if job.DeleteAfterRun {
+            s.store.Jobs = removeJob(s.store.Jobs, job.ID)  // 删除
+        } else {
+            job.Enabled = false  // 禁用
+            job.State.NextRunAtMs = 0
+        }
+    } else {
+        job.State.NextRunAtMs = computeNextRun(&job.Schedule, nowMs())  // 计算下次
+    }
+    
+    // 5. 执行后回调
+    if s.onEvent != nil {
+        s.onEvent(job, "after", response, errMsg)
+    }
+}
+```
+
+#### 4.4.6 事件回调系统
+
+Cron Service 支持两种回调，用于不同的集成场景：
+
+| 回调类型 | 签名 | 用途 |
+|----------|------|------|
+| `JobCallback` | `func(job *CronJob) (string, error)` | 执行任务逻辑 |
+| `EventCallback` | `func(job *CronJob, eventType, result, errMsg string)` | 事件通知 |
+
+**事件类型：**
+
+| eventType | 触发时机 | 用途 |
+|-----------|----------|------|
+| `created` | 任务创建 | 任务看板新增条目 |
+| `updated` | 任务更新 | 任务看板刷新 |
+| `removed` | 任务删除 | 任务看板移除 |
+| `before` | 执行前 | 任务看板显示运行中 |
+| `after` | 执行后 | 任务看板显示完成/失败 |
+
+#### 4.4.7 工具接口 (CronTool)
+
+Agent 可以通过 `cron` 工具管理定时任务：
+
+```go
+// internal/tools/cron.go
+
+func (t *CronTool) Parameters() map[string]interface{} {
+    return map[string]interface{}{
+        "type": "object",
+        "properties": map[string]interface{}{
+            "action": {
+                "enum": []string{"list", "add", "update", "remove", "enable", "disable"},
+            },
+            "name":     {"type": "string"},  // 任务名称
+            "schedule": {"type": "string"},  // 时间格式
+            "message":  {"type": "string"},  // 任务内容
+            "job_id":   {"type": "string"},  // 任务ID
+            "timezone": {"type": "string"},  // 时区
+            "execute":  {"type": "boolean"}, // 执行模式
+            "enabled":  {"type": "boolean"}, // 启用状态
+        },
+        "required": []string{"action"},
+    }
+}
+```
+
+**Schedule 格式解析：**
+
+```go
+func parseSchedule(s string, tz string) (*cron.CronSchedule, error) {
+    parts := strings.SplitN(s, ":", 2)
+    kind, value := parts[0], parts[1]
+    
+    switch kind {
+    case "every":
+        duration, _ := time.ParseDuration(value)  // 如 "1h30m"
+        return &CronSchedule{Kind: Every, EveryMs: duration.Milliseconds()}
+        
+    case "at":
+        t, _ := utils.ParseTime(value)  // 如 "2026-03-01T10:00:00"
+        return &CronSchedule{Kind: At, AtMs: t.UnixMilli()}
+        
+    case "cron":
+        return &CronSchedule{Kind: Cron, Expr: value, TZ: tz}  // 如 "0 9 * * *"
+    }
+}
+```
+
+#### 4.4.8 任务选项 (JobOption)
+
+```go
+// 设置投递渠道
+func WithDeliver(channel, to string) JobOption {
+    return func(j *CronJob) {
+        j.Payload.Deliver = true
+        j.Payload.Channel = channel
+        j.Payload.To = to
+    }
+}
+
+// 执行后删除
+func WithDeleteAfterRun() JobOption {
+    return func(j *CronJob) {
+        j.DeleteAfterRun = true
+    }
+}
+
+// 关联源任务
+func WithSourceTaskID(taskID string) JobOption {
+    return func(j *CronJob) {
+        j.Payload.SourceTaskID = taskID
+    }
+}
+
+// 设置执行模式
+func WithExecute(execute bool) JobOption {
+    return func(j *CronJob) {
+        j.Payload.Execute = execute
+    }
+}
+```
+
+#### 4.4.9 Gateway 集成
 
 ```go
 // cmd/cli/gateway.go
@@ -736,9 +1067,50 @@ onJob := func(job *cron.CronJob) (string, error) {
 }
 
 cronService := cron.NewService(storePath, onJob)
+cronService.SetEventCallback(func(job *cron.CronJob, eventType, result, errMsg string) {
+    // 推送事件到任务看板
+    taskBoard.Broadcast(cronEvent{Job: job, Type: eventType, Result: result, Error: errMsg})
+})
 cronService.Start()
 ```
 
+#### 4.4.10 存储格式
+
+```json
+// ~/.lingguard/cron/jobs.json
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "abc12345",
+      "name": "早间简报",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "payload": {
+        "kind": "agent_turn",
+        "message": "生成今日简报",
+        "execute": true,
+        "deliver": true,
+        "channel": "feishu",
+        "to": "ou_xxx"
+      },
+      "state": {
+        "nextRunAtMs": 1740790800000,
+        "lastRunAtMs": 1740704400000,
+        "lastStatus": "ok",
+        "lastResponse": "今日简报已生成..."
+      },
+      "createdAtMs": 1740600000000,
+      "updatedAtMs": 1740704400000,
+      "deleteAfterRun": false
+    }
+  ]
+}
+```
 ### 4.5 子代理系统 (Subagent)
 
 #### 4.5.1 与 nanobot 的差异

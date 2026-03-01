@@ -377,14 +377,22 @@ func createCronJobCallback(ag *agent.Agent, mgr *channels.Manager) cron.JobCallb
 		if job.Payload.Deliver && job.Payload.Channel != "" && job.Payload.To != "" {
 			var content string
 			if job.Payload.Execute {
-				// 执行模式：显示任务名和执行结果
-				content = fmt.Sprintf("⏰ **%s**\n\n%s", job.Name, result)
+				if err != nil {
+					// 执行失败：通知用户失败原因
+					content = fmt.Sprintf("❌ **%s** 执行失败\n\n**错误信息**：%s\n\n**原始任务**：%s", job.Name, err.Error(), job.Payload.Message)
+				} else if result == "" {
+					// 执行成功但结果为空
+					content = fmt.Sprintf("⚠️ **%s** 执行完成（无返回结果）\n\n**原始任务**：%s", job.Name, job.Payload.Message)
+				} else {
+					// 执行成功：显示任务名和执行结果
+					content = fmt.Sprintf("✅ **%s**\n\n%s", job.Name, result)
+				}
 			} else {
 				// 纯通知模式：显示任务名和预设消息
 				content = fmt.Sprintf("⏰ **%s**\n\n%s", job.Name, job.Payload.Message)
 			}
 
-			logger.Info("Sending cron notification", "channel", job.Payload.Channel, "to", job.Payload.To, "execute", job.Payload.Execute)
+			logger.Info("Sending cron notification", "channel", job.Payload.Channel, "to", job.Payload.To, "execute", job.Payload.Execute, "hasError", err != nil)
 			if sendErr := mgr.SendMessage(job.Payload.Channel, job.Payload.To, content); sendErr != nil {
 				logger.Error("Failed to send cron notification", "error", sendErr)
 			} else {
