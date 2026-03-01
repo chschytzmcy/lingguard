@@ -9,6 +9,7 @@ import (
 
 	"github.com/lingguard/internal/trace"
 	"github.com/lingguard/pkg/logger"
+	"github.com/lingguard/pkg/validation"
 )
 
 // CronDeleter 删除 cron 任务的接口
@@ -100,6 +101,17 @@ func (h *HTTPHandler) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var task Task
 	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
 		h.writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// 验证任务
+	v := validation.New()
+	if !v.Validate(&task) {
+		w.WriteHeader(http.StatusBadRequest)
+		h.writeJSON(w, map[string]interface{}{
+			"error":   "validation failed",
+			"details": v.Errors,
+		})
 		return
 	}
 

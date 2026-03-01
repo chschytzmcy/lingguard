@@ -65,8 +65,14 @@ func (r *Registry) GetToolDefinitions() []map[string]interface{} {
 	return defs
 }
 
-// Execute 执行工具
+// Execute 执行工具（注意：此方法不传递 context，建议使用带 context 的版本）
+// Deprecated: Use ExecuteWithContext instead
 func (r *Registry) Execute(name string, params json.RawMessage) (string, error) {
+	return r.ExecuteWithContext(context.Background(), name, params)
+}
+
+// ExecuteWithContext 执行工具（带 context）
+func (r *Registry) ExecuteWithContext(ctx context.Context, name string, params json.RawMessage) (string, error) {
 	r.mu.RLock()
 	t, ok := r.tools[name]
 	r.mu.RUnlock()
@@ -75,5 +81,5 @@ func (r *Registry) Execute(name string, params json.RawMessage) (string, error) 
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
 
-	return t.Execute(context.Background(), params)
+	return t.Execute(ctx, params)
 }

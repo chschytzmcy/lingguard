@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/lingguard/internal/config"
 	"github.com/lingguard/internal/taskboard/web"
 	"github.com/lingguard/internal/trace"
 	"github.com/lingguard/pkg/logger"
@@ -18,6 +20,7 @@ type Server struct {
 	handler      *HTTPHandler
 	traceHandler *TraceHTTPHandler
 	server       *http.Server
+	corsConfig   *config.CORSConfig
 }
 
 // NewServer 创建 Web UI 服务器
@@ -36,6 +39,27 @@ func NewServerWithTrace(host string, port int, service *Service, traceService *t
 		port:         port,
 		handler:      NewHTTPHandler(service),
 		traceHandler: NewTraceHTTPHandler(traceService),
+	}
+}
+
+// NewServerWithConfig 创建带配置的 Web UI 服务器
+func NewServerWithConfig(host string, port int, service *Service, corsConfig *config.CORSConfig) *Server {
+	return &Server{
+		host:       host,
+		port:       port,
+		handler:    NewHTTPHandler(service),
+		corsConfig: corsConfig,
+	}
+}
+
+// NewServerWithTraceAndConfig 创建带追踪功能和配置的 Web UI 服务器
+func NewServerWithTraceAndConfig(host string, port int, service *Service, traceService *trace.Service, corsConfig *config.CORSConfig) *Server {
+	return &Server{
+		host:         host,
+		port:         port,
+		handler:      NewHTTPHandler(service),
+		traceHandler: NewTraceHTTPHandler(traceService),
+		corsConfig:   corsConfig,
 	}
 }
 
@@ -71,6 +95,8 @@ func (s *Server) Start() error {
 	// CORS 中间件
 	handler := s.corsMiddleware(mux)
 
+	// Request ID 中间件
+	handler = s.requestIDMiddleware(handler)
 	// 创建服务器
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
 	s.server = &http.Server{
@@ -114,14 +140,62 @@ func (s *Server) SetCronDeleter(deleter CronDeleter) {
 // corsMiddleware CORS 中间件
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		// 获取允许的源
+		allowedOrigin := "*"
+		if s.corsConfig != nil && len(s.corsConfig.AllowedOrigins) > 0 {
+			origin := r.Header.Get("Origin")
+			for _, o := range s.corsConfig.AllowedOrigins {
+				if o == "*" || o == origin {
+					if o == "*" {
+						allowedOrigin = "*"
+					} else {
+						allowedOrigin = origin
+					}
+					break
+				}
+			}
+		}
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+
+		// 设置允许的方法
+		allowedMethods := "GET, POST, PUT, DELETE, OPTIONS"
+		if s.corsConfig != nil && s.corsConfig.AllowedMethods != "" {
+			allowedMethods = s.corsConfig.AllowedMethods
+		}
+		w.Header().Set("Access-Control-Allow-Methods", allowedMethods)
+
+		// 设置允许的头
+		allowedHeaders := "Content-Type, Authorization"
+		if s.corsConfig != nil && s.corsConfig.AllowedHeaders != "" {
+			allowedHeaders = s.corsConfig.AllowedHeaders
+		}
+		w.Header().Set("Access-Control-Allow-Headers", allowedHeaders)
+
+		// 设置是否允许凭证
+		if s.corsConfig != nil && s.corsConfig.AllowCredentials {
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requestIDMiddleware Request ID 中间件
+func (s *Server) requestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 获取或生成 request id
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = uuid.New().String()[:8]
+		}
+
+		// 设置响应头
+		w.Header().Set("X-Request-ID", requestID)
 
 		next.ServeHTTP(w, r)
 	})

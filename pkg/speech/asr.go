@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/lingguard/pkg/httpclient"
 	"github.com/lingguard/pkg/logger"
 )
 
@@ -98,9 +99,7 @@ func NewQwenASR(cfg *Config) (*QwenASR, error) {
 			Language: cfg.Language,
 			Timeout:  timeout,
 		},
-		client: &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		},
+		client:  httpclient.WithTimeout(time.Duration(timeout) * time.Second),
 		apiBase: apiBase,
 	}, nil
 }

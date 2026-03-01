@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/pkg/logger"
@@ -147,6 +149,7 @@ func (c *MCPClient) Connect(ctx context.Context) error {
 	}
 	stdout, err := c.cmd.StdoutPipe()
 	if err != nil {
+		stdin.Close() // 清理已创建的 pipe
 		return fmt.Errorf("create stdout pipe: %w", err)
 	}
 	// Redirect stderr to parent stderr for logging
@@ -154,9 +157,10 @@ func (c *MCPClient) Connect(ctx context.Context) error {
 
 	// Start the process
 	if err := c.cmd.Start(); err != nil {
+		stdin.Close()
+		stdout.Close()
 		return fmt.Errorf("start MCP server: %w", err)
 	}
-
 	// Create JSON-RPC client
 	c.stdin = stdin
 	c.stdout = bufio.NewReader(stdout)
@@ -179,14 +183,31 @@ func (c *MCPClient) Connect(ctx context.Context) error {
 	return nil
 }
 
-// Close closes the MCP client
+// Close closes the MCP client with graceful shutdown
 func (c *MCPClient) Close() error {
 	if c.stdin != nil {
 		c.stdin.Close()
 	}
 	if c.cmd != nil && c.cmd.Process != nil {
-		c.cmd.Process.Kill()
-		c.cmd.Wait()
+		// 使用优雅终止 + 超时机制
+		done := make(chan error, 1)
+		go func() { done <- c.cmd.Wait() }()
+
+		// 先尝试 SIGTERM 优雅终止
+		c.cmd.Process.Signal(syscall.SIGTERM)
+
+		select {
+		case <-time.After(5 * time.Second):
+			// 超时后强制终止
+			logger.Warn("MCP server did not stop gracefully, killing", "server", c.serverName)
+			c.cmd.Process.Kill()
+			<-done // 等待进程结束
+		case err := <-done:
+			// 进程正常退出
+			if err != nil {
+				logger.Debug("MCP server exited with error", "server", c.serverName, "error", err)
+			}
+		}
 	}
 	return nil
 }

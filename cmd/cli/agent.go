@@ -25,6 +25,11 @@ var agentCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		if err := cfg.Validate(); err != nil {
+			fmt.Fprintf(os.Stderr, "Config validation failed: %v\n", err)
+			os.Exit(1)
+		}
+
 		ag, err := createAgent(cfg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating agent: %v\n", err)

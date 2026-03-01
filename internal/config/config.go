@@ -3,8 +3,10 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Config 主配置结构
@@ -19,6 +21,7 @@ type Config struct {
 	Cron      *CronConfig               `json:"cron,omitempty"`      // 定时任务配置
 	Heartbeat *HeartbeatConfig          `json:"heartbeat,omitempty"` // 心跳服务配置
 	WebUI     *WebUIConfig              `json:"webui,omitempty"`     // Web UI 配置
+	Timeouts  *TimeoutsConfig           `json:"timeouts,omitempty"`  // 超时配置
 }
 
 // ProviderConfig 提供商配置
@@ -42,6 +45,7 @@ type AgentsConfig struct {
 	MemoryWindow       int           `json:"memoryWindow"`                 // 历史消息窗口大小
 	SystemPrompt       string        `json:"systemPrompt"`
 	MemoryConfig       *MemoryConfig `json:"memory,omitempty"` // 记忆系统配置
+	SessionLockTimeout int           `json:"sessionLockTimeout,omitempty"` // 会话锁超时（分钟），默认 10
 	// 注：Temperature 和 MaxTokens 从 Provider 配置中获取，避免重复
 	// 注：Skills 目录固定在 ~/.lingguard/skills/
 }
@@ -273,6 +277,7 @@ type WebUIConfig struct {
 	Host      string           `json:"host,omitempty"`      // 主机，默认 127.0.0.1
 	TaskBoard *TaskBoardConfig `json:"taskboard,omitempty"` // 任务看板配置
 	Trace     *TraceConfig     `json:"trace,omitempty"`     // LLM 追踪配置
+	CORS      *CORSConfig      `json:"cors,omitempty"`      // CORS 配置
 }
 
 // TaskBoardConfig 任务看板功能配置
@@ -289,6 +294,29 @@ type TraceConfig struct {
 	DBPath  string `json:"dbPath,omitempty"`  // 数据库路径，默认 ~/.lingguard/webui/trace.db
 }
 
+// CORSConfig CORS 配置
+type CORSConfig struct {
+	AllowedOrigins   []string `json:"allowedOrigins,omitempty"`   // 允许的源，默认 ["*"]
+	AllowedMethods   string   `json:"allowedMethods,omitempty"`   // 允许的方法，默认 "GET, POST, PUT, DELETE, OPTIONS"
+	AllowedHeaders   string   `json:"allowedHeaders,omitempty"`   // 允许的头，默认 "Content-Type, Authorization"
+	AllowCredentials bool     `json:"allowCredentials,omitempty"` // 是否允许凭证
+}
+
+// TimeoutsConfig 超时配置
+type TimeoutsConfig struct {
+	// HTTP 客户端超时 (秒)
+	HTTPDefault    int `json:"httpDefault,omitempty"`    // 默认 HTTP 超时，默认 30
+	HTTPLong       int `json:"httpLong,omitempty"`       // 长时间操作 HTTP 超时，默认 60
+	HTTPExtraLong  int `json:"httpExtraLong,omitempty"`  // 超长时间操作 HTTP 超时，默认 120
+	// 轮询间隔 (毫秒)
+	PollInterval   int `json:"pollInterval,omitempty"`   // 状态轮询间隔，默认 3000 (3s)
+	PollShort      int `json:"pollShort,omitempty"`      // 短轮询间隔，默认 100 (100ms)
+	// 重试配置
+	RetryInterval  int `json:"retryInterval,omitempty"`  // 重试间隔 (毫秒)，默认 5000 (5s)
+	RetryShort     int `json:"retryShort,omitempty"`     // 短重试间隔 (毫秒)，默认 100 (100ms)
+	// 其他超时
+	SessionLock    int `json:"sessionLock,omitempty"`    // 会话锁超时 (分钟)，默认 10
+}
 // DefaultConfig 默认配置
 func DefaultConfig() *Config {
 	return &Config{
@@ -309,6 +337,7 @@ func DefaultConfig() *Config {
 				AutoCapture:        true,
 				CaptureMaxChars:    500,
 			},
+			SessionLockTimeout: 10, // 10 分钟
 		},
 		Channels: ChannelsConfig{},
 		Tools: ToolsConfig{
@@ -345,6 +374,16 @@ func DefaultConfig() *Config {
 				Enabled: true,
 				DBPath:  "~/.lingguard/webui/trace.db",
 			},
+		},
+		Timeouts: &TimeoutsConfig{
+			HTTPDefault:   30,
+			HTTPLong:      60,
+			HTTPExtraLong: 120,
+			PollInterval:  3000,
+			PollShort:     100,
+			RetryInterval: 5000,
+			RetryShort:    100,
+			SessionLock:   10,
 		},
 	}
 }
@@ -388,4 +427,119 @@ func expandPath(path string) string {
 		return filepath.Join(home, path[1:])
 	}
 	return path
+}
+
+// Validate 验证配置
+func (c *Config) Validate() error {
+	var errors []string
+
+	// 验证 Providers
+	if len(c.Providers) == 0 {
+		errors = append(errors, "至少需要配置一个 provider")
+	} else {
+		for name, p := range c.Providers {
+			if p.APIKey == "" {
+				errors = append(errors, fmt.Sprintf("provider '%s' 缺少 apiKey", name))
+			}
+			if p.Timeout < 0 {
+				errors = append(errors, fmt.Sprintf("provider '%s' timeout 不能为负数", name))
+			}
+		}
+	}
+
+	// 验证 Agents
+	if c.Agents.Provider == "" {
+		errors = append(errors, "agents.provider 不能为空")
+	} else if _, ok := c.Providers[c.Agents.Provider]; !ok {
+		errors = append(errors, fmt.Sprintf("agents.provider '%s' 未在 providers 中定义", c.Agents.Provider))
+	}
+	if c.Agents.MultimodalProvider != "" {
+		if _, ok := c.Providers[c.Agents.MultimodalProvider]; !ok {
+			errors = append(errors, fmt.Sprintf("agents.multimodalProvider '%s' 未在 providers 中定义", c.Agents.MultimodalProvider))
+		}
+	}
+	if c.Agents.MaxToolIterations < 0 {
+		errors = append(errors, "agents.maxToolIterations 不能为负数")
+	}
+	if c.Agents.MemoryWindow < 0 {
+		errors = append(errors, "agents.memoryWindow 不能为负数")
+	}
+	if c.Agents.SessionLockTimeout < 0 {
+		errors = append(errors, "agents.sessionLockTimeout 不能为负数")
+	}
+
+	// 验证 Memory 配置
+	if c.Agents.MemoryConfig != nil && c.Agents.MemoryConfig.Enabled {
+		if c.Agents.MemoryConfig.RecentDays < 0 {
+			errors = append(errors, "agents.memory.recentDays 不能为负数")
+		}
+		if c.Agents.MemoryConfig.MaxHistoryLines < 0 {
+			errors = append(errors, "agents.memory.maxHistoryLines 不能为负数")
+		}
+		if c.Agents.MemoryConfig.AutoRecallTopK < 0 {
+			errors = append(errors, "agents.memory.autoRecallTopK 不能为负数")
+		}
+		if c.Agents.MemoryConfig.CaptureMaxChars < 0 {
+			errors = append(errors, "agents.memory.captureMaxChars 不能为负数")
+		}
+	}
+
+	// 验证 Channels
+	if c.Channels.Feishu != nil && c.Channels.Feishu.Enabled {
+		if c.Channels.Feishu.AppID == "" {
+			errors = append(errors, "channels.feishu.appId 不能为空")
+		}
+		if c.Channels.Feishu.AppSecret == "" {
+			errors = append(errors, "channels.feishu.appSecret 不能为空")
+		}
+	}
+	if c.Channels.QQ != nil && c.Channels.QQ.Enabled {
+		if c.Channels.QQ.AppID == "" {
+			errors = append(errors, "channels.qq.appId 不能为空")
+		}
+		if c.Channels.QQ.Secret == "" {
+			errors = append(errors, "channels.qq.secret 不能为空")
+		}
+	}
+
+	// 验证 Timeouts
+	if c.Timeouts != nil {
+		if c.Timeouts.HTTPDefault < 0 {
+			errors = append(errors, "timeouts.httpDefault 不能为负数")
+		}
+		if c.Timeouts.HTTPLong < 0 {
+			errors = append(errors, "timeouts.httpLong 不能为负数")
+		}
+		if c.Timeouts.HTTPExtraLong < 0 {
+			errors = append(errors, "timeouts.httpExtraLong 不能为负数")
+		}
+		if c.Timeouts.PollInterval < 0 {
+			errors = append(errors, "timeouts.pollInterval 不能为负数")
+		}
+		if c.Timeouts.SessionLock < 0 {
+			errors = append(errors, "timeouts.sessionLock 不能为负数")
+		}
+	}
+
+	// 验证 WebUI
+	if c.WebUI != nil && c.WebUI.Enabled {
+		if c.WebUI.Port < 1 || c.WebUI.Port > 65535 {
+			errors = append(errors, "webui.port 必须在 1-65535 范围内")
+		}
+	}
+
+	// 验证 Logging
+	validLogLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+	if !validLogLevels[c.Logging.Level] {
+		errors = append(errors, fmt.Sprintf("logging.level '%s' 无效，必须是 debug/info/warn/error", c.Logging.Level))
+	}
+	validLogFormats := map[string]bool{"text": true, "json": true}
+	if !validLogFormats[c.Logging.Format] {
+		errors = append(errors, fmt.Sprintf("logging.format '%s' 无效，必须是 text/json", c.Logging.Format))
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("配置验证失败:\n  - %s", strings.Join(errors, "\n  - "))
+	}
+	return nil
 }

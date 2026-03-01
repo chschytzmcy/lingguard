@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
+
+	"github.com/lingguard/pkg/httpclient"
 )
 
 const (
@@ -62,9 +63,7 @@ func NewQwenReranker(cfg *RerankConfig) *QwenReranker {
 		apiKey:  cfg.APIKey,
 		apiBase: apiBase,
 		model:   model,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:  httpclient.Default(),
 	}
 }
 

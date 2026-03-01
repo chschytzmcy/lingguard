@@ -4,7 +4,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lingguard/pkg/httpclient"
 	"github.com/lingguard/pkg/logger"
 )
 
@@ -58,20 +58,11 @@ func NewMoltbookTool(apiKey, agentName string) *MoltbookTool {
 		agentName = "LingGuard"
 	}
 
-	// 创建 HTTP Transport，使用系统代理
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
-		Proxy:           http.ProxyFromEnvironment, // 使用系统代理设置
-	}
-
 	return &MoltbookTool{
-		apiKey:    apiKey,
-		agentName: agentName,
-		credPath:  credPath,
-		httpClient: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: transport,
-		},
+		apiKey:     apiKey,
+		agentName:  agentName,
+		credPath:   credPath,
+		httpClient: httpclient.Default(),
 	}
 }
 

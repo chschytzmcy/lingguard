@@ -264,6 +264,10 @@ func initCronService() (*config.Config, *cron.Service, error) {
 		return nil, nil, fmt.Errorf("load config: %w", err)
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("config validation: %w", err)
+	}
+
 	storePath := utils.ExpandHome("~/.lingguard/cron/jobs.json")
 	if cfg.Cron != nil && cfg.Cron.StorePath != "" {
 		storePath = utils.ExpandHome(cfg.Cron.StorePath)

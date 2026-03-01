@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lingguard/pkg/httpclient"
 	"github.com/lingguard/pkg/logger"
 )
 
@@ -134,9 +135,7 @@ func NewQwenTTS(cfg *Config) (*QwenTTS, error) {
 			Timeout:   timeout,
 			OutputDir: outputDir,
 		},
-		client: &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		},
+		client:    httpclient.WithTimeout(time.Duration(timeout) * time.Second),
 		apiBase:   apiBase,
 		outputDir: outputDir,
 	}, nil

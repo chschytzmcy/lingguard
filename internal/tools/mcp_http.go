@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/lingguard/internal/config"
+	"github.com/lingguard/pkg/httpclient"
 	"github.com/lingguard/pkg/logger"
 )
 
@@ -34,7 +34,7 @@ func NewMCPHTTPClient(serverName string, cfg config.MCPServerConfig) *MCPHTTPCli
 		serverName: serverName,
 		config:     cfg,
 		tools:      make(map[string]*MCPToolDefinition),
-		client:     &http.Client{Timeout: 60 * time.Second},
+		client:     httpclient.LongTimeout(),
 	}
 }
 
@@ -60,7 +60,19 @@ func (c *MCPHTTPClient) Connect(ctx context.Context) error {
 
 // Close closes the MCP HTTP client
 func (c *MCPHTTPClient) Close() error {
-	return nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// 关闭 idle 连接
+	if c.client != nil {
+		c.client.CloseIdleConnections()
+	}
+
+	// 清理会话
+	c.sessionID = ""
+
+	logger.Debug("MCP HTTP client closed", "server", c.serverName)
+return nil
 }
 
 // sendHTTPRequest sends a JSON-RPC request via HTTP

@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lingguard/pkg/httpclient"
 	"github.com/lingguard/pkg/logger"
 )
 
@@ -68,7 +69,7 @@ func NewOpenCodeClient(cfg *OpenCodeConfig) *OpenCodeClient {
 	}
 	return &OpenCodeClient{
 		baseURL:   strings.TrimSuffix(cfg.BaseURL, "/"),
-		client:    &http.Client{Timeout: cfg.Timeout},
+		client:    httpclient.WithTimeout(cfg.Timeout),
 		sessions:  make(map[string]*OpenCodeSession),
 		workspace: cfg.Workspace,
 	}

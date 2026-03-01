@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/lingguard/pkg/httpclient"
 )
 
 const (
@@ -52,9 +54,7 @@ func NewQwenEmbedding(cfg *Config) *QwenEmbedding {
 		apiBase:   apiBase,
 		model:     model,
 		dimension: dimension,
-		client: &http.Client{
-			Timeout: defaultTimeout,
-		},
+		client:    httpclient.Default(),
 	}
 }
 

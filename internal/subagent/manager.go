@@ -3,10 +3,12 @@ package subagent
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"sync"
 
 	"github.com/lingguard/internal/providers"
 	"github.com/lingguard/internal/tools"
+	"github.com/lingguard/pkg/logger"
 )
 
 // SubagentManager 子代理管理器
@@ -50,8 +52,13 @@ func (m *SubagentManager) Spawn(ctx context.Context, task, context string) (*Sub
 	m.tasks[sub.ID()] = sub
 	m.mu.Unlock()
 
-	// 在 goroutine 中执行
+	// 在 goroutine 中执行（添加 panic 恢复）
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("Subagent goroutine panic recovered", "error", r, "stack", string(debug.Stack()))
+			}
+		}()
 		sub.Run(ctx)
 
 		// 任务完成后发送通知
@@ -59,7 +66,8 @@ func (m *SubagentManager) Spawn(ctx context.Context, task, context string) (*Sub
 		case m.notify <- sub:
 			// 通知已发送
 		default:
-			// 通道满，丢弃通知（可考虑日志记录）
+			// 通道满，丢弃通知
+			logger.Warn("Subagent notify channel full, dropping notification", "subagentID", sub.ID())
 		}
 	}()
 

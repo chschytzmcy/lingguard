@@ -71,7 +71,7 @@ func NewService(cfg *Config, onHeartbeat AgentCallback) *Service {
 	return &Service{
 		config:      cfg,
 		onHeartbeat: onHeartbeat,
-		stopCh:      make(chan struct{}),
+		stopCh:      make(chan struct{}, 1), // 带缓冲，避免阻塞
 	}
 }
 

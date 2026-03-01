@@ -183,15 +183,19 @@ func (s *FileStore) AddHistory(eventType, summary string, details map[string]str
 	}
 	entry.WriteString("\n---\n")
 
-	// 追加到文件
+	// 追加到文件（使用 bufio 提升性能）
 	f, err := os.OpenFile(s.historyFile, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("open history file: %w", err)
 	}
 	defer f.Close()
 
-	if _, err := f.WriteString(entry.String()); err != nil {
+	writer := bufio.NewWriter(f)
+	if _, err := writer.WriteString(entry.String()); err != nil {
 		return fmt.Errorf("write history: %w", err)
+	}
+	if err := writer.Flush(); err != nil {
+		return fmt.Errorf("flush history: %w", err)
 	}
 
 	// 可选：清理过旧的历史

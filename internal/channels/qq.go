@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/lingguard/internal/config"
+	"github.com/lingguard/pkg/httpclient"
 	"github.com/lingguard/pkg/logger"
 	"github.com/lingguard/pkg/stream"
 )
@@ -154,7 +155,7 @@ func NewQQChannel(cfg *config.QQConfig, handler MessageHandler) *QQChannel {
 		cfg:        cfg,
 		handler:    handler,
 		allowMap:   allowMap,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: httpclient.Default(),
 	}
 	// 检查是否实现了流式处理器接口
 	if sh, ok := handler.(StreamingMessageHandler); ok {

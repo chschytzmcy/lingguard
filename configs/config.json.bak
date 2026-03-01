@@ -1,0 +1,155 @@
+{
+  "providers": {
+    "glm": {
+      "apiKey": "aa1d0dc2e27c4eaa80a9772536d2031c.BGqk7a4NgHcCPxXR",
+      "apiBase": "https://open.bigmodel.cn/api/anthropic",
+      "model": "glm-5",
+      "timeout": 120
+    },
+    "minimax": {
+      "apiKey": "sk-cp-xxxxxxxx",
+      "apiBase": "https://api.minimaxi.com/anthropic",
+      "model": "MiniMax-M2.5"
+    },
+    "qwen": {
+      "apiKey": "sk-791d6c7cc3094af99290577b709b47e6",
+      "model": "qwen3.5-plus"
+    },
+    "qwencoder": {
+      "apiKey": "sk-sp-fd7641e16e5042e9957c3b31423a54e3",
+      "apiBase": "https://coding.dashscope.aliyuncs.com/v1",
+      "model": "qwen3.5-plus"
+    }
+  },
+  "agents": {
+    "workspace": "/home/etsme/.lingguard/workspace",
+    "provider": "qwencoder",
+    "multimodalProvider": "qwencoder",
+    "maxToolIterations": 50,
+    "memoryWindow": 50,
+    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。",
+    "memory": {
+      "enabled": true,
+      "recentDays": 3,
+      "maxHistoryLines": 1000,
+      "autoRecall": true,
+      "autoRecallTopK": 3,
+      "autoRecallMinScore": 0.3,
+      "autoCapture": true,
+      "captureMaxChars": 500,
+      "vector": {
+        "enabled": true,
+        "embedding": {
+          "provider": "qwen",
+          "model": "text-embedding-v4",
+          "dimension": 1024
+        },
+        "search": {
+          "vectorWeight": 0.7,
+          "bm25Weight": 0.3,
+          "defaultTopK": 10,
+          "rerank": {
+            "enabled": true,
+            "provider": "qwen",
+            "model": "qwen3-vl-rerank"
+          }
+        }
+      }
+    }
+  },
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "appId": "cli_a904272b23b89cb3",
+      "appSecret": "9XxL2DnKzj82WTdPaKmzPj84btdqABya"
+    }
+  },
+  "tools": {
+    "restrictToWorkspace": false,
+    "websearch": {
+      "tavilyApiKey": "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",
+      "bochaApiKey": "sk-445f2765d1a8499db01a953b45b48ea8",
+      "maxResults": 5
+    },
+    "webfetch": {
+      "maxChars": 50000
+    },
+    "mcpServers": {
+      "filesystem": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "${workspace}"
+        ]
+      }
+    },
+    "opencode": {
+      "enabled": true,
+      "baseURL": "http://127.0.0.1:4096",
+      "timeout": 1200
+    },
+    "aigc": {
+      "enabled": true,
+      "provider": "qwen",
+      "textToImage": "wan2.6-t2i",
+      "textToVideo": "wan2.6-t2v",
+      "imageToVideo": "wan2.6-i2v-flash",
+      "videoToVideo": "wan2.6-r2v-flash",
+      "imageToVideoDuration": 15
+    },
+    "tts": {
+      "enabled": true,
+      "provider": "qwen",
+      "model": "qwen3-tts-flash",
+      "voice": "Cherry"
+    },
+    "moltbook": {
+      "enabled": false
+    },
+    "clawhub": {
+      "enabled": true,
+      "apiToken": "clh_CKXKedjx54pGqwUjQkaOdM9IQb3YjvbjjwSCqjM7zUw"
+    }
+  },
+  "storage": {
+    "type": "file",
+    "path": "/home/etsme/.lingguard/memory"
+  },
+  "logging": {
+    "level": "info",
+    "format": "text",
+    "output": "/home/etsme/.lingguard/logs/lingguard.log",
+    "maxSize": 10,
+    "maxAge": 7,
+    "maxBackups": 5,
+    "compress": false
+  },
+  "speech": {
+    "enabled": true,
+    "provider": "qwen",
+    "model": "qwen3-asr-flash",
+    "format": "opus",
+    "language": "zh",
+    "timeout": 60
+  },
+  "cron": {
+    "enabled": true,
+    "storePath": "/home/etsme/.lingguard/cron/jobs.json"
+  },
+  "webui": {
+    "enabled": true,
+    "port": 18989,
+    "host": "127.0.0.1",
+    "taskboard": {
+      "dbPath": "~/.lingguard/webui/taskboard.db",
+      "trackUserRequests": true,
+      "syncSubagent": true,
+      "syncCron": true
+    },
+    "trace": {
+      "enabled": true,
+      "dbPath": "~/.lingguard/webui/trace.db"
+    }
+  }
+}

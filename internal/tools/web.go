@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/lingguard/pkg/httpclient"
 )
 
 // searchParams 搜索参数
@@ -40,7 +42,7 @@ func NewWebSearchTool(tavilyAPIKey, bochaAPIKey string, maxResults int) *WebSear
 		tavilyAPIKey: tavilyAPIKey,
 		bochaAPIKey:  bochaAPIKey,
 		maxResults:   maxResults,
-		httpClient:   &http.Client{Timeout: 30 * time.Second},
+		httpClient:   httpclient.Default(),
 	}
 }
 
@@ -307,10 +309,9 @@ func NewWebFetchTool(maxChars int) *WebFetchTool {
 	}
 	return &WebFetchTool{
 		maxChars: maxChars,
-		httpClient: &http.Client{
-			Timeout:       30 * time.Second,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error { return nil },
-		},
+		httpClient: httpclient.CustomClient(30*time.Second, func(c *http.Client) {
+			c.CheckRedirect = func(req *http.Request, via []*http.Request) error { return nil }
+		}),
 	}
 }
 
@@ -363,13 +364,9 @@ func (t *WebFetchTool) Execute(ctx context.Context, params json.RawMessage) (str
 	}
 
 	// Validate URL
+	// Validate URL
 	if err := t.validateURL(p.URL); err != nil {
-		result := map[string]interface{}{
-			"error": fmt.Sprintf("URL validation failed: %v", err),
-			"url":   p.URL,
-		}
-		data, _ := json.Marshal(result)
-		return string(data), nil
+		return "", fmt.Errorf("URL validation failed: %w", err)
 	}
 
 	// Create request
@@ -383,12 +380,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, params json.RawMessage) (str
 
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
-		result := map[string]interface{}{
-			"error": err.Error(),
-			"url":   p.URL,
-		}
-		data, _ := json.Marshal(result)
-		return string(data), nil
+		return "", fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -396,14 +388,10 @@ func (t *WebFetchTool) Execute(ctx context.Context, params json.RawMessage) (str
 	finalURL := resp.Request.URL.String()
 
 	// Read body
+	// Read body
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(p.MaxChars*2)))
 	if err != nil {
-		result := map[string]interface{}{
-			"error": err.Error(),
-			"url":   p.URL,
-		}
-		data, _ := json.Marshal(result)
-		return string(data), nil
+		return "", fmt.Errorf("read response body: %w", err)
 	}
 
 	var text string

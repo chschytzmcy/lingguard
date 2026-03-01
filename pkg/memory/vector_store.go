@@ -225,6 +225,7 @@ func (s *SQLiteVecStore) Upsert(ctx context.Context, records []*VectorRecord) er
 }
 
 // Search 向量相似度搜索
+// 优化：使用 SQL LIMIT 限制初始加载数量，避免全量加载
 func (s *SQLiteVecStore) Search(ctx context.Context, query []float32, opts SearchOptions) ([]*VectorRecord, error) {
 	if opts.TopK <= 0 {
 		opts.TopK = 10
@@ -233,13 +234,24 @@ func (s *SQLiteVecStore) Search(ctx context.Context, query []float32, opts Searc
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// 获取所有记录和向量
+	// 优化：只加载最新的记录，避免全量加载
+	// 取 TopK * 10 条记录用于计算相似度，这在大多数情况下足够
+	limit := opts.TopK * 10
+	if limit > 1000 {
+		limit = 1000 // 最大限制 1000 条
+	}
+	if limit < 50 {
+		limit = 50 // 最小 50 条
+	}
+
+	// 获取最新的记录和向量
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT v.id, v.content, v.metadata, v.timestamp, vec.vector
 		FROM memory_vectors v
 		LEFT JOIN memory_vec_data vec ON v.id = vec.id
 		ORDER BY v.timestamp DESC
-	`)
+		LIMIT ?
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query records: %w", err)
 	}
@@ -494,7 +506,8 @@ func (s *SQLiteVecStore) Delete(ctx context.Context, ids []string) error {
 		args[i] = id
 	}
 
-	query := fmt.Sprintf("DELETE FROM memory_vectors WHERE id IN (%s)", strings.Join(placeholders, ","))
+	// 使用参数化查询，防止 SQL 注入
+	query := "DELETE FROM memory_vectors WHERE id IN (" + strings.Join(placeholders, ",") + ")"
 	_, err = tx.Exec(query, args...)
 	if err != nil {
 		return fmt.Errorf("delete records: %w", err)

@@ -283,6 +283,7 @@ func (s *HybridStore) AddMemory(category, content string) error {
 		s.bufferMu.Unlock()
 
 		// 3. 搜索向量数据库中的相似记忆
+		// 注意：这里不持有 bufferMu，避免死锁
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -503,8 +504,14 @@ func (s *HybridStore) flushBuffer() {
 		s.flushTimer = nil
 	}
 
-	// 异步生成向量并存储
+	// 异步生成向量并存储（添加 panic 恢复）
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("Vector flush goroutine panic recovered", "error", r)
+			}
+		}()
+
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
@@ -516,6 +523,7 @@ func (s *HybridStore) flushBuffer() {
 
 		vectors, err := s.embedding.EmbedBatch(ctx, texts)
 		if err != nil {
+			logger.Warn("Vector flush failed", "error", err)
 			return
 		}
 
@@ -527,7 +535,9 @@ func (s *HybridStore) flushBuffer() {
 		}
 
 		// 存储到向量数据库
-		s.vectorStore.Upsert(ctx, records)
+		if err := s.vectorStore.Upsert(ctx, records); err != nil {
+			logger.Warn("Vector upsert failed", "error", err)
+		}
 	}()
 }
 

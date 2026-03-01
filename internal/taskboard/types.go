@@ -8,13 +8,13 @@ import (
 // Task 看板任务
 type Task struct {
 	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
+	Title       string `json:"title" validate:"required,min=1,max=200"`
+	Description string `json:"description,omitempty" validate:"max=2000"`
 
 	// 状态管理
-	Status   TaskStatus `json:"status"`
-	Priority Priority   `json:"priority"`
-	Column   Column     `json:"column"`
+	Status   TaskStatus `json:"status" validate:"oneof=pending|running|completed|failed|cancelled"`
+	Priority Priority   `json:"priority" validate:"oneof=low|medium|high|urgent"`
+	Column   Column     `json:"column" validate:"oneof=backlog|todo|in_progress|done"`
 
 	// 分配
 	Assignee     string       `json:"assignee,omitempty"`

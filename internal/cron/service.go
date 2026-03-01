@@ -33,7 +33,7 @@ func NewService(storePath string, onJob JobCallback) *Service {
 	return &Service{
 		storePath: storePath,
 		onJob:     onJob,
-		stopChan:  make(chan struct{}),
+		stopChan:  make(chan struct{}, 1), // 带缓冲，避免阻塞
 	}
 }
 

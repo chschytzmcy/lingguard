@@ -116,8 +116,9 @@ func (s *Session) TryLockForProcessing() bool {
 	return false
 }
 
-// TryLockWithTimeout 尝试锁定会话，如果锁被持有超过 timeout 则强制释放
-// 用于处理长时间运行操作导致的会话阻塞
+// TryLockWithTimeout 尝试锁定会话，如果锁被持有超过 timeout 则返回 false
+// 注意：不再强制解锁，因为这违反 Go mutex 语义并可能导致数据竞争
+// 如果需要超时机制，应该在业务层实现取消逻辑
 func (s *Session) TryLockWithTimeout(timeout time.Duration) bool {
 	// 首先尝试正常获取锁
 	if s.processingMu.TryLock() {
@@ -127,19 +128,11 @@ func (s *Session) TryLockWithTimeout(timeout time.Duration) bool {
 		return true
 	}
 
-	// 如果锁被持有，检查是否超时
-	if s.lockedAt.IsZero() || time.Since(s.lockedAt) > timeout {
-		// 超时了，尝试强制释放并重新获取
-		// 注意：这是一个妥协方案，可能导致并发问题，但比完全阻塞好
-		logger.Warn("Session lock timeout, force releasing", "key", s.Key, "lockedAt", s.lockedAt, "timeout", timeout)
-		s.isProcessing = false
-		s.processingMu.Unlock()
-		if s.processingMu.TryLock() {
-			s.isProcessing = true
-			s.lockedAt = time.Now()
-			logger.Info("Session re-locked after timeout", "key", s.Key)
-			return true
-		}
+	// 检查是否超时，用于日志记录和监控
+	if !s.lockedAt.IsZero() && time.Since(s.lockedAt) > timeout {
+		logger.Warn("Session lock held longer than timeout", "key", s.Key, "lockedAt", s.lockedAt, "timeout", timeout, "duration", time.Since(s.lockedAt))
+		// 不再强制解锁，返回 false 让调用者决定如何处理
+		// 可以选择等待或返回错误给用户
 	}
 
 	logger.Warn("Session busy, lock failed", "key", s.Key, "lockedAt", s.lockedAt)

@@ -16,6 +16,7 @@ import (
 	"github.com/lingguard/internal/taskboard"
 	"github.com/lingguard/internal/tools"
 	"github.com/lingguard/internal/trace"
+	"github.com/lingguard/pkg/httpclient"
 	"github.com/lingguard/pkg/logger"
 	"github.com/lingguard/pkg/utils"
 	"github.com/spf13/cobra"
@@ -51,6 +52,11 @@ func runGateway() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	// 验证配置
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("config validation: %w", err)
+	}
+
 	// 初始化日志
 	logger.InitWithConfig(logger.Config{
 		Level:      cfg.Logging.Level,
@@ -61,6 +67,15 @@ func runGateway() error {
 		MaxBackups: cfg.Logging.MaxBackups,
 		Compress:   cfg.Logging.Compress,
 	})
+
+	// 初始化 HTTP 客户端池
+	if cfg.Timeouts != nil {
+		httpclient.Init(&httpclient.Config{
+			HTTPDefault:   time.Duration(cfg.Timeouts.HTTPDefault) * time.Second,
+			HTTPLong:      time.Duration(cfg.Timeouts.HTTPLong) * time.Second,
+			HTTPExtraLong: time.Duration(cfg.Timeouts.HTTPExtraLong) * time.Second,
+		})
+	}
 
 	// 创建 Agent（使用 AgentBuilder）
 	builder := NewAgentBuilder(cfg)
@@ -191,9 +206,9 @@ func runGateway() error {
 
 		// 如果启用了追踪服务，使用带追踪的服务器
 		if traceService != nil {
-			webUIServer = taskboard.NewServerWithTrace(host, port, taskboardService, traceService)
+			webUIServer = taskboard.NewServerWithTraceAndConfig(host, port, taskboardService, traceService, cfg.WebUI.CORS)
 		} else {
-			webUIServer = taskboard.NewServer(host, port, taskboardService)
+			webUIServer = taskboard.NewServerWithConfig(host, port, taskboardService, cfg.WebUI.CORS)
 		}
 
 		// 设置 cron 删除器，用于删除看板任务时同时删除 cron 任务
