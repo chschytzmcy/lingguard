@@ -6,11 +6,12 @@
 **LingGuard** - 一款基于Go语言的超轻量级个人AI智能助手
 
 ### 1.2 设计理念
-参考 [nanobot](https://github.com/HKUDS/nanobot) 项目的设计思想，打造一个：
-- **极简轻量**：核心代码控制在5000行以内
+参考 [nanobot](https://github.com/HKUDS/nanobot) 项目的设计思想，同时借鉴 [OpenClaw](https://github.com/openclaw/openclaw) 的语音交互能力，打造一个：
+- **极简轻量**：核心代码控制在合理范围内
 - **高性能**：充分利用Go的并发特性
 - **易扩展**：模块化设计，支持插件机制
 - **企业友好**：支持飞书、QQ 等即时通讯平台
+- **功能丰富**：集成 AIGC、TTS 等高级功能
 
 ### 1.3 核心特性
 
@@ -21,161 +22,290 @@
 | Provider自动匹配 | 根据模型名自动选择合适的 Provider |
 | 会话管理 | 内存会话管理，支持历史消息窗口 |
 | 技能系统 | 渐进式加载，按需注入技能内容 |
-| 记忆系统 | 持久化对话记忆和上下文管理 |
+| 记忆系统 | 持久化对话记忆和上下文管理（融合 nanobot + OpenClaw） |
 | 定时任务 | Cron 调度，支持消息投递 |
 | 子代理系统 | 后台异步执行复杂任务 |
 | 安全沙箱 | 工作空间限制和权限控制 |
 | 语音识别 | 飞书语音消息转文字（Qwen3-ASR） |
+| 语音合成 | 多音色中文 TTS（Qwen TTS） |
+| AIGC | 图像/视频生成（通义万相） |
 
 ---
 
-## 2. 与 nanobot 对比
+## 2. 架构对比分析
 
-### 2.1 基本定位
+本章节详细对比 LingGuard、nanobot 和 OpenClaw 三个项目的架构设计和功能差异。
 
-| 维度 | LingGuard (Go) | nanobot (Python) |
-|------|----------------|------------------|
-| **编程语言** | Go 1.23+ | Python 3 |
-| **代码量** | ~8,000 行 | ~3,700 行核心代码 |
-| **核心理念** | 极简、高性能、单二进制部署 | 超轻量级、易研究、易扩展 |
-| **部署方式** | 单二进制文件 | pip/uv/Docker |
-| **并发模型** | Goroutine | asyncio |
-| **内存占用** | ~20MB | ~100MB+ |
-| **启动速度** | 毫秒级 | 秒级 |
-| **类型安全** | 静态类型 | 动态类型 |
+### 2.1 项目定位对比
 
-### 2.2 渠道支持对比
+| 维度 | LingGuard (Go) | nanobot (Python) | OpenClaw (Python) |
+|------|----------------|------------------|-------------------|
+| **编程语言** | Go 1.23+ | Python 3 | Python 3 |
+| **代码量** | ~8,000 行 | ~3,700 行核心代码 | ~5,000 行 |
+| **核心理念** | 极简、高性能、单二进制部署 | 超轻量级、易研究、易扩展 | 开箱即用、语音优先 |
+| **部署方式** | 单二进制文件 | pip/uv/Docker | pip/Docker |
+| **并发模型** | Goroutine (CSP) | asyncio | asyncio |
+| **内存占用** | ~20MB | ~100MB+ | ~80MB+ |
+| **启动速度** | 毫秒级 | 秒级 | 秒级 |
+| **类型安全** | 静态类型 | 动态类型 | 动态类型 |
+| **目标用户** | 个人/企业开发者 | 研究者/开发者 | 终端用户/开发者 |
 
-| 渠道 | LingGuard | nanobot | 说明 |
-|------|:---------:|:-------:|------|
-| 飞书 | ✅ WebSocket 长连接 | ✅ | 两者都支持，无需公网IP |
-| QQ | ✅ 私聊 | ✅ 私聊 | 两者都支持 WebSocket |
-| Telegram | ❌ | ✅ 推荐 | nanobot 官方推荐 |
-| Discord | ❌ | ✅ | Socket Mode |
-| WhatsApp | ❌ | ✅ | 扫码登录 |
-| Slack | ❌ | ✅ | Socket Mode |
-| Email | ❌ | ✅ | IMAP/SMTP |
-| 钉钉 | ❌ | ✅ | Stream Mode |
-| Mochat | ❌ | ✅ | 自动配置 |
+### 2.2 整体架构对比
 
-**多渠道支持说明：**
-- ✅ **支持多类型同时运行**：可以同时配置飞书 + QQ 等不同类型的 channel
-- ❌ **不支持同类型多实例**：每种类型只能配置一个实例（如不能配置 2 个飞书 channel）
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          架构设计理念对比                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  LingGuard (Go)                    nanobot (Python)           OpenClaw     │
+│  ┌─────────────────┐              ┌─────────────────┐       ┌────────────┐ │
+│  │   CLI/Gateway   │              │   CLI/Gateway   │       │   CLI/Web  │ │
+│  └────────┬────────┘              └────────┬────────┘       └─────┬──────┘ │
+│           │                                │                       │        │
+│  ┌────────▼────────┐              ┌────────▼────────┐       ┌─────▼──────┐ │
+│  │  Channel Layer  │              │  Channel Layer  │       │  Channel   │ │
+│  │  (Feishu/QQ)    │              │  (9种渠道)       │       │ (Telegram) │ │
+│  └────────┬────────┘              └────────┬────────┘       └─────┬──────┘ │
+│           │                                │                       │        │
+│  ┌────────▼────────┐              ┌────────▼────────┐       ┌─────▼──────┐ │
+│  │   Agent Core    │              │   Agent Core    │       │ Agent Core │ │
+│  │  (goroutine)    │              │   (asyncio)     │       │  (asyncio) │ │
+│  └────────┬────────┘              └────────┬────────┘       └─────┬──────┘ │
+│           │                                │                       │        │
+│  ┌────────▼────────┐              ┌────────▼────────┐       ┌─────▼──────┐ │
+│  │ Provider Layer  │              │ Provider Layer  │       │  Provider  │ │
+│  │ (自动匹配)       │              │ (自动匹配)       │       │  (手动)    │ │
+│  └────────┬────────┘              └────────┬────────┘       └─────┬──────┘ │
+│           │                                │                       │        │
+│  ┌────────▼────────┐              ┌────────▼────────┐       ┌─────▼──────┐ │
+│  │  Tool Registry  │              │  Tool Registry  │       │   Tools    │ │
+│  │ (渐进式技能)     │              │ (一次性加载)     │       │  (基础)    │ │
+│  └─────────────────┘              └─────────────────┘       └────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-**nanobot 优势**: 渠道支持更丰富（9种 vs 2种）
-
-### 2.3 LLM 提供商对比
-
-| Provider | LingGuard | nanobot | 说明 |
-|----------|:---------:|:-------:|------|
-| OpenAI | ✅ | ✅ | GPT 系列 |
-| Anthropic | ✅ | ✅ | Claude 系列 |
-| OpenRouter | ✅ | ✅ 推荐 | 网关类型，访问所有模型 |
-| DeepSeek | ✅ | ✅ | 国产模型 |
-| Qwen/通义千问 | ✅ | ✅ | 阿里云 |
-| GLM/智谱 | ✅ | ✅ | 智谱 AI |
-| MiniMax | ✅ | ✅ | MiniMax |
-| Moonshot/Kimi | ✅ | ✅ | 月之暗面 |
-| Gemini | ✅ | ✅ | Google |
-| Groq | ✅ | ✅ + 语音转录 | 高速推理 |
-| vLLM | ✅ | ✅ | 本地部署 |
-| AiHubMix | ✅ | ✅ | API 网关 |
-| SiliconFlow | ❌ | ✅ | 硅基流动 |
-| OpenAI Codex (OAuth) | ❌ | ✅ | ChatGPT Plus/Pro |
-| GitHub Copilot (OAuth) | ❌ | ✅ | OAuth 登录 |
-| 自定义 OpenAI 兼容 | ✅ | ✅ | 任意兼容端点 |
-
-### 2.4 核心功能对比
-
-| 功能模块 | LingGuard | nanobot | 差异说明 |
-|----------|:---------:|:-------:|----------|
-| **核心功能** ||||
-| Agent Loop | ✅ | ✅ | 相同的循环迭代模式 |
-| 会话管理 | ✅ | ✅ | 内存 + 窗口管理 |
-| 记忆系统 | ✅ | ✅ | 相同的 MEMORY.md 方案 |
-| 工具系统 | ✅ | ✅ | Shell, File, Web 等 |
-| 技能系统 | ✅ | ✅ | LingGuard 支持渐进式加载 |
-| **高级功能** ||||
-| 定时任务 (Cron) | ✅ | ✅ | 相同的调度机制 |
-| 子代理 (Subagent) | ✅ | ✅ | 相同的后台任务模式 |
-| 流式响应 | ✅ | ✅ | 两者都支持实时输出 |
-| MCP (Stdio) | ✅ | ✅ | 子进程启动 |
-| MCP (HTTP) | ✅ | ✅ | HTTP/SSE 端点 |
-| Agent Social Network | ✅ Moltbook | ✅ Moltbook + ClawdChat | AI 社交网络 |
-| **独有功能** ||||
-| 渐进式技能加载 | ✅ 独有 | ❌ | 节省 Token |
-| 多模态支持 | ✅ 图片+视频 | 🚧 计划中 | 已实现 |
-| 独立多模态 Provider | ✅ 独有 | ❌ | 可配置独立模型 |
-| ClawHub 技能库 | ❌ | ✅ | 搜索安装技能 |
-| OAuth 登录 | ❌ | ✅ | Codex/Copilot |
-| 语音转写 | ✅ Qwen3-ASR | ✅ Groq Whisper | 都支持 |
-| 语音合成 (TTS) | ✅ Qwen TTS | ❌ | LingGuard 独有 |
-| AIGC 生成 | ✅ 图片+视频 | ❌ | LingGuard 独有 |
-| Docker 支持 | ❌ | ✅ | 官方镜像 |
-
-### 2.3 实现差异详解
+### 2.3 核心架构差异详解
 
 #### 2.3.1 并发模型
 
-| 方面 | LingGuard | nanobot |
-|------|-----------|---------|
-| **模型** | Goroutine (CSP) | asyncio (协程) |
-| **通信** | Channel | Queue/Event |
-| **同步** | sync.Mutex | asyncio.Lock |
-| **优势** | 真正并行，多核利用 | 单线程，简单直观 |
+| 方面 | LingGuard | nanobot | OpenClaw |
+|------|-----------|---------|----------|
+| **模型** | Goroutine (CSP) | asyncio (协程) | asyncio (协程) |
+| **通信** | Channel | Queue/Event | Queue |
+| **同步** | sync.Mutex | asyncio.Lock | asyncio.Lock |
+| **优势** | 真正并行，多核利用 | 单线程，简单直观 | 单线程，生态丰富 |
+| **子代理** | goroutine + channel | asyncio task | asyncio task |
 
 ```go
 // LingGuard: Goroutine + Channel
-go func() {
-    result := subagent.Run()
-    notifyChan <- result
-}()
+func (m *SubagentManager) Spawn(task string) *Subagent {
+    go func() {
+        result := sub.run()
+        m.notify <- sub  // 通过 channel 通知
+    }()
+}
 
-// nanobot: asyncio
-async def run_task():
-    result = await subagent.run()
+// nanobot/OpenClaw: asyncio
+async def spawn_task(task: str):
+    result = await sub.run()
     await notify_queue.put(result)
 ```
 
-#### 2.3.2 子代理系统
+#### 2.3.2 Agent 循环实现
 
-| 特性 | LingGuard | nanobot |
-|------|-----------|---------|
-| **并发模型** | goroutine | asyncio |
-| **通知机制** | Channel 轮询 | MessageBus 回调 |
-| **工具隔离** | 预配置白名单 | 运行时过滤 |
-| **结果获取** | 主动查询 (task_status) | 自动注入会话 |
+| 方面 | LingGuard | nanobot | OpenClaw |
+|------|-----------|---------|----------|
+| **循环实现** | for 循环 + break | while True + return | while True + return |
+| **工具执行** | 同步调用 | await 异步 | await 异步 |
+| **流式处理** | callback 函数 | async generator | async generator |
+| **最大迭代** | 20 (可配置) | 10 (可配置) | 10 |
+| **反思提示** | ✅ "Reflect on..." | ✅ | ❌ |
 
-#### 2.3.3 定时任务
+#### 2.3.3 会话管理
 
-| 特性 | LingGuard | nanobot |
-|------|-----------|---------|
-| **调度器** | robfig/cron | 自定义 timer |
-| **存储格式** | JSON | JSON |
-| **Cron 表达式** | ✅ 标准5字段 | ✅ 标准5字段 |
-| **消息投递** | Channel Manager | MessageBus |
-| **时区支持** | ✅ 支持 | ✅ 支持 |
+| 方面 | LingGuard | nanobot | OpenClaw |
+|------|-----------|---------|----------|
+| **存储位置** | 内存 + 文件持久化 | 内存 | 内存 + Redis 可选 |
+| **会话隔离** | SessionID + 锁 | SessionID | SessionID |
+| **锁机制** | sync.Mutex (每会话) | asyncio.Lock | 无独立锁 |
+| **超时释放** | ✅ 10分钟 | ✅ | ❌ |
+| **并发处理** | 不同会话并行 | 不同会话并行 | 串行处理 |
 
-#### 2.3.4 技能加载
+#### 2.3.4 Provider 匹配
 
-| 特性 | LingGuard | nanobot |
-|------|-----------|---------|
-| **加载方式** | 渐进式（摘要 → 完整） | 一次性加载 |
-| **工具触发** | skill 工具按需加载 | 自动注入 |
-| **目录支持** | 多目录（内置 + 用户） | 单目录 |
-| **依赖检查** | ✅ 支持 | ✅ 支持 |
+| 方面 | LingGuard | nanobot | OpenClaw |
+|------|-----------|---------|----------|
+| **匹配策略** | 自动 (5级优先级) | 自动 (5级优先级) | 手动配置 |
+| **API格式判断** | apiBase 包含 /anthropic | 相同 | N/A |
+| **配置继承** | ✅ 统一配置 | ✅ | ❌ 分散配置 |
+| **网关支持** | ✅ OpenRouter 等 | ✅ | ❌ |
 
-#### 2.3.5 流式响应
+### 2.4 渠道支持对比
 
-| 特性 | LingGuard | nanobot |
-|------|-----------|---------|
-| **飞书更新** | PatchMessage API | 相同 |
-| **节流机制** | 500ms 间隔 | 相同 |
-| **工具状态** | EventToolStart/End | 相同 |
+| 渠道 | LingGuard | nanobot | OpenClaw | 说明 |
+|------|:---------:|:-------:|:--------:|------|
+| 飞书 | ✅ WebSocket | ✅ | ❌ | LingGuard/nanobot 无需公网IP |
+| QQ | ✅ 私聊 | ✅ 私聊 | ❌ | WebSocket 长连接 |
+| Telegram | ❌ | ✅ 推荐 | ✅ 推荐 | nanobot/OpenClaw 推荐 |
+| Discord | ❌ | ✅ | ❌ | Socket Mode |
+| WhatsApp | ❌ | ✅ | ❌ | 扫码登录 |
+| Slack | ❌ | ✅ | ❌ | Socket Mode |
+| Email | ❌ | ✅ | ❌ | IMAP/SMTP |
+| 钉钉 | ❌ | ✅ | ❌ | Stream Mode |
+
+**LingGuard 渠道设计**:
+- ✅ 支持多类型同时运行（飞书 + QQ）
+- ❌ 不支持同类型多实例（如 2 个飞书 channel）
+
+### 2.5 LLM 提供商对比
+
+| Provider | LingGuard | nanobot | OpenClaw |
+|----------|:---------:|:-------:|:--------:|
+| OpenAI | ✅ | ✅ | ✅ |
+| Anthropic | ✅ | ✅ | ✅ |
+| OpenRouter | ✅ | ✅ 推荐 | ❌ |
+| DeepSeek | ✅ | ✅ | ✅ |
+| Qwen | ✅ | ✅ | ✅ |
+| GLM | ✅ | ✅ | ❌ |
+| MiniMax | ✅ | ✅ | ❌ |
+| Moonshot | ✅ | ✅ | ❌ |
+| Gemini | ✅ | ✅ | ❌ |
+| Groq | ✅ | ✅ + Whisper | ✅ |
+| vLLM | ✅ | ✅ | ❌ |
+| OpenAI Codex (OAuth) | ❌ | ✅ | ❌ |
+| GitHub Copilot (OAuth) | ❌ | ✅ | ❌ |
+
+### 2.6 功能特性对比
+
+#### 2.6.1 核心功能
+
+| 功能 | LingGuard | nanobot | OpenClaw | 差异说明 |
+|------|:---------:|:-------:|:--------:|----------|
+| Agent Loop | ✅ | ✅ | ✅ | 相同的循环迭代模式 |
+| 会话管理 | ✅ + 锁 | ✅ | ✅ | LingGuard 有会话锁超时 |
+| 记忆系统 | ✅ 混合 | ✅ 文件 | ✅ 向量 | LingGuard 融合两者 |
+| 工具系统 | ✅ | ✅ | ✅ | Shell, File, Web 等 |
+| 技能系统 | ✅ 渐进式 | ✅ | ✅ | LingGuard 按需加载 |
+
+#### 2.6.2 高级功能
+
+| 功能 | LingGuard | nanobot | OpenClaw | 差异说明 |
+|------|:---------:|:-------:|:--------:|----------|
+| 定时任务 | ✅ robfig/cron | ✅ 自定义 | ❌ | 相同调度机制 |
+| 子代理 | ✅ goroutine | ✅ asyncio | ✅ asyncio | 并发模型不同 |
+| 流式响应 | ✅ | ✅ | ✅ | 两者都支持 |
+| MCP (Stdio) | ✅ | ✅ | ❌ | 子进程启动 |
+| MCP (HTTP) | ✅ | ✅ | ❌ | HTTP/SSE 端点 |
+| Web UI | ✅ 任务看板 | ❌ | ❌ | LingGuard 独有 |
+| LLM 追踪 | ✅ | ❌ | ❌ | LingGuard 独有 |
+
+#### 2.6.3 独有功能对比
+
+| 功能 | LingGuard | nanobot | OpenClaw |
+|------|:---------:|:-------:|:--------:|
+| **LingGuard 独有** |||
+| 渐进式技能加载 | ✅ | ❌ | ❌ |
+| 独立多模态 Provider | ✅ | ❌ | ❌ |
+| 语音合成 (TTS) | ✅ Qwen TTS | ❌ | ✅ OpenAI/Edge |
+| AIGC 生成 | ✅ 图片+视频 | ❌ | ✅ DALL-E |
+| 视频生视频 (V2V) | ✅ | ❌ | ❌ |
+| 任务看板 Web UI | ✅ | ❌ | ❌ |
+| LLM 调用追踪 | ✅ | ❌ | ❌ |
+| **nanobot 独有** |||
+| ClawHub 技能库 | ❌ | ✅ | ❌ |
+| OAuth 登录 | ❌ | ✅ | ❌ |
+| Docker 官方镜像 | ❌ | ✅ | ✅ |
+| 9种渠道支持 | ❌ | ✅ | ❌ |
+| **OpenClaw 独有** |||
+| 开箱即用配置 | ❌ | ❌ | ✅ |
+| Telegram 推荐 | ❌ | ✅ | ✅ |
+
+### 2.7 记忆系统对比
+
+LingGuard 的记忆系统融合了 nanobot 的文件存储和 OpenClaw 的自动记忆功能：
+
+| 方面 | LingGuard | nanobot | OpenClaw |
+|------|-----------|---------|----------|
+| **存储方式** | 文件 + 向量 | 文件 | 向量数据库 |
+| **长期记忆** | MEMORY.md | MEMORY.md | 向量存储 |
+| **事件日志** | HISTORY.md | 事件日志 | 无 |
+| **每日日志** | YYYY-MM-DD.md | 每日笔记 | 无 |
+| **检索方式** | grep + 向量搜索 | grep | 向量搜索 |
+| **自动召回** | ✅ | ❌ | ✅ |
+| **自动捕获** | ✅ 触发规则 | ❌ | ✅ LLM分析 |
+| **智能去重** | ✅ 三层去重 | ❌ | ✅ 相似度 |
+| **问句过滤** | ✅ | ❌ | ❌ |
+| **分类检测** | ✅ 自动分类 | ❌ | ❌ |
+
+### 2.8 语音能力对比
+
+| 方面 | LingGuard | nanobot | OpenClaw |
+|------|-----------|---------|----------|
+| **语音识别 (ASR)** | ✅ Qwen3-ASR | ✅ Groq Whisper | ✅ OpenAI Whisper |
+| **语音合成 (TTS)** | ✅ Qwen TTS (9种中文音色) | ❌ | ✅ OpenAI/Edge TTS |
+| **API 协议** | HTTP REST (OpenAI兼容) | HTTP REST | HTTP REST |
+| **飞书语音** | ✅ 自动转写 | ❌ | ❌ |
+| **配置继承** | ✅ 从 Provider 继承 | 单独配置 | 单独配置 |
+
+### 2.9 技能系统对比
+
+| 方面 | LingGuard | nanobot | OpenClaw |
+|------|-----------|---------|----------|
+| **加载方式** | 渐进式（摘要 → 完整） | 一次性加载 | 一次性加载 |
+| **工具触发** | skill 工具按需加载 | 自动注入 | 自动注入 |
+| **目录支持** | 多目录（内置 + 用户） | 单目录 | 单目录 |
+| **格式** | YAML frontmatter + MD | 相同 | 相同 |
+| **依赖检查** | ✅ | ✅ | ❌ |
+| **技能仓库** | ❌ | ✅ ClawHub | ❌ |
+
+### 2.10 部署方式对比
+
+| 方面 | LingGuard | nanobot | OpenClaw |
+|------|-----------|---------|----------|
+| **部署形式** | 单二进制 | pip/uv/Docker | pip/Docker |
+| **依赖管理** | 静态编译 | Python 环境 | Python 环境 |
+| **交叉编译** | ✅ 原生支持 | ❌ | ❌ |
+| **Docker 镜像** | ❌ | ✅ 官方 | ✅ |
+| **systemd 服务** | ✅ 内置脚本 | ✅ | ❌ |
+| **macOS launchd** | ✅ 内置脚本 | ❌ | ❌ |
+
+### 2.11 设计决策总结
+
+#### 为什么选择 Go？
+
+1. **单二进制部署**：无需运行时依赖，简化部署
+2. **低内存占用**：~20MB vs Python ~100MB+
+3. **快速启动**：毫秒级启动，适合边缘部署
+4. **真正的并发**：goroutine 实现真正的并行计算
+5. **静态类型**：编译期错误检查，更安全可靠
+
+#### 为什么借鉴 nanobot？
+
+1. **Provider 自动匹配**：根据模型名/API Key 自动选择
+2. **记忆文件方案**：MEMORY.md + HISTORY.md 简单有效
+3. **工具系统设计**：Tool 接口设计清晰
+4. **技能系统**：SKILL.md 格式易于扩展
+
+#### 为什么借鉴 OpenClaw？
+
+1. **自动记忆**：Auto-Recall 和 Auto-Capture 提升用户体验
+2. **语音交互**：TTS/ASR 集成参考
+3. **向量检索**：记忆的语义搜索能力
+
+#### LingGuard 的独特价值
+
+1. **渐进式技能加载**：节省 Token，按需加载
+2. **AIGC 全栈支持**：文生图/文生视频/图生视频/视频生视频
+3. **会话锁机制**：防止并发冲突，超时自动释放
+4. **中文 TTS**：9 种精选中文音色
+5. **任务看板**：Web UI 监控任务状态
+6. **LLM 追踪**：完整的调用链追踪
 
 ---
 
 ## 3. 系统架构
+
 
 ### 3.1 整体架构图
 
