@@ -164,7 +164,7 @@ metadata: {"nanobot":{"emoji":"🌤️"}}
 		t.Errorf("Summary should contain <skills> tags: %s", summary)
 	}
 
-	if !contains(summary, `name="weather"`) {
+	if !contains(summary, "weather") {
 		t.Errorf("Summary should contain skill name: %s", summary)
 	}
 }

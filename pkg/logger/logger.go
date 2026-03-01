@@ -39,6 +39,7 @@ type Config struct {
 	MaxAge     int    // 保留旧日志文件的最大天数，默认 7
 	MaxBackups int    // 保留的旧日志文件最大数量，默认 5
 	Compress   bool   // 是否压缩旧日志文件
+	Verbose    bool   // 详细模式，记录完整的请求/响应/结果
 }
 
 // Logger 日志器
@@ -164,7 +165,17 @@ func LLMRequest(provider, model string, req interface{}) {
 	fields := []interface{}{
 		"provider", provider,
 		"model", model,
-		"request", toJSON(req),
+	}
+	// 只在 verbose 模式下记录完整请求
+	if GetLogger().config.Verbose {
+		fields = append(fields, "request", toJSON(req))
+	} else {
+		// 简化模式：只记录消息数量
+		if m, ok := req.(map[string]interface{}); ok {
+			if msgs, ok := m["messages"].([]interface{}); ok {
+				fields = append(fields, "messages", len(msgs))
+			}
+		}
 	}
 	GetLogger().log(LevelInfo, "[LLM] Request", fields...)
 }
@@ -183,8 +194,11 @@ func LLMResponse(provider, model string, resp interface{}, duration time.Duratio
 		"model", model,
 		"duration_ms", duration.Milliseconds(),
 	}
-	if resp != nil {
-		fields = append(fields, "response", toJSON(resp))
+	// 只在 verbose 模式或错误时记录响应内容
+	if err != nil || GetLogger().config.Verbose {
+		if resp != nil {
+			fields = append(fields, "response", truncate(toJSON(resp), 500))
+		}
 	}
 	if err != nil {
 		fields = append(fields, "error", err.Error())
@@ -196,20 +210,25 @@ func LLMResponse(provider, model string, resp interface{}, duration time.Duratio
 // ToolCall 记录工具调用
 func ToolCall(toolName string, params interface{}, result string, duration time.Duration, err error) {
 	level := LevelInfo
-	msg := "[Tool] Call"
+	msg := "[Tool] Call tool=" + toolName
 	if err != nil {
 		level = LevelError
-		msg = "[Tool] Call Error"
+		msg = "[Tool] Call Error tool=" + toolName
 	}
 
 	fields := []interface{}{
-		"tool", toolName,
-		"params", toJSON(params),
+		"params", truncate(toJSON(params), 100),
 		"duration_ms", duration.Milliseconds(),
-		"result", truncate(result, 500),
+	}
+	// 只在 verbose 模式或错误时记录完整结果
+	if err != nil || GetLogger().config.Verbose {
+		fields = append(fields, "result", truncate(result, 200))
+	} else {
+		// 简化模式：只记录结果长度
+		fields = append(fields, "result_len", len(result))
 	}
 	if err != nil {
-		fields = append(fields, "error", err.Error())
+		fields = append(fields, "error", truncate(err.Error(), 200))
 	}
 
 	GetLogger().log(level, msg, fields...)

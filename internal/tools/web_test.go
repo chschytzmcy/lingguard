@@ -78,22 +78,11 @@ func TestWebFetchTool_InvalidURL(t *testing.T) {
 	}
 	paramsJSON, _ := json.Marshal(testParams)
 
-	result, err := tool.Execute(ctx, paramsJSON)
-	if err != nil {
-		t.Fatalf("Execute failed: %v", err)
+	_, err := tool.Execute(ctx, paramsJSON)
+	if err == nil {
+		t.Fatal("Expected error for invalid URL scheme")
 	}
-
-	// Should return error in JSON
-	var resultData map[string]interface{}
-	if err := json.Unmarshal([]byte(result), &resultData); err != nil {
-		t.Fatalf("Failed to parse result JSON: %v", err)
-	}
-
-	if errMsg, ok := resultData["error"]; ok {
-		t.Logf("Got expected error: %v", errMsg)
-	} else {
-		t.Error("Expected error for invalid URL scheme")
-	}
+	t.Logf("Got expected error: %v", err)
 }
 
 func TestWebFetchTool_JSONContent(t *testing.T) {

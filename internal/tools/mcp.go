@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -17,7 +18,6 @@ import (
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/pkg/logger"
 )
-
 // MCPToolWrapper wraps an MCP server tool as a native LingGuard Tool
 type MCPToolWrapper struct {
 	serverName   string
@@ -125,10 +125,79 @@ func expandArgs(args []string, workspace string) []string {
 	return result
 }
 
+// ensureNodeJS ensures Node.js (npm/npx) is installed
+// Returns error if installation fails
+func ensureNodeJS(ctx context.Context) error {
+	// Check if npx exists
+	if _, err := exec.LookPath("npx"); err == nil {
+		return nil // npx already installed
+	}
+
+	logger.Info("Node.js not found, attempting to install...")
+
+	// Detect OS and install Node.js
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "linux":
+		// Try apt first (Debian/Ubuntu)
+		if _, err := exec.LookPath("apt"); err == nil {
+			cmd = exec.CommandContext(ctx, "sudo", "bash", "-c",
+				"curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt install -y nodejs")
+		} else if _, err := exec.LookPath("yum"); err == nil {
+			// RHEL/CentOS/Fedora
+			cmd = exec.CommandContext(ctx, "sudo", "bash", "-c",
+				"curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - && yum install -y nodejs")
+		} else if _, err := exec.LookPath("pacman"); err == nil {
+			// Arch Linux
+			cmd = exec.CommandContext(ctx, "sudo", "pacman", "-S", "--noconfirm", "nodejs", "npm")
+		} else {
+			return fmt.Errorf("unsupported Linux distribution - please install Node.js manually")
+		}
+	case "darwin":
+		// macOS - try Homebrew
+		if _, err := exec.LookPath("brew"); err == nil {
+			cmd = exec.CommandContext(ctx, "brew", "install", "node")
+		} else {
+			return fmt.Errorf("Homebrew not found - please install Node.js manually")
+		}
+	default:
+		return fmt.Errorf("unsupported OS %s - please install Node.js manually", runtime.GOOS)
+	}
+
+	// Run installation
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install Node.js: %w", err)
+	}
+
+	// Verify installation
+	if _, err := exec.LookPath("npx"); err != nil {
+		return fmt.Errorf("Node.js installation completed but npx still not found")
+	}
+
+	logger.Info("Node.js installed successfully")
+	return nil
+}
+
+// requiresNodeJS checks if the command requires Node.js (npx/npm)
+func requiresNodeJS(command string) bool {
+	return command == "npx" || command == "npm"
+}
+
 // Connect connects to the MCP server
 func (c *MCPClient) Connect(ctx context.Context) error {
 	if c.config.Command == "" {
 		return fmt.Errorf("MCP server '%s': no command configured", c.serverName)
+	}
+
+	// Ensure Node.js is installed if command requires it (npx/npm)
+	if requiresNodeJS(c.config.Command) {
+		if err := ensureNodeJS(ctx); err != nil {
+			return fmt.Errorf("MCP server '%s' requires Node.js: %w", c.serverName, err)
+		}
 	}
 
 	// Create command

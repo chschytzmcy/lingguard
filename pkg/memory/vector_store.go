@@ -71,7 +71,7 @@ func NewSQLiteVecStore(cfg *VectorStoreConfig, emb embedding.Model, reranker Rer
 	}
 
 	// 打开数据库
-	db, err := sql.Open("sqlite3", cfg.DatabasePath)
+	db, err := sql.Open("sqlite", cfg.DatabasePath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}

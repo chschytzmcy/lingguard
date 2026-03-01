@@ -5,7 +5,7 @@ import (
 )
 
 func TestCodingSkillParsing(t *testing.T) {
-	loader := NewLoader([]string{"../../skills/builtin"}, "")
+	loader := NewLoader([]string{"../../skills"}, "")
 
 	skills, err := loader.ListSkills()
 	if err != nil {

@@ -867,10 +867,10 @@ func (t *OpenCodeTool) Execute(ctx context.Context, params json.RawMessage) (str
 		p.Agent = "build"
 	}
 
-	// If OpenCode is disabled, return native tools prompt
-	if !t.config.Enabled {
+	// If OpenCode is disabled or not configured, return native tools prompt
+	if t.config == nil || !t.config.Enabled {
 		logger.Debug("OpenCode is disabled, using native tools")
-		return fmt.Sprintf("⚠️ OpenCode 服务已禁用，请使用原生工具完成任务：\n\n**任务**: %s\n\n请使用以下原生工具：\n- file 工具：读取、编辑、写入文件\n- shell 工具：执行命令、编译、测试\n- workspace 工具：查看工作目录\n\n工作目录: %s", p.Task, t.config.Workspace), nil
+		return fmt.Sprintf("⚠️ OpenCode 服务已禁用，请使用原生工具完成任务：\n\n**任务**: %s\n\n请使用以下原生工具：\n- file 工具：读取、编辑、写入文件\n- shell 工具：执行命令、编译、测试\n- workspace 工具：查看工作目录\n\n工作目录: %s", p.Task, t.getWorkspace()), nil
 	}
 
 	// Check server health, try to start if not available
@@ -1098,4 +1098,12 @@ func (t *OpenCodeTool) SetBaseURL(url string) {
 // GetClient returns the underlying OpenCode client
 func (t *OpenCodeTool) GetClient() *OpenCodeClient {
 	return t.client
+}
+
+// getWorkspace safely returns the workspace path
+func (t *OpenCodeTool) getWorkspace() string {
+	if t.config != nil {
+		return t.config.Workspace
+	}
+	return ""
 }

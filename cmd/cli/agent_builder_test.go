@@ -34,7 +34,7 @@ func TestAgentBuilder_OpenCodeTool(t *testing.T) {
 	}
 
 	// Check if opencode tool is registered by checking tool definitions
-	tools := ag.GetToolDefinitions()
+	tools := ag.ToolRegistry().GetToolDefinitions()
 	var hasOpenCode bool
 	for _, tool := range tools {
 		name := tool["function"].(map[string]interface{})["name"].(string)

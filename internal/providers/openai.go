@@ -2,12 +2,10 @@ package providers
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -137,41 +135,6 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *llm.Request) (<-chan l
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	// DEBUG: 将请求体写入文件以供检查
-	debugFile := fmt.Sprintf("/tmp/llm_request_%d.json", time.Now().UnixNano())
-	if err := os.WriteFile(debugFile, reqBody, 0644); err == nil {
-		fmt.Printf("[DEBUG] Request body written to: %s\n", debugFile)
-	}
-
-	// DEBUG: 检查每个消息的 content 字段
-	for i, msg := range req.Messages {
-		// 尝试找到消息在 JSON 中的位置
-		msgStart := bytes.Index(reqBody, []byte(fmt.Sprintf(`{"role":"%s"`, msg.Role)))
-		if msgStart >= 0 {
-			// 找到 content 字段
-			contentStart := bytes.Index(reqBody[msgStart:], []byte(`"content":`))
-			if contentStart >= 0 {
-				contentStart += msgStart + 10 // skip "content":
-				// 找到 content 的值开始位置
-				for contentStart < len(reqBody) && (reqBody[contentStart] == ' ' || reqBody[contentStart] == '\n') {
-					contentStart++
-				}
-				if contentStart < len(reqBody) {
-					firstChar := reqBody[contentStart]
-					contentType := "unknown"
-					if firstChar == '"' {
-						contentType = "string"
-					} else if firstChar == '[' {
-						contentType = "array"
-					} else if firstChar == '{' {
-						contentType = "OBJECT!"
-					}
-					fmt.Printf("[DEBUG] Message[%d] role=%s content type in JSON: %s (first char: %c)\n",
-						i, msg.Role, contentType, firstChar)
-				}
-			}
-		}
-	}
 
 	logger.Debug("Stream request body", "body", string(reqBody))
 
