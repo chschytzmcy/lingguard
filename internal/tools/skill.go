@@ -32,14 +32,17 @@ func (t *SkillTool) Description() string {
 	return `**必须使用**：加载指定技能的完整指令。
 
 触发条件（必须先调用此工具）：
+- 图像/视频生成：生成图片、画图、生成视频、图生视频
+- 网络搜索：搜索信息、查询资料
 - coding 任务：编写、编辑、分析、优化代码
 - git 操作：下载代码、上传代码、git clone、git push
 - 代码审查：review 代码
 - 文件操作：读写文件
 - 系统操作：执行系统命令
+- 定时任务：创建、管理定时任务
 
 调用方式：skill --name <技能名>
-可用技能：coding, git-workflow, code-review, file, system
+常用技能：aigc, web, coding, git-workflow, code-review, file, system, cron
 
 返回完整的技能指令，包含具体操作步骤和示例。`
 }
