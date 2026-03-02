@@ -25,9 +25,18 @@ func (t *TaskTool) Name() string { return "task" }
 func (t *TaskTool) Description() string {
 	return `Launch a background task to perform work asynchronously.
 
+**适用场景**：长时间运行的独立任务，如：
+- 复杂的代码重构
+- 大规模文件处理
+- 长时间的数据分析
+
+**不适用场景**（请直接调用对应工具）：
+- 图像/视频生成：直接调用 aigc 工具
+- 网络搜索：直接调用 web_search 工具
+- 简单的代码编写：直接回复用户
+
 This tool creates a subagent that works on a specific task in the background.
 The subagent has access to file and shell tools but cannot create more subagents.
-Use this for tasks that can be done independently without blocking the main conversation.
 
 Returns a task_id that can be used with task_status tool to check progress and get results.`
 }
