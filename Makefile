@@ -16,6 +16,17 @@ LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_
 # 安装配置
 PREFIX ?= $(HOME)/.local
 
+# 自动检测操作系统
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+    OS := linux
+    SERVICE_MGR := systemd
+endif
+ifeq ($(UNAME_S),Darwin)
+    OS := macos
+    SERVICE_MGR := launchd
+endif
+
 # 默认目标
 all: build
 
@@ -52,12 +63,17 @@ test-coverage:
 # 测试（基准测试）
 test-bench:
 	go test -bench=. -benchmem ./...
-# 安装到系统（包括 systemd 服务和配置）
+# 安装到系统（包括服务和配置）
 install: build
-	@echo "安装 LingGuard..."
+	@echo "安装 LingGuard ($(OS) - $(SERVICE_MGR))..."
 	PREFIX=$(PREFIX) bash scripts/install.sh
+ifeq ($(SERVICE_MGR),systemd)
+	@echo "重启 systemd 服务..."
 	systemctl --user daemon-reload
 	systemctl --user restart lingguard.service
+else ifeq ($(SERVICE_MGR),launchd)
+	@echo "✓ macOS launchd 服务已由 install.sh 处理"
+endif
 
 # 卸载
 uninstall:
@@ -207,6 +223,8 @@ lint:
 help:
 	@echo "LingGuard - 个人 AI 助手"
 	@echo ""
+	@echo "当前系统: $(OS) (服务管理: $(SERVICE_MGR))"
+	@echo ""
 	@echo "构建命令:"
 	@echo "  make build              - 构建项目（输出到当前目录）"
 	@echo "  make run                - 构建并运行"
@@ -230,7 +248,7 @@ help:
 	@echo "  make package-windows-arm64 - Windows ARM64"
 	@echo ""
 	@echo "安装命令:"
-	@echo "  make install            - 完整安装（二进制 + 配置 + systemd 服务）"
+	@echo "  make install            - 完整安装（二进制 + 配置 + 服务）"
 	@echo "  make install-bin        - 仅安装二进制文件到 $(PREFIX)/bin"
 	@echo "  make uninstall          - 卸载"
 	@echo ""

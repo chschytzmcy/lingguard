@@ -177,15 +177,19 @@ if [ "$PLATFORM" = "macos" ]; then
             sed "s|{{BIN}}|${PREFIX}/bin/lingguard|g" \
             > "${PLIST_DIR}/com.lingguard.plist"
 
+        # 卸载旧服务（如果存在）
+        launchctl unload "${PLIST_DIR}/com.lingguard.plist" 2>/dev/null || true
+
+        # 加载服务
+        launchctl load "${PLIST_DIR}/com.lingguard.plist"
+
+        # 启动服务
+        launchctl kickstart -k "gui/$(id -u)/com.lingguard" 2>/dev/null || true
+
         if [ "$IS_UPDATE" = "true" ]; then
-            launchctl unload "${PLIST_DIR}/com.lingguard.plist" 2>/dev/null || true
-            launchctl load "${PLIST_DIR}/com.lingguard.plist"
             echo "  ✓ 已重启 launchd 服务"
         else
-            echo "  ✓ 已安装 launchd 服务"
-            echo ""
-            echo "启动服务:"
-            echo "  launchctl load ${PLIST_DIR}/com.lingguard.plist"
+            echo "  ✓ 已安装并启动 launchd 服务"
         fi
     else
         echo "  ! scripts/com.lingguard.plist 不存在，跳过"
@@ -267,6 +271,11 @@ if [ "$PLATFORM" = "linux" ]; then
         echo "  systemctl --user stop lingguard      # 停止服务"
         echo "  journalctl --user -u lingguard -f    # 查看日志"
     fi
+elif [ "$PLATFORM" = "macos" ]; then
+    echo "  launchctl list | grep lingguard                    # 查看状态"
+    echo "  launchctl kickstart -k gui/\$(id -u)/com.lingguard  # 重启服务"
+    echo "  launchctl stop com.lingguard                       # 停止服务"
+    echo "  tail -f ~/.lingguard/logs/lingguard.log            # 查看日志"
 fi
 echo ""
 echo "其他命令:"
