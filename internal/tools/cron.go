@@ -289,6 +289,8 @@ func (t *CronTool) updateJob(id, name, scheduleStr, message, timezone string, en
 
 func (t *CronTool) IsDangerous() bool { return false }
 
+func (t *CronTool) ShouldLoadByDefault() bool { return false }
+
 // parseSchedule 解析调度字符串
 func parseSchedule(s string, tz string) (*cron.CronSchedule, error) {
 	parts := strings.SplitN(s, ":", 2)

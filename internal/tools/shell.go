@@ -28,7 +28,7 @@ func NewShellTool(workspaceMgr *WorkspaceManager, sandboxed bool) *ShellTool {
 func (t *ShellTool) Name() string { return "shell" }
 
 func (t *ShellTool) Description() string {
-	return "Execute shell commands. Use with caution."
+	return ""
 }
 
 func (t *ShellTool) Parameters() map[string]interface{} {
@@ -96,6 +96,8 @@ func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (string
 }
 
 func (t *ShellTool) IsDangerous() bool { return true }
+
+func (t *ShellTool) ShouldLoadByDefault() bool { return false }
 
 // 危险命令黑名单模式（参考 nanobot）
 var dangerousPatterns = []string{

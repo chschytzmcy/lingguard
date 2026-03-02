@@ -82,6 +82,8 @@ func (t *TaskTool) Execute(ctx context.Context, params json.RawMessage) (string,
 
 func (t *TaskTool) IsDangerous() bool { return false }
 
+func (t *TaskTool) ShouldLoadByDefault() bool { return true }
+
 // TaskStatusTool 任务状态查询工具
 type TaskStatusTool struct {
 	manager *SubagentManager
@@ -182,6 +184,8 @@ func (t *TaskStatusTool) getTaskStatus(taskID string) (string, error) {
 }
 
 func (t *TaskStatusTool) IsDangerous() bool { return false }
+
+func (t *TaskStatusTool) ShouldLoadByDefault() bool { return true }
 
 // 确保实现了 Tool 接口
 var _ tools.Tool = (*TaskTool)(nil)

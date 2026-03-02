@@ -28,12 +28,17 @@ func TestShellToolBasic(t *testing.T) {
 		t.Errorf("Expected name=shell, got %s", tool.Name())
 	}
 
-	if tool.Description() == "" {
-		t.Error("Description should not be empty")
+	// Description is empty for skills-based tools (loaded via skill tool)
+	if tool.Description() != "" {
+		t.Errorf("Description should be empty for skill-based tools, got: %s", tool.Description())
 	}
 
 	if !tool.IsDangerous() {
 		t.Error("Shell tool should be dangerous")
+	}
+
+	if tool.ShouldLoadByDefault() {
+		t.Error("Shell tool should not load by default (loaded via skill)")
 	}
 
 	params := tool.Parameters()
@@ -114,12 +119,16 @@ func TestFileToolBasic(t *testing.T) {
 		t.Errorf("Expected name=file, got %s", tool.Name())
 	}
 
-	if tool.Description() == "" {
-		t.Error("Description should not be empty")
+	if tool.Description() != "" {
+		t.Errorf("Description should be empty for skill-based tools, got: %s", tool.Description())
 	}
 
 	if !tool.IsDangerous() {
 		t.Error("File tool should be dangerous")
+	}
+
+	if tool.ShouldLoadByDefault() {
+		t.Error("File tool should not load by default (loaded via skill)")
 	}
 }
 
@@ -230,9 +239,11 @@ func TestRegistry(t *testing.T) {
 
 	shellTool := NewShellTool(mgr, false)
 	fileTool := NewFileTool(mgr, false)
+	workspaceTool := NewWorkspaceTool(mgr)
 
 	registry.Register(shellTool)
 	registry.Register(fileTool)
+	registry.Register(workspaceTool)
 
 	// 测试 Get
 	tl, ok := registry.Get("shell")
@@ -245,14 +256,14 @@ func TestRegistry(t *testing.T) {
 
 	// 测试 List
 	tools := registry.List()
-	if len(tools) != 2 {
-		t.Errorf("Expected 2 tools, got %d", len(tools))
+	if len(tools) != 3 {
+		t.Errorf("Expected 3 tools, got %d", len(tools))
 	}
 
-	// 测试 GetToolDefinitions
+	// 测试 GetToolDefinitions - 只返回 ShouldLoadByDefault=true 的工具
 	defs := registry.GetToolDefinitions()
-	if len(defs) != 2 {
-		t.Errorf("Expected 2 definitions, got %d", len(defs))
+	if len(defs) != 1 {
+		t.Errorf("Expected 1 definition (only workspace tool), got %d", len(defs))
 	}
 }
 

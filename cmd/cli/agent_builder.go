@@ -354,7 +354,7 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 	// 注册任务看板工具
 	if b.enableTaskboard && b.taskboardService != nil {
 		ag.SetTaskboard(b.taskboardService)
-		ag.RegisterTaskBoardTool()
+		// TaskBoard Tool removed - users view tasks via Web UI
 	}
 
 	return ag, nil

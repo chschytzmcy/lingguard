@@ -29,6 +29,8 @@ func (t *MockTool) Execute(ctx context.Context, params json.RawMessage) (string,
 }
 func (t *MockTool) IsDangerous() bool { return false }
 
+func (t *MockTool) ShouldLoadByDefault() bool { return true }
+
 // MockProvider 模拟 LLM 提供商
 type MockProvider struct {
 	name      string

@@ -162,7 +162,6 @@ func runGateway() error {
 
 			taskboardService = taskboard.NewService(store)
 			ag.SetTaskboard(taskboardService)
-			ag.RegisterTaskBoardTool()
 			logger.Info("TaskBoard service initialized", "db", dbPath)
 
 			// 同步定时任务到看板

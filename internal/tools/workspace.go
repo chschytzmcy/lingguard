@@ -85,6 +85,8 @@ func (t *WorkspaceTool) Execute(ctx context.Context, params json.RawMessage) (st
 
 func (t *WorkspaceTool) IsDangerous() bool { return false }
 
+func (t *WorkspaceTool) ShouldLoadByDefault() bool { return true }
+
 func (t *WorkspaceTool) pwd() (string, error) {
 	workspace := t.manager.Get()
 	return fmt.Sprintf("Workspace: %s", workspace), nil

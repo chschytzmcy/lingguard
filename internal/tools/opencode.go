@@ -1102,6 +1102,10 @@ func (t *OpenCodeTool) IsDangerous() bool {
 	return false
 }
 
+func (t *OpenCodeTool) ShouldLoadByDefault() bool {
+	return false
+}
+
 // SetBaseURL updates the base URL
 func (t *OpenCodeTool) SetBaseURL(url string) {
 	t.config.BaseURL = url

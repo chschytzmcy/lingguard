@@ -28,13 +28,8 @@ func TestCodingSkillParsing(t *testing.T) {
 	t.Logf("Coding skill found:")
 	t.Logf("  Name: %s", codingSkill.Name)
 	t.Logf("  Description: %s", codingSkill.Description)
-	t.Logf("  Always: %v", codingSkill.Always)
 	t.Logf("  Emoji: %s", codingSkill.Emoji)
 	t.Logf("  Available: %v", codingSkill.Available)
-
-	if !codingSkill.Always {
-		t.Error("coding skill should have Always=true")
-	}
 
 	// Test loading full content
 	fullSkill, err := loader.LoadSkill("coding")

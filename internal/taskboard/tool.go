@@ -158,6 +158,10 @@ func (t *TaskBoardTool) IsDangerous() bool {
 	return false
 }
 
+func (t *TaskBoardTool) ShouldLoadByDefault() bool {
+	return true
+}
+
 // Ensure interface implementation
 var _ tools.Tool = (*TaskBoardTool)(nil)
 

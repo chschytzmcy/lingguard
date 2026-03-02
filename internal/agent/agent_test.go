@@ -220,6 +220,8 @@ func (t *EchoTool) Execute(ctx context.Context, params json.RawMessage) (string,
 	return "Echo: " + p.Text, nil
 }
 
+func (t *EchoTool) ShouldLoadByDefault() bool { return true }
+
 func TestGenerateID(t *testing.T) {
 	id1 := generateID()
 	id2 := generateID()

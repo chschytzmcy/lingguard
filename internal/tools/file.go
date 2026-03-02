@@ -26,7 +26,7 @@ func NewFileTool(workspaceMgr *WorkspaceManager, sandboxed bool) *FileTool {
 func (t *FileTool) Name() string { return "file" }
 
 func (t *FileTool) Description() string {
-	return "Read, write, edit, and list files"
+	return ""
 }
 
 func (t *FileTool) Parameters() map[string]interface{} {
@@ -94,6 +94,8 @@ func (t *FileTool) Execute(ctx context.Context, params json.RawMessage) (string,
 }
 
 func (t *FileTool) IsDangerous() bool { return true }
+
+func (t *FileTool) ShouldLoadByDefault() bool { return false }
 
 func (t *FileTool) validatePath(path string) error {
 	// 1. 获取绝对路径

@@ -2,7 +2,7 @@
 name: weather
 description: Get current weather and forecasts for Chinese cities (心知天气 API).
 homepage: https://www.seniverse.com/api
-metadata: {"nanobot":{"emoji":"🌤️","always":true,"requires":{"bins":["curl"]}}}
+metadata: {"nanobot":{"emoji":"🌤️","requires":{"bins":["curl"]}}}
 ---
 # Weather 天气查询
 

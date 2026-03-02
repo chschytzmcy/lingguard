@@ -1,8 +1,7 @@
 ---
 name: coding
 description: MUST use opencode tool for ALL coding tasks - writing, editing, analyzing code
-metadata: {"nanobot":{"emoji":"💻","always":true}}
-always: true
+metadata: {"nanobot":{"emoji":"💻"}}
 ---
 # Coding Tasks - MUST Use OpenCode
 

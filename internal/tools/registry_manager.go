@@ -53,14 +53,16 @@ func (r *Registry) List() []Tool {
 	return tools
 }
 
-// GetToolDefinitions 获取所有工具定义
+// GetToolDefinitions returns tool definitions that should be loaded by default
 func (r *Registry) GetToolDefinitions() []map[string]interface{} {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	defs := make([]map[string]interface{}, 0, len(r.tools))
+	defs := make([]map[string]interface{}, 0)
 	for _, t := range r.tools {
-		defs = append(defs, Definition(t))
+		if t.ShouldLoadByDefault() {
+			defs = append(defs, Definition(t))
+		}
 	}
 	return defs
 }

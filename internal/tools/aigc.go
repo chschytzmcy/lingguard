@@ -1053,6 +1053,10 @@ func (t *AIGCTool) IsDangerous() bool {
 	return false
 }
 
+func (t *AIGCTool) ShouldLoadByDefault() bool {
+	return false
+}
+
 // SetAPIKey 设置 API Key
 func (t *AIGCTool) SetAPIKey(key string) {
 	t.apiKey = key

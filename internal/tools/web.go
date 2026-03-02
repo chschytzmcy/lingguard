@@ -296,6 +296,8 @@ func (t *WebSearchTool) searchWithBocha(ctx context.Context, p *searchParams) (s
 
 func (t *WebSearchTool) IsDangerous() bool { return false }
 
+func (t *WebSearchTool) ShouldLoadByDefault() bool { return false }
+
 // WebFetchTool 网页抓取工具
 type WebFetchTool struct {
 	maxChars   int
@@ -443,6 +445,8 @@ func (t *WebFetchTool) Execute(ctx context.Context, params json.RawMessage) (str
 }
 
 func (t *WebFetchTool) IsDangerous() bool { return false }
+
+func (t *WebFetchTool) ShouldLoadByDefault() bool { return false }
 
 // 私有 IP 地址段黑名单（用于 SSRF 防护）
 var privateIPBlocks []netip.Prefix

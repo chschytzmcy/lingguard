@@ -1143,6 +1143,10 @@ func (t *MoltbookTool) IsDangerous() bool {
 	return false
 }
 
+func (t *MoltbookTool) ShouldLoadByDefault() bool {
+	return false
+}
+
 // SetAPIKey 设置 API Key
 func (t *MoltbookTool) SetAPIKey(key string) {
 	t.apiKey = key

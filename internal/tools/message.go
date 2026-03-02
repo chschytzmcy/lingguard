@@ -96,3 +96,5 @@ func (t *MessageTool) Execute(ctx context.Context, params json.RawMessage) (stri
 }
 
 func (t *MessageTool) IsDangerous() bool { return false }
+
+func (t *MessageTool) ShouldLoadByDefault() bool { return true }

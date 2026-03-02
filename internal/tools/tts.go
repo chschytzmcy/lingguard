@@ -154,6 +154,10 @@ func (t *TTSTool) IsDangerous() bool {
 	return false
 }
 
+func (t *TTSTool) ShouldLoadByDefault() bool {
+	return false
+}
+
 // SetAPIKey 设置 API Key
 func (t *TTSTool) SetAPIKey(key string) {
 	t.config.APIKey = key

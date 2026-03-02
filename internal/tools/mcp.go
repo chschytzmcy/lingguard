@@ -87,6 +87,10 @@ func (t *MCPToolWrapper) IsDangerous() bool {
 	return false
 }
 
+func (t *MCPToolWrapper) ShouldLoadByDefault() bool {
+	return true
+}
+
 // MCPToolDefinition MCP 工具定义
 type MCPToolDefinition struct {
 	Name        string                 `json:"name"`

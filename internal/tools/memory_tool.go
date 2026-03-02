@@ -262,3 +262,8 @@ func (t *MemoryTool) GetBuilder() *memory.ContextBuilder {
 func (t *MemoryTool) IsDangerous() bool {
 	return false
 }
+
+// ShouldLoadByDefault 返回是否默认加载
+func (t *MemoryTool) ShouldLoadByDefault() bool {
+	return true
+}

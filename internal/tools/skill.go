@@ -93,3 +93,8 @@ func (t *SkillTool) Execute(ctx context.Context, argsJSON json.RawMessage) (stri
 func (t *SkillTool) IsDangerous() bool {
 	return false
 }
+
+// ShouldLoadByDefault 返回是否默认加载（元工具，必须加载）
+func (t *SkillTool) ShouldLoadByDefault() bool {
+	return true
+}

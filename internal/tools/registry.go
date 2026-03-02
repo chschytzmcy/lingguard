@@ -22,6 +22,11 @@ type Tool interface {
 
 	// IsDangerous 是否为危险操作
 	IsDangerous() bool
+
+	// ShouldLoadByDefault 是否默认加载到 LLM 提示词
+	// 有对应 Skill 的工具返回 false，由 Skill 工具按需加载
+	// 没有对应 Skill 的工具返回 true，默认加载
+	ShouldLoadByDefault() bool
 }
 
 // ToolCall 工具调用
