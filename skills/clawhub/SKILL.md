@@ -1,57 +1,61 @@
 ---
 name: clawhub
-description: Use the ClawHub CLI to search, install, and update agent skills from clawhub.ai. Use when you need to find new skills (e.g., web scraping, data analysis, trending skills), install capabilities on the fly, or sync installed skills to latest version.
+description: 搜索和安装 AI 技能。当用户说"搜索技能"、"安装技能"、"热门技能"、"trending skills"、"clawhub"时，必须先加载此 skill 了解用法
 homepage: https://clawhub.ai
 metadata: {"lingguard":{"emoji":"🦞"}}
 ---
 
-# ClawHub
+# ClawHub 技能搜索
 
-Public skill registry for AI agents. Search by natural language (vector search).
+公共 AI 技能注册表，支持自然语言搜索（向量搜索）。
 
-## When to use
+## ⚠️ 重要规则
 
-Use this skill when the user asks about:
-- Finding or searching for skills
-- Popular, trending, or hot skills
-- Installing new skills
-- Updating installed skills
+- **必须直接调用 shell 工具**执行 npx 命令，不要使用其他工具
+- 安装完成后提醒用户开始新会话以加载技能
 
-## Search
+## 触发场景
+
+- 搜索技能、查找技能
+- 热门技能、trending
+- 安装新技能
+- 更新已安装技能
+
+## 搜索技能
 
 ```bash
 npx --yes clawhub@latest search "web scraping" --limit 5
 ```
 
-## Install
+## 安装技能
 
-**IMPORTANT: Use --workdir with absolute path, do NOT use cd command!**
+**重要：使用绝对路径，不要使用 cd 命令！**
 
 ```bash
 npx --yes clawhub@latest install <slug> --workdir "$HOME/.lingguard/workspace"
 ```
 
-Replace `<slug>` with the skill name from search results.
+将 `<slug>` 替换为搜索结果中的技能名称。
 
-**If security warning appears:** Ask user for confirmation, then use `--force`:
+**如果出现安全警告：** 询问用户确认后使用 `--force`：
 ```bash
 npx --yes clawhub@latest install <slug> --workdir "$HOME/.lingguard/workspace" --force
 ```
 
-## Update
+## 更新技能
 
 ```bash
 npx --yes clawhub@latest update --all --workdir "$HOME/.lingguard/workspace"
 ```
 
-## List installed
+## 列出已安装
 
 ```bash
 npx --yes clawhub@latest list --workdir "$HOME/.lingguard/workspace"
 ```
 
-## Notes
+## 注意事项
 
-- Requires Node.js (`npx` comes with it)
-- After install, remind user to start a new session to load the skill
-- Skills from ClawHub override builtin skills with the same name
+- 需要 Node.js（npx 随 Node.js 安装）
+- 安装后需要开始新会话才能加载技能
+- ClawHub 技能会覆盖同名的内置技能
