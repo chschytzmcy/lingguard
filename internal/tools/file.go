@@ -13,13 +13,22 @@ import (
 type FileTool struct {
 	workspaceMgr *WorkspaceManager
 	sandboxed    bool
+	allowedDirs  []string // 允许访问的额外目录
 }
 
 // NewFileTool 创建文件工具
 func NewFileTool(workspaceMgr *WorkspaceManager, sandboxed bool) *FileTool {
+	// 扩展允许的目录列表
+	homeDir, _ := os.UserHomeDir()
+	allowedDirs := []string{}
+	if homeDir != "" {
+		allowedDirs = append(allowedDirs, filepath.Join(homeDir, ".lingguard", "skills"))
+	}
+
 	return &FileTool{
 		workspaceMgr: workspaceMgr,
 		sandboxed:    sandboxed,
+		allowedDirs:  allowedDirs,
 	}
 }
 
@@ -121,14 +130,7 @@ func (t *FileTool) validatePath(path string) error {
 		return fmt.Errorf("invalid path: %w", err)
 	}
 
-	// 2. 获取工作区绝对路径
-	absWorkspace, err := filepath.Abs(t.workspaceMgr.Get())
-	if err != nil {
-		return fmt.Errorf("failed to resolve workspace: %w", err)
-	}
-
-	// 3. 解析符号链接，防止通过符号链接逃逸
-	// EvalSymlinks 会将路径中的符号链接解析为真实路径
+	// 2. 解析符号链接
 	evalPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
 		// 如果路径不存在（新建文件），检查父目录
@@ -138,25 +140,43 @@ func (t *FileTool) validatePath(path string) error {
 		}
 	}
 
-	// 4. 同时解析工作区的符号链接
+	// 3. 检查是否在允许的目录列表中
+	for _, allowedDir := range t.allowedDirs {
+		evalAllowed, err := filepath.EvalSymlinks(allowedDir)
+		if err != nil {
+			evalAllowed = allowedDir
+		}
+		if t.isPathInside(evalPath, evalAllowed) {
+			return nil
+		}
+	}
+
+	// 4. 检查是否在 workspace 内
+	absWorkspace, err := filepath.Abs(t.workspaceMgr.Get())
+	if err != nil {
+		return fmt.Errorf("failed to resolve workspace: %w", err)
+	}
+
 	evalWorkspace, err := filepath.EvalSymlinks(absWorkspace)
 	if err != nil {
-		evalWorkspace = absWorkspace // 工作区不存在时使用原路径
+		evalWorkspace = absWorkspace
 	}
 
-	// 5. 使用相对路径检查，比前缀匹配更安全
-	// 如果相对路径以 ".." 开头，说明在工作区之外
-	rel, err := filepath.Rel(evalWorkspace, evalPath)
+	if t.isPathInside(evalPath, evalWorkspace) {
+		return nil
+	}
+
+	return fmt.Errorf("path outside allowed directories: %s", path)
+}
+
+// isPathInside 检查路径是否在指定目录内
+func (t *FileTool) isPathInside(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
 	if err != nil {
-		return fmt.Errorf("failed to check path relation: %w", err)
+		return false
 	}
-
-	// 检查是否尝试逃逸工作区
-	if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
-		return fmt.Errorf("path outside workspace: %s (resolved to %s)", path, evalPath)
-	}
-
-	return nil
+	// 如果相对路径以 ".." 开头，说明在目录之外
+	return !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
 }
 
 // resolveParentPath 解析父目录路径（用于新建文件场景）

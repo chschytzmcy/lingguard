@@ -38,12 +38,13 @@ func (t *SkillTool) Description() string {
 - coding 任务：编写、编辑、分析、优化代码 → coding
 - git 操作：下载代码、上传代码、推送代码、提交代码、git clone、git push、上库 → git-sync
 - 代码审查：review代码、代码审查、检查代码、审查代码、检视代码 → code-review
+- 天气查询：天气、查询天气、天气预报、今天天气、明天天气、气温 → weather
 - 文件操作：读写文件 → file
 - 系统操作：执行系统命令 → system
 - 定时任务：创建、管理定时任务 → cron
 
 调用方式：skill --name <技能名>
-常用技能：aigc, clawhub, web, coding, git-sync, code-review, file, system, cron
+常用技能：aigc, clawhub, web, coding, git-sync, code-review, weather, file, system, cron
 
 返回完整的技能指令，包含具体操作步骤和示例。`
 }

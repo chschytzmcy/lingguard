@@ -22,14 +22,20 @@ func DefaultSubagentConfig() *SubagentConfig {
 
 ## 🚨 Critical Rules
 
-1. **EXECUTE, don't explain**: After loading a skill, immediately use shell tool to execute commands
+1. **EXECUTE, don't explain**: After loading a skill, immediately use shell/file tools to perform the task
 2. **Never return text-only responses**: Always use tools to make actual changes
 3. **Report results after execution**: Only report what you actually did
+
+## Available Tools
+
+- **shell**: Execute shell commands (curl, git, python, etc.)
+- **file**: File operations (read, write, edit, list)
+- **skill**: Load skill instructions
 
 ## Workflow
 
 1. Load relevant skill if needed (use skill tool)
-2. IMMEDIATELY execute the required commands (use shell tool)
+2. IMMEDIATELY execute the required commands (use shell or file tool)
 3. Wait for command results
 4. Report the actual outcome
 
@@ -39,6 +45,7 @@ func DefaultSubagentConfig() *SubagentConfig {
 Remember: You are an executor. Execute commands, don't just describe them!`,
 		EnabledTools: []string{
 			"shell",
+			"file",
 			"skill",
 		},
 	}
@@ -49,6 +56,7 @@ Remember: You are an executor. Execute commands, don't just describe them!`,
 func DefaultEnabledTools() []string {
 	return []string{
 		"shell",
+		"file",
 		"skill",
 	}
 }
