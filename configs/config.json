@@ -12,11 +12,11 @@
       "model": "MiniMax-M2.5"
     },
     "qwen": {
-      "apiKey": "sk-791d6c7cc3094af99290577b709b47e6",
+      "apiKey": "sk-xxxx",
       "model": "qwen3.5-plus"
     },
     "qwencoder": {
-      "apiKey": "sk-sp-fd7641e16e5042e9957c3b31423a54e3",
+      "apiKey": "sk-sp-xxx",
       "apiBase": "https://coding.dashscope.aliyuncs.com/v1",
       "model": "qwen3.5-plus",
       "timeout": 120
@@ -61,15 +61,15 @@
   "channels": {
     "feishu": {
       "enabled": true,
-      "appId": "cli_a904272b23b89cb3",
-      "appSecret": "9XxL2DnKzj82WTdPaKmzPj84btdqABya"
+      "appId": "xxx",
+      "appSecret": "xxx"
     }
   },
   "tools": {
     "restrictToWorkspace": false,
     "websearch": {
-      "tavilyApiKey": "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",
-      "bochaApiKey": "sk-445f2765d1a8499db01a953b45b48ea8",
+      "tavilyApiKey": "tvly-dev-xxx",
+      "bochaApiKey": "sk-xxxx",
       "maxResults": 5
     },
     "webfetch": {
@@ -110,7 +110,7 @@
     },
     "clawhub": {
       "enabled": false,
-      "apiToken": "clh_CKXKedjx54pGqwUjQkaOdM9IQb3YjvbjjwSCqjM7zUw"
+      "apiToken": "xxxx"
     }
   },
   "storage": {
