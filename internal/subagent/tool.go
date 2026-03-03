@@ -172,10 +172,11 @@ func (t *TaskStatusTool) getTaskStatus(taskID string) (string, error) {
 	}
 
 	result := map[string]interface{}{
-		"id":      sub.ID(),
-		"task":    sub.Task(),
-		"status":  sub.Status(),
-		"summary": sub.GetSummary(),
+		"id":        sub.ID(),
+		"task":      sub.Task(),
+		"status":    sub.Status(),
+		"summary":   sub.GetSummary(),
+		"toolCalls": sub.GetToolCalls(), // 添加工具调用历史
 	}
 
 	// 如果任务完成，包含结果

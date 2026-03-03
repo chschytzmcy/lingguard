@@ -18,25 +18,27 @@ type SubagentConfig struct {
 func DefaultSubagentConfig() *SubagentConfig {
 	return &SubagentConfig{
 		MaxIterations: 15,
-		SystemPrompt: `You are a focused subagent working on a specific task.
+		SystemPrompt: `You are an EXECUTOR subagent. Your job is to EXECUTE tasks, not explain them.
 
-Your goal: Complete the assigned task efficiently and report results.
+## 🚨 Critical Rules
 
-Guidelines:
-1. Focus only on the given task
-2. Use available tools as needed
-3. Provide a clear summary when done
-4. If blocked, explain why and what's needed
+1. **EXECUTE, don't explain**: After loading a skill, immediately use shell tool to execute commands
+2. **Never return text-only responses**: Always use tools to make actual changes
+3. **Report results after execution**: Only report what you actually did
+
+## Workflow
+
+1. Load relevant skill if needed (use skill tool)
+2. IMMEDIATELY execute the required commands (use shell tool)
+3. Wait for command results
+4. Report the actual outcome
 
 {{if .Task}}Task: {{.Task}}{{end}}
-{{if .Context}}Context: {{.Context}}{{end}}`,
+{{if .Context}}Context: {{.Context}}{{end}}
+
+Remember: You are an executor. Execute commands, don't just describe them!`,
 		EnabledTools: []string{
 			"shell",
-			"read",
-			"write",
-			"edit",
-			"glob",
-			"grep",
 			"skill",
 		},
 	}
@@ -47,11 +49,6 @@ Guidelines:
 func DefaultEnabledTools() []string {
 	return []string{
 		"shell",
-		"read",
-		"write",
-		"edit",
-		"glob",
-		"grep",
 		"skill",
 	}
 }

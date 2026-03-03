@@ -25,6 +25,16 @@ const (
 	StatusFailed    TaskStatus = "failed"
 )
 
+// ToolCallRecord 工具调用记录
+type ToolCallRecord struct {
+	Tool      string        `json:"tool"`
+	Arguments string        `json:"arguments,omitempty"`
+	Result    string        `json:"result,omitempty"`
+	Error     string        `json:"error,omitempty"`
+	Duration  time.Duration `json:"duration"`
+	Timestamp time.Time     `json:"timestamp"`
+}
+
 // Subagent 子代理
 type Subagent struct {
 	// 基本信息
@@ -39,6 +49,9 @@ type Subagent struct {
 	error       string
 	startedAt   time.Time
 	completedAt time.Time
+
+	// 执行历史
+	toolCalls []ToolCallRecord
 
 	// 执行组件
 	provider     providers.Provider
@@ -137,6 +150,20 @@ func (s *Subagent) setError(err string) {
 	s.error = err
 }
 
+// addToolCall 添加工具调用记录
+func (s *Subagent) addToolCall(record ToolCallRecord) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.toolCalls = append(s.toolCalls, record)
+}
+
+// GetToolCalls 返回工具调用历史
+func (s *Subagent) GetToolCalls() []ToolCallRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.toolCalls
+}
+
 // Run 执行子代理任务（阻塞）
 func (s *Subagent) Run(ctx context.Context) {
 	s.setStatus(StatusRunning)
@@ -144,10 +171,20 @@ func (s *Subagent) Run(ctx context.Context) {
 	s.startedAt = time.Now()
 	s.mu.Unlock()
 
+	// 记录任务开始
+	logger.Info("Subagent task started", "id", s.id, "task", s.task)
+
 	defer func() {
 		s.mu.Lock()
 		s.completedAt = time.Now()
 		s.mu.Unlock()
+
+		// 记录任务完成
+		if s.status == StatusCompleted {
+			logger.Info("Subagent task completed", "id", s.id, "duration", s.completedAt.Sub(s.startedAt).String(), "resultLen", len(s.result))
+		} else {
+			logger.Warn("Subagent task failed", "id", s.id, "error", s.error)
+		}
 	}()
 
 	// 构建消息
@@ -278,6 +315,21 @@ func (s *Subagent) executeTool(ctx context.Context, tc *llm.ToolCall) (string, e
 
 	// 记录工具调用
 	logger.ToolCall(tc.Function.Name, tc.Function.Arguments, result, duration, err)
+
+	// 记录到执行历史
+	s.mu.Lock()
+	record := ToolCallRecord{
+		Tool:      tc.Function.Name,
+		Arguments: string(tc.Function.Arguments),
+		Result:    result,
+		Duration:  duration,
+		Timestamp: start,
+	}
+	if err != nil {
+		record.Error = err.Error()
+	}
+	s.toolCalls = append(s.toolCalls, record)
+	s.mu.Unlock()
 
 	return result, err
 }

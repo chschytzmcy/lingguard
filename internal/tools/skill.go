@@ -36,8 +36,8 @@ func (t *SkillTool) Description() string {
 - 技能搜索/安装：搜索技能、热门技能、clawhub → clawhub
 - 网络搜索：搜索信息、查询资料 → web
 - coding 任务：编写、编辑、分析、优化代码 → coding
-- git 操作：下载代码、上传代码、git clone、git push、上库 → git-sync
-- 代码审查：review 代码 → code-review
+- git 操作：下载代码、上传代码、推送代码、提交代码、git clone、git push、上库 → git-sync
+- 代码审查：review代码、代码审查、检查代码、审查代码、检视代码 → code-review
 - 文件操作：读写文件 → file
 - 系统操作：执行系统命令 → system
 - 定时任务：创建、管理定时任务 → cron
@@ -90,7 +90,26 @@ func (t *SkillTool) Execute(ctx context.Context, argsJSON json.RawMessage) (stri
 	}
 
 	logger.Info("Skill loaded successfully", "name", args.Name, "length", len(instruction))
-	return instruction, nil
+
+	// 在指令前添加执行提示
+	executorPrompt := `## ⚠️ 重要：必须执行操作
+
+加载此 skill 后，你必须立即使用相应的工具（如 shell、read、write 等）执行操作。
+
+**禁止行为**：
+- ❌ 只返回文本说明而不执行操作
+- ❌ 告诉用户"你可以使用..."而不实际执行
+
+**正确行为**：
+- ✅ 立即调用工具执行操作
+- ✅ 等待操作完成
+- ✅ 返回实际执行结果
+
+---
+
+`
+
+	return executorPrompt + instruction, nil
 }
 
 // IsDangerous 返回是否为危险操作
