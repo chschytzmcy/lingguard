@@ -67,32 +67,57 @@ func (t *ShellTool) Parameters() map[string]interface{} {
 }
 
 func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (string, error) {
+	// 使用临时结构体支持多种类型的 timeout 参数
 	var p struct {
-		Command string `json:"command"`
-		Timeout int    `json:"timeout"`
+		Command interface{} `json:"command"`
+		Timeout interface{} `json:"timeout"`
 	}
 
 	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	if p.Timeout == 0 {
-		p.Timeout = 30
+	// 解析 command
+	var command string
+	switch v := p.Command.(type) {
+	case string:
+		command = v
+	default:
+		return "", fmt.Errorf("command must be a string")
+	}
+
+	// 解析 timeout（支持 int 或 string）
+	var timeout int
+	switch v := p.Timeout.(type) {
+	case float64:
+		timeout = int(v)
+	case string:
+		if n, err := fmt.Sscanf(v, "%d", &timeout); err != nil || n != 1 {
+			timeout = 30 // 默认值
+		}
+	case nil:
+		timeout = 30 // 默认值
+	default:
+		timeout = 30
+	}
+
+	if timeout == 0 {
+		timeout = 30
 	}
 
 	// 安全检查
 	if t.sandboxed {
-		if err := t.validateCommand(p.Command); err != nil {
+		if err := t.validateCommand(command); err != nil {
 			return "", err
 		}
 	}
 
 	// 创建带超时的上下文
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(p.Timeout)*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
 	// 执行命令
-	cmd := exec.CommandContext(ctx, "bash", "-c", p.Command)
+	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	if t.workspaceMgr != nil {
 		cmd.Dir = t.workspaceMgr.Get()
 	}
