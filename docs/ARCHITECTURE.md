@@ -1121,8 +1121,23 @@ cronService.Start()
 | **通知机制** | Channel 轮询 | MessageBus 回调 |
 | **工具隔离** | 预配置白名单 | 运行时过滤 |
 | **嵌套防止** | 白名单排除 task | 运行时检查 |
+| **系统提示** | 强调执行而非解释 | 通用提示 |
 
-#### 4.5.2 核心实现
+#### 4.5.2 触发规则
+
+**必须使用 subagent 的场景**：
+- 复杂编码优化：代码重构、大规模文件处理、多文件修改
+- 长时间任务：数据分析、批量处理、复杂代码生成
+
+**禁止使用 subagent 的场景**（主代理直接执行）：
+- Git 操作（下载/上传代码）→ 调用 skill + shell
+- 代码审查 → 调用 skill + shell
+- 图像/视频生成 → 直接调用 aigc 工具
+- 网络搜索 → 直接调用 web_search 工具
+- 天气查询 → 调用 skill + shell
+- 简单问答 → 直接回复用户
+
+#### 4.5.3 核心实现
 
 ```go
 // internal/subagent/manager.go
@@ -1156,10 +1171,32 @@ func (m *SubagentManager) Spawn(task, context string) *Subagent {
     return sub
 }
 
-// 默认允许的工具（不包含 task 以防止嵌套）
+// 默认允许的工具（精简白名单，不依赖 MCP）
 func DefaultEnabledTools() []string {
-    return []string{"shell", "read", "write", "edit", "glob", "grep", "skill"}
+    return []string{"shell", "file", "skill"}
 }
+```
+
+#### 4.5.4 子代理系统提示
+
+子代理使用强调执行的系统提示：
+
+```go
+SystemPrompt: `You are an EXECUTOR subagent. Your job is to EXECUTE tasks, not explain them.
+
+## 🚨 Critical Rules
+
+1. **EXECUTE, don't explain**: After loading a skill, immediately use shell/file tools
+2. **Never return text-only responses**: Always use tools to make actual changes
+3. **Report results after execution**: Only report what you actually did
+
+## Available Tools
+
+- **shell**: Execute shell commands (curl, git, python, etc.)
+- **file**: File operations (read, write, edit, list)
+- **skill**: Load skill instructions
+
+Remember: You are an executor. Execute commands, don't just describe them!`
 ```
 
 ### 4.6 记忆系统（参考 nanobot + OpenClaw）
@@ -1435,8 +1472,24 @@ func (s *HybridStore) AddMemory(category, content string) error {
 | **工具触发** | skill 工具按需加载 | 自动注入上下文 |
 | **目录支持** | 多目录（内置 + 用户） | 单目录 |
 | **格式** | YAML frontmatter + MD | 相同 |
+| **执行提示** | 自动添加执行指令 | 无 |
 
-#### 4.7.2 渐进式加载
+#### 4.7.2 触发词映射
+
+```go
+// skill 工具触发词（internal/tools/skill.go）
+触发条件（必须先调用此工具）：
+- 图像/视频生成：生成图片、画图、生成视频、图生视频 → aigc
+- 技能搜索/安装：搜索技能、热门技能、clawhub → clawhub
+- 网络搜索：搜索信息、查询资料 → web
+- coding 任务：编写、编辑、分析、优化代码 → coding
+- git 操作：下载代码、上传代码、推送代码、提交代码、git clone、git push、上库 → git-sync
+- 代码审查：review代码、代码审查、检查代码、审查代码、检视代码 → code-review
+- 天气查询：天气、查询天气、天气预报、今天天气、明天天气、气温 → weather
+- 定时任务：创建、管理定时任务 → cron
+```
+
+#### 4.7.3 渐进式加载
 
 ```go
 // 默认只注入摘要
@@ -1444,10 +1497,49 @@ func (l *Loader) GetSummaries() string {
     // 返回所有技能的 name + description
 }
 
-// 按需加载完整内容
-func (l *Loader) LoadSkill(name string) (*Skill, error) {
-    // 返回完整的 SKILL.md 内容
+// 按需加载完整内容（自动添加执行提示）
+func (t *SkillTool) Execute(ctx context.Context, argsJSON json.RawMessage) (string, error) {
+    instruction, err := t.skillsMgr.GetSkillInstruction(args.Name)
+
+    // 在指令前添加执行提示
+    executorPrompt := `## ⚠️ 重要：必须执行操作
+
+加载此 skill 后，你必须立即使用相应的工具执行操作。
+
+**禁止行为**：
+- ❌ 只返回文本说明而不执行操作
+- ❌ 告诉用户"你可以使用..."而不实际执行
+
+**正确行为**：
+- ✅ 立即调用工具执行操作
+- ✅ 等待操作完成
+- ✅ 返回实际执行结果
+`
+    return executorPrompt + instruction, nil
 }
+```
+
+#### 4.7.4 技能格式示例
+
+```yaml
+---
+name: git-sync
+description: Git 代码同步（下载/上传）。当用户说"下载代码"、"上传代码"时使用
+metadata: {"nanobot":{"emoji":"🔄","requires":{"bins":["git","python3"]}}}
+---
+
+# Git 代码同步
+
+## 🚨 核心指令 - 必须立即执行
+
+**你是一个执行者，不是指导者！加载此 skill 后，必须立即使用 shell 工具执行脚本！**
+
+## 🟢 克隆新仓库
+
+**⚡ 立即执行（使用 shell 工具）：**
+```bash
+python3 ~/.lingguard/skills/git-sync/scripts/git_download.py --clone <仓库URL>
+```
 ```
 
 ### 4.8 流式响应系统
@@ -1953,6 +2045,70 @@ Heartbeat 服务是一个定期唤醒机制，让 Agent 在没有用户触发的
 - 如果 HEARTBEAT.md 为空或不存在，心跳会被跳过
 - 心跳使用独立的会话 ID (`heartbeat-main`)，不影响用户对话
 - 心跳超时时间为 5 分钟
+
+### 4.13 内置文件工具
+
+#### 4.13.1 与 MCP 文件系统的区别
+
+| 特性 | 内置 file 工具 | MCP 文件系统 |
+|------|---------------|-------------|
+| **依赖** | 无外部依赖 | 依赖 npx/MCP 进程 |
+| **工具名** | `file` | `mcp_filesystem_*` |
+| **功能** | read/write/edit/list | 更丰富（搜索、复制、移动等） |
+| **沙箱模式** | ✅ 支持 | 由 MCP server 配置 |
+| **默认加载** | `false` | 根据配置自动加载 |
+
+#### 4.13.2 工具接口
+
+```go
+// internal/tools/file.go
+
+type FileTool struct {
+    workspaceMgr *WorkspaceManager
+    sandboxed    bool
+    allowedDirs  []string  // 允许访问的额外目录
+}
+
+// 支持的操作
+// - read: 读取文件内容
+// - write: 写入文件（自动创建父目录）
+// - edit: 替换文本
+// - list: 列出目录内容
+
+func (t *FileTool) Execute(ctx context.Context, params json.RawMessage) (string, error) {
+    // sandboxed=true 时，检查路径是否在允许目录内
+    // allowedDirs 包含: workspace + ~/.lingguard/skills
+}
+```
+
+#### 4.13.3 沙箱模式
+
+| restrictToWorkspace | 访问范围 |
+|---------------------|----------|
+| `false` | 任意目录 |
+| `true` | workspace + ~/.lingguard/skills |
+
+```json
+// config.json
+{
+  "tools": {
+    "restrictToWorkspace": true
+  }
+}
+```
+
+#### 4.13.4 在子代理中的使用
+
+子代理白名单包含 `file` 工具，可以直接操作文件：
+
+```go
+// internal/subagent/config.go
+func DefaultEnabledTools() []string {
+    return []string{"shell", "file", "skill"}
+}
+```
+
+**推荐**：子代理使用内置 `file` 工具，不依赖 MCP（避免路径限制问题）。
 
 ---
 
