@@ -5,7 +5,7 @@
 ## 特性
 
 ### 核心能力
-- **多 LLM 支持** - OpenAI, Anthropic, DeepSeek, GLM, Qwen, MiniMax, Moonshot 等
+- **多 LLM 支持** - OpenAI, Anthropic, DeepSeek, GLM, Qwen, MiniMax, Moonshot, Groq, Gemini, vLLM, OpenRouter 等
 - **Provider 自动匹配** - 根据模型名/API Key 自动选择合适的 Provider
 - **流式响应** - 实时输出，飞书消息实时更新
 
@@ -242,7 +242,7 @@ EOF
 | `moltbook` | AI Agent 社交网络（发帖、评论、投票） | - |
 | `skill` | 按需加载技能指令 | - |
 | `memory` | 记忆操作（添加/搜索/日志） | - |
-| `cron` | 定时任务管理 | - |
+| `cron` | 定时提醒和任务管理（支持 execute 模式） | - |
 | `message` | 发送消息到渠道 | - |
 | `workspace` | 工作区管理 | - |
 | `task_spawn` | 创建子代理任务 | - |
@@ -327,6 +327,12 @@ liuyingshiwolaopofirefly260710
 | `coding` | 💻 编码任务（使用 opencode） |
 | `file` | 文件操作指南 |
 | `system` | 系统操作指南 |
+| `aigc` | 🎨 AI 图像/视频生成（文生图、文生视频、图生视频、视频生视频） |
+| `tts` | 🔊 语音合成，多种音色可选 |
+| `cron` | ⏰ 定时提醒和任务管理 |
+| `web` | 🔍 网页搜索和抓取 |
+| `moltbook` | Moltbook 社交网络发帖 |
+| `skill-creator` | 技能创建模板 |
 
 ### ClawHub 技能仓库
 
@@ -520,8 +526,11 @@ lingguard/
 │   ├── llm/             # LLM 类型
 │   ├── stream/          # 流式响应
 │   ├── memory/          # 记忆系统
+│   ├── embedding/       # 向量嵌入
+│   ├── speech/          # 语音识别 (ASR)
+│   ├── tts/             # 语音合成 (TTS)
 │   └── logger/          # 日志
-├── skills/builtin/      # 内置技能
+├── skills/              # 内置技能
 ├── configs/             # 配置文件
 └── docs/                # 文档
 ```

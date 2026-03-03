@@ -127,12 +127,16 @@ func (f *FeishuChannel) Start(ctx context.Context) error {
 	// Create context for graceful shutdown
 	f.ctx, f.cancel = context.WithCancel(ctx)
 
+	logger.Info("Initializing Feishu channel", "appId", maskAppID(f.cfg.AppID))
+
 	// Create Lark Client for sending messages
 	f.client = lark.NewClient(f.cfg.AppID, f.cfg.AppSecret)
+	logger.Info("Lark API client created")
 
 	// Create event handler
 	eventDispatcher := dispatcher.NewEventDispatcher(f.cfg.VerificationToken, f.cfg.EncryptKey).
 		OnP2MessageReceiveV1(f.handleMessage)
+	logger.Info("Event dispatcher created")
 
 	// Create WebSocket client with debug logging
 	f.wsClient = larkws.NewClient(f.cfg.AppID, f.cfg.AppSecret,
@@ -140,6 +144,7 @@ func (f *FeishuChannel) Start(ctx context.Context) error {
 		larkws.WithAutoReconnect(true),
 		larkws.WithLogLevel(larkcore.LogLevelDebug),
 	)
+	logger.Info("WebSocket client created")
 
 	// Start WebSocket client in a separate goroutine with reconnect loop
 	go func() {
@@ -149,14 +154,22 @@ func (f *FeishuChannel) Start(ctx context.Context) error {
 			}
 		}()
 
+		reconnectCount := 0
 		for {
 			select {
 			case <-f.ctx.Done():
+				logger.Info("Feishu WebSocket stopping...")
 				return
 			default:
+				logger.Info("Feishu WebSocket connecting...", "attempt", reconnectCount+1)
 				if err := f.wsClient.Start(f.ctx); err != nil {
-					logger.Warn("Feishu WebSocket error, reconnecting in 5s...", "error", err)
+					reconnectCount++
+					logger.Warn("Feishu WebSocket connection failed, reconnecting in 5s...", "error", err, "attempt", reconnectCount)
 					time.Sleep(5 * time.Second)
+				} else {
+					// Normal exit (context cancelled)
+					logger.Info("Feishu WebSocket connection closed normally")
+					return
 				}
 			}
 		}
@@ -166,6 +179,14 @@ func (f *FeishuChannel) Start(ctx context.Context) error {
 	logger.Info("Feishu channel started with WebSocket long connection")
 	logger.Info("No public IP required - using WebSocket to receive events")
 	return nil
+}
+
+// maskAppID masks middle part of AppID for logging
+func maskAppID(appID string) string {
+	if len(appID) <= 8 {
+		return appID
+	}
+	return appID[:4] + "****" + appID[len(appID)-4:]
 }
 
 // Stop 停止渠道
@@ -225,6 +246,7 @@ func (f *FeishuChannel) handleMessage(ctx context.Context, event *larkim.P2Messa
 
 	// Skip bot messages
 	if sender != nil && safeString(sender.SenderType) == "bot" {
+		logger.Debug("Skipping bot message", "messageID", messageID)
 		return nil
 	}
 
@@ -246,6 +268,9 @@ func (f *FeishuChannel) handleMessage(ctx context.Context, event *larkim.P2Messa
 	chatID := safeString(msg.ChatId)
 	chatType := safeString(msg.ChatType)
 	msgType := safeString(msg.MessageType)
+
+	// Log message received
+	logger.Info("Message received", "messageId", messageID, "chatId", chatID, "chatType", chatType, "msgType", msgType, "sender", senderID)
 
 	// Add reaction to indicate "seen"
 	go f.addReaction(messageID, "OK")
