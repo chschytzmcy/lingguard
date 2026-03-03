@@ -61,8 +61,8 @@
   "channels": {
     "feishu": {
       "enabled": true,
-      "appId": "cli_a904272b23b89cb3",
-      "appSecret": "9XxL2DnKzj82WTdPaKmzPj84btdqABya"
+      "appId": "cli_xxxxx",
+      "appSecret": "xxxxxxx"
     }
   },
   "tools": {
