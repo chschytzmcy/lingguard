@@ -247,11 +247,14 @@ func (s *Subagent) runLoop(ctx context.Context, messages []llm.Message) (string,
 	iterations := 0
 	maxIterations := s.config.MaxIterations
 	if maxIterations <= 0 {
-		maxIterations = 15
+		maxIterations = 30
 	}
 
 	for iterations < maxIterations {
 		iterations++
+
+		// 记录迭代进度
+		logger.Info("Subagent iteration", "id", s.id, "iteration", iterations, "maxIterations", maxIterations)
 
 		// 构建 LLM 请求
 		req := &llm.Request{

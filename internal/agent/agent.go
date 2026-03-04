@@ -513,6 +513,9 @@ func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messa
 	for iterations < maxIterations {
 		iterations++
 
+		// 记录迭代进度
+		logger.Info("Agent iteration", "session", sessionID, "iteration", iterations, "maxIterations", maxIterations)
+
 		// 检查是否有注入的消息（Steer 模式）
 		if a.steerMgr != nil {
 			if injected := a.steerMgr.checkInjection(sessionID); injected != nil {
@@ -677,6 +680,9 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 
 	for iterations < maxIterations {
 		iterations++
+
+		// 记录迭代进度
+		logger.Info("Agent iteration (stream)", "session", sessionID, "iteration", iterations, "maxIterations", maxIterations)
 
 		// 检查是否有注入的消息（Steer 模式）
 		if a.steerMgr != nil {

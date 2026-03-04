@@ -77,8 +77,8 @@ func (p *MockProvider) Complete(ctx context.Context, req *llm.Request) (*llm.Res
 func TestNewSubagentConfig(t *testing.T) {
 	cfg := DefaultSubagentConfig()
 
-	if cfg.MaxIterations != 15 {
-		t.Errorf("Expected MaxIterations=15, got %d", cfg.MaxIterations)
+	if cfg.MaxIterations != 100 {
+		t.Errorf("Expected MaxIterations=100, got %d", cfg.MaxIterations)
 	}
 
 	if len(cfg.EnabledTools) == 0 {

@@ -117,7 +117,21 @@ func (t *TaskStatusTool) Description() string {
 	return `Check the status and result of a background task.
 
 Use this tool to check if a previously started task has completed and get its results.
-The task must have been started using the 'task' tool.`
+The task must have been started using the 'task' tool.
+
+## ⚠️ 轮询策略
+
+**重要**: 子代理任务通常需要较长时间执行（代码分析、优化等）。
+
+- **不要频繁轮询**: 每次调用 task_status 后，请等待至少 10-15 秒再检查
+- **不要阻塞等待**: 在等待子代理完成时，主代理可以并行执行其他独立任务
+- **合理预期**: 复杂任务（如代码优化）通常需要 1-3 分钟完成
+
+示例工作流:
+1. 启动 task → 获得 task_id
+2. 执行其他独立任务（如 git status、查看其他文件等）
+3. 等待一段时间后检查 task_status
+4. 如果仍在运行，继续其他工作或等待后再检查`
 }
 
 func (t *TaskStatusTool) Parameters() map[string]interface{} {

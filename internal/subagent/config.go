@@ -3,7 +3,7 @@ package subagent
 
 // SubagentConfig 子代理配置
 type SubagentConfig struct {
-	// MaxIterations 最大迭代次数，默认 15
+	// MaxIterations 最大迭代次数，默认 100
 	MaxIterations int
 
 	// SystemPrompt 子代理系统提示模板
@@ -17,7 +17,7 @@ type SubagentConfig struct {
 // DefaultSubagentConfig 默认子代理配置
 func DefaultSubagentConfig() *SubagentConfig {
 	return &SubagentConfig{
-		MaxIterations: 15,
+		MaxIterations: 100,
 		SystemPrompt: `You are an EXECUTOR subagent. Your job is to EXECUTE tasks, not explain them.
 
 ## 🚨 Critical Rules
