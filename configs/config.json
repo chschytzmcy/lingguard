@@ -7,7 +7,7 @@
       "timeout": 120
     },
     "glm": {
-      "apiKey": "xxxxxx",
+      "apiKey": "xx.xx",
       "apiBase": "https://open.bigmodel.cn/api/anthropic",
       "model": "glm-5",
       "timeout": 120
@@ -18,25 +18,26 @@
       "model": "MiniMax-M2.5"
     },
     "qwencoder": {
-      "apiKey": "sk-sp-xxx",
+      "apiKey": "sk-sp-xx",
       "apiBase": "https://coding.dashscope.aliyuncs.com/v1",
       "model": "qwen3.5-plus",
       "timeout": 120
     },
     "qwen": {
-      "apiKey": "sk-xxx",
+      "apiKey": "sk-xx",
       "model": "qwen3.5-plus"
     }
   },
   "agents": {
     "workspace": "~/.lingguard/workspace",
-    "provider": "qwencoder",
+    "provider": "glm",
     "multimodalProvider": "qwencoder",
     "maxToolIterations": 50,
     "memoryWindow": 50,
     "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。你可以使用工具帮助用户完成各种任务。\n\n## 核心规则\n\n1. **工具描述包含完整的触发规则**，请仔细阅读 skill 和 task 工具的描述\n2. **加载 skill 后必须执行**，不要只返回文本说明\n3. **只有复杂编码任务才使用 subagent**，其他任务直接执行",
     "memory": {
       "enabled": true,
+      "path": "~/.lingguard/memory",
       "recentDays": 3,
       "maxHistoryLines": 1000,
       "autoRecall": true,
@@ -49,6 +50,7 @@
         "embedding": {
           "provider": "qwen",
           "model": "text-embedding-v4",
+          "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
           "dimension": 1024
         },
         "search": {
@@ -58,7 +60,8 @@
           "rerank": {
             "enabled": true,
             "provider": "qwen",
-            "model": "qwen3-vl-rerank"
+            "model": "qwen3-rerank",
+            "apiBase": "https://dashscope.aliyuncs.com/compatible-api/v1"
           }
         }
       }
@@ -67,15 +70,15 @@
   "channels": {
     "feishu": {
       "enabled": true,
-      "appId": "xxx",
-      "appSecret": "xxx"
+      "appId": "xx",
+      "appSecret": "xx"
     }
   },
   "tools": {
     "restrictToWorkspace": true,
     "websearch": {
-      "tavilyApiKey": "tvly-dev-xxx",
-      "bochaApiKey": "sk-xxx",
+      "tavilyApiKey": "tvly-dev-xx",
+      "bochaApiKey": "sk-xx",
       "maxResults": 5
     },
     "webfetch": {
@@ -91,6 +94,7 @@
     "aigc": {
       "enabled": true,
       "provider": "qwen",
+      "apiBase": "https://dashscope.aliyuncs.com/api/v1",
       "textToImage": "wan2.6-t2i",
       "textToVideo": "wan2.6-t2v",
       "imageToVideo": "wan2.6-i2v-flash",
@@ -100,8 +104,18 @@
     "tts": {
       "enabled": true,
       "provider": "qwen",
+      "apiBase": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
       "model": "qwen3-tts-flash",
       "voice": "Cherry"
+    },
+    "speech": {
+      "enabled": true,
+      "provider": "qwen",
+      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen3-asr-flash",
+      "format": "opus",
+      "language": "zh",
+      "timeout": 60
     },
     "moltbook": {
       "enabled": false
@@ -109,11 +123,11 @@
     "clawhub": {
       "enabled": false,
       "apiToken": "xxx"
+    },
+    "cron": {
+      "enabled": true,
+      "storePath": "~/.lingguard/cron/jobs.json"
     }
-  },
-  "storage": {
-    "type": "file",
-    "path": "~/.lingguard/memory"
   },
   "logging": {
     "level": "info",
@@ -123,18 +137,6 @@
     "maxAge": 7,
     "maxBackups": 5,
     "compress": false
-  },
-  "speech": {
-    "enabled": true,
-    "provider": "qwen",
-    "model": "qwen3-asr-flash",
-    "format": "opus",
-    "language": "zh",
-    "timeout": 60
-  },
-  "cron": {
-    "enabled": true,
-    "storePath": "~/.lingguard/cron/jobs.json"
   },
   "webui": {
     "enabled": true,
