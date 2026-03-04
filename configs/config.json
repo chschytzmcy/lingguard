@@ -1,5 +1,11 @@
 {
   "providers": {
+    "openrouter": {
+      "apiKey": "sk-or-v1-xxx",
+      "apiBase": "https://openrouter.ai/api/v1",
+      "model": "deepseek/deepseek-chat-v3-0324",
+      "timeout": 120
+    },
     "glm": {
       "apiKey": "xxxxxx",
       "apiBase": "https://open.bigmodel.cn/api/anthropic",
@@ -11,15 +17,15 @@
       "apiBase": "https://api.minimaxi.com/anthropic",
       "model": "MiniMax-M2.5"
     },
-    "qwen": {
-      "apiKey": "sk-xxxx",
-      "model": "qwen3.5-plus"
-    },
     "qwencoder": {
       "apiKey": "sk-sp-xxx",
       "apiBase": "https://coding.dashscope.aliyuncs.com/v1",
       "model": "qwen3.5-plus",
       "timeout": 120
+    },
+    "qwen": {
+      "apiKey": "sk-xxx",
+      "model": "qwen3.5-plus"
     }
   },
   "agents": {
@@ -69,7 +75,7 @@
     "restrictToWorkspace": true,
     "websearch": {
       "tavilyApiKey": "tvly-dev-xxx",
-      "bochaApiKey": "sk-xxxx",
+      "bochaApiKey": "sk-xxx",
       "maxResults": 5
     },
     "webfetch": {
@@ -102,7 +108,7 @@
     },
     "clawhub": {
       "enabled": false,
-      "apiToken": "xxxx"
+      "apiToken": "xxx"
     }
   },
   "storage": {
