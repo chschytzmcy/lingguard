@@ -1,40 +1,17 @@
 # LingGuard
 
-一款基于 Go 语言的超轻量级个人 AI 智能助手。
+基于 Go 语言的超轻量级个人 AI 智能助手。
 
 ## 特性
 
-### 核心能力
-- **多 LLM 支持** - OpenAI, Anthropic, DeepSeek, GLM, Qwen, MiniMax, Moonshot, Groq, Gemini, vLLM, OpenRouter 等
-- **Provider 自动匹配** - 根据模型名/API Key 自动选择合适的 Provider
-- **流式响应** - 实时输出，飞书消息实时更新
-
-### 渠道集成
-- **飞书** - WebSocket 长连接，无需公网 IP，流式消息卡片
-- **QQ** - 预留支持
-- **多渠道支持** - 支持多类型 channel 同时运行（飞书 + QQ），但不支持同类型多实例（如 2 个飞书 channel）
-
-### 工具系统
-- **Shell 工具** - 执行命令，支持安全沙箱
-- **文件工具** - 读写、编辑、列表
-- **Web 工具** - Tavily AI 搜索、网页抓取
-- **AIGC 工具** - 图像/视频生成（文生图、文生视频、图生视频、视频生视频）
-- **TTS 工具** - 语音合成，多种音色可选
-- **MCP 支持** - Model Context Protocol，支持 Stdio 和 HTTP 传输
-
-### 智能能力
-- **技能系统** - 渐进式加载，按需注入指令
-- **持久化记忆** - MEMORY.md + HISTORY.md 方案
-- **子代理** - 后台异步执行复杂任务
-- **定时任务** - Cron 调度，支持时区
-
-### 部署优势
-- **单二进制部署** - 无运行时依赖
-- **低内存占用** - ~20MB 内存
+- **多 LLM 支持** - OpenAI, Anthropic, DeepSeek, GLM, Qwen, MiniMax, Moonshot, Groq, Gemini 等
+- **飞书集成** - WebSocket 长连接，流式消息卡片
+- **工具系统** - Shell, 文件, Web 搜索, AIGC, TTS, MCP
+- **技能系统** - 渐进式加载，按需注入
+- **记忆系统** - 长期记忆 + 向量检索 + 会话持久化
+- **单二进制部署** - 无运行时依赖，~20MB 内存
 
 ## 快速开始
-
-### 1. 构建
 
 ```bash
 # 克隆项目
@@ -42,672 +19,307 @@ git clone https://github.com/your-org/lingguard.git
 cd lingguard
 
 # 构建
-go build -o lingguard ./cmd/lingguard
-```
+make build
 
-### 2. 配置
-
-```bash
-# 创建配置目录
-mkdir -p ~/.lingguard
-
-# 创建配置文件
-cat > ~/.lingguard/config.json << 'EOF'
-{
-  "providers": {
-    "deepseek": {
-      "apiKey": "sk-xxx"
-    }
-  },
-  "agents": {
-    "provider": "deepseek",
-    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。"
-  }
-}
-EOF
-```
-
-### 3. 运行
-
-```bash
-# 交互模式
-./lingguard agent
-
-# 单次消息
-./lingguard agent -m "你好"
-
-# 启动网关
-./lingguard gateway
-```
-
-## CLI 命令
-
-### Agent 交互
-
-```bash
-# 交互模式
-./lingguard agent
-
-# 单次消息
-./lingguard agent -m "分析当前目录的代码结构"
-
-# 指定配置文件
-./lingguard agent -c /path/to/config.json
-```
-
-### Gateway 网关
-
-```bash
-# 启动网关
-./lingguard gateway
-```
-
-### 定时任务
-
-```bash
-# 添加 cron 表达式任务
-./lingguard cron add "早间简报" "cron:0 9 * * *" "生成今日简报"
-
-# 添加带时区的任务
-./lingguard cron add "NYC Morning" "cron:0 9 * * *" "Good morning!" --tz "America/New_York"
-
-# 添加间隔任务
-./lingguard cron add "Hourly Check" "every:1h" "检查系统状态"
-
-# 添加一次性任务
-./lingguard cron add "Reminder" "at:2026-02-20T10:00:00" "别忘了开会"
-
-# 列出任务
-./lingguard cron list
-
-# 删除任务
-./lingguard cron remove <job-id>
-
-# 手动执行
-./lingguard cron run <job-id> --force
-```
-
-### 状态查看
-
-```bash
-./lingguard status
-```
-
-## 配置
-
-### 配置文件位置（优先级从高到低）
-
-1. 环境变量 `$LINGGUARD_CONFIG`
-2. 项目目录 `configs/config.json`
-3. 当前目录 `./config.json`
-4. 用户目录 `~/.lingguard/config.json`
-
-### 完整配置示例
-
-```json
-{
-  "providers": {
-    "glm": {
-      "apiKey": "xxx.xxx",
-      "apiBase": "https://open.bigmodel.cn/api/anthropic",
-      "model": "glm-5",
-      "timeout": 120
-    },
-    "qwen": {
-      "apiKey": "sk-xxx"
-    }
-  },
-  "agents": {
-    "workspace": "~/.lingguard/workspace",
-    "provider": "glm",
-    "maxToolIterations": 20,
-    "memoryWindow": 50,
-    "systemPrompt": "你是灵侍，一个乐于助人的 AI 助手。",
-    "memory": {
-      "enabled": true,
-      "recentDays": 3,
-      "maxHistoryLines": 1000,
-      "autoRecall": true,
-      "autoRecallTopK": 3,
-      "autoRecallMinScore": 0.3,
-      "autoCapture": true,
-      "captureMaxChars": 500
-    }
-  },
-  "channels": {
-    "feishu": {
-      "enabled": true,
-      "appId": "cli_xxx",
-      "appSecret": "xxx",
-      "allowFrom": ["ou_xxx"]
-    }
-  },
-  "tools": {
-    "restrictToWorkspace": false,
-    "workspace": "~/.lingguard/workspace",
-    "tavilyApiKey": "",
-    "webMaxChars": 50000,
-    "mcpServers": {
-      "filesystem": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/documents"]
-      }
-    },
-    "aigc": {
-      "enabled": true,
-      "provider": "qwen"
-    }
-  },
-  "speech": {
-    "enabled": true,
-    "provider": "qwen",
-    "model": "qwen3-asr-flash"
-  },
-  "tts": {
-    "enabled": true,
-    "provider": "qwen",
-    "model": "qwen3-tts-flash",
-    "voice": "Cherry"
-  },
-  "cron": {
-    "enabled": true,
-    "storePath": "~/.lingguard/cron/jobs.json"
-  },
-  "heartbeat": {
-    "enabled": true,
-    "interval": 30
-  },
-  "storage": {
-    "type": "file",
-    "path": "~/.lingguard/memory"
-  },
-  "logging": {
-    "level": "info",
-    "format": "text",
-    "output": "~/.lingguard/logs/lingguard.log"
-  }
-}
-```
-
-## 内置工具
-
-| 工具名 | 功能描述 | 危险级别 |
-|--------|----------|:--------:|
-| `shell` | 执行 Shell 命令 | ⚠️ |
-| `file` | 文件读写、编辑、列表 | ⚠️ |
-| `web_search` | Tavily AI 搜索 | - |
-| `web_fetch` | 网页抓取、HTML 转 Markdown | - |
-| `aigc` | 图像/视频生成（文生图、文生视频、图生视频、视频生视频） | - |
-| `tts` | 语音合成，多种音色可选 | - |
-| `moltbook` | AI Agent 社交网络（发帖、评论、投票） | - |
-| `skill` | 按需加载技能指令 | - |
-| `memory` | 记忆操作（添加/搜索/日志） | - |
-| `cron` | 定时提醒和任务管理（支持 execute 模式） | - |
-| `message` | 发送消息到渠道 | - |
-| `workspace` | 工作区管理 | - |
-| `task_spawn` | 创建子代理任务 | - |
-| `task_status` | 查询子代理状态 | - |
-| `mcp_*` | MCP 服务器工具 | - |
-
-## MCP 支持
-
-LingGuard 支持 Model Context Protocol (MCP)，可以连接外部工具服务器。
-
-### Stdio 传输
-
-```json
-{
-  "tools": {
-    "mcpServers": {
-      "filesystem": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
-      }
-    }
-  }
-}
-```
-
-### HTTP 传输
-
-```json
-{
-  "tools": {
-    "mcpServers": {
-      "remote": {
-        "url": "http://localhost:8765/mcp"
-      }
-    }
-  }
-}
-```
-
-MCP 工具命名格式: `mcp_{serverName}_{toolName}`
-
-## Moltbook 集成
-
-LingGuard 内置 Moltbook 工具，可以让 AI Agent 参与社交网络。
-
-### 配置
-
-```json
-{
-  "tools": {
-    "moltbook": {
-      "enabled": true
-    }
-  }
-}
-```
-
-凭证存储在 `~/.lingguard/moltbook/credentials.json`。
-
-### 当前 Agent 信息
-
-| 项目 | 值 |
-|------|-----|
-| Agent 名称 | lingguard |
-| Agent ID | `03614eff-6b82-4c66-bc6d-7ad7ef61cf41` |
-| 主页 | https://www.moltbook.com/u/lingguard |
-| 状态 | ✅ 已认领 |
-
-firefly55249881
-liuyingshiwolaopofirefly260710
-
-## 技能系统
-
-### 内置技能
-
-| 技能 | 描述 |
-|------|------|
-| `clawhub` | 🦞 ClawHub 技能仓库，搜索/安装/更新技能 |
-| `weather` | 🌤️ 天气查询 (心知天气) |
-| `git-sync` | 🌿 Git 工作流自动化 |
-| `code-review` | 代码审查指南 |
-| `coding` | 💻 编码任务（使用 opencode） |
-| `file` | 文件操作指南 |
-| `system` | 系统操作指南 |
-| `aigc` | 🎨 AI 图像/视频生成（文生图、文生视频、图生视频、视频生视频） |
-| `tts` | 🔊 语音合成，多种音色可选 |
-| `cron` | ⏰ 定时提醒和任务管理 |
-| `web` | 🔍 网页搜索和抓取 |
-| `moltbook` | Moltbook 社交网络发帖 |
-| `skill-creator` | 技能创建模板 |
-
-### ClawHub 技能仓库
-
-从 [ClawHub](https://clawhub.ai) 搜索和安装技能：
-
-```bash
-# 搜索技能
-npx --yes clawhub@latest search "web scraping" --limit 5
-
-# 安装技能
-npx --yes clawhub@latest install <slug> --workdir "$HOME/.lingguard/workspace"
-
-# 更新所有已安装技能
-npx --yes clawhub@latest update --all --workdir "$HOME/.lingguard/workspace"
-
-# 列出已安装技能
-npx --yes clawhub@latest list --workdir "$HOME/.lingguard/workspace"
-```
-
-ClawHub 配置（可选，用于自动登录）：
-```json
-{
-  "tools": {
-    "clawhub": {
-      "enabled": true,
-      "apiToken": "clh_xxxx"
-    }
-  }
-}
-```
-
-### 技能格式
-
-每个技能是一个目录，包含 `SKILL.md` 文件：
-
-```markdown
----
-name: skill-name
-description: Skill description
-homepage: https://example.com
-metadata: {"emoji":"🦞","requires":{"bins":["curl"]}}
----
-
-# Skill Title
-
-Skill instructions here...
-```
-
-### 渐进式加载
-
-- 默认只注入技能摘要到系统提示
-- `always=true` 的技能自动加载完整内容
-- 其他技能通过 `skill` 工具按需加载
-
-## 记忆系统
-
-文件持久化记忆方案：
-
-```
-~/.lingguard/memory/
-├── MEMORY.md          # 长期记忆（用户偏好、重要事实）
-├── HISTORY.md         # 事件日志
-└── 2026-02-16.md      # 每日日志
-```
-
-### 自动记忆功能（OpenClaw 风格）
-
-LingGuard 支持类似 OpenClaw 的自动记忆功能：
-
-**自动召回 (Auto-Recall)**
-- 在对话开始时，自动搜索与用户消息相关的历史记忆
-- 将相关记忆注入到系统提示中，帮助 AI 理解上下文
-
-**自动捕获 (Auto-Capture)**
-- 在对话结束时，自动分析用户消息
-- 根据触发规则识别值得记忆的内容
-- 智能去重，避免重复存储相似记忆
-
-### 记忆捕获规则
-
-**会自动捕获的内容（触发规则）：**
-
-| 类别 | 触发词/模式 | 示例 |
-|------|-------------|------|
-| 记住指令 | `记住`、`remember`、`别忘` | "记住我喜欢猫" |
-| 偏好表达 | `喜欢`、`讨厌`、`prefer`、`like` | "我喜欢用 Go 语言" |
-| 习惯表达 | `always`、`never`、`usually` | "I always use dark mode" |
-| 决策记录 | `决定`、`decided`、`选择` | "我决定使用这个方案" |
-| 联系方式 | 电话号码（10位以上）、邮箱 | "我的电话是 13812345678" |
-| 身份信息 | `my name is`、`i am` | "My name is Alice" |
-| 重要标记 | `重要`、`important`、`关键` | "这很重要：项目截止日期" |
-| 项目信息 | `my project`、`working on` | "我的项目使用 React" |
-
-**不会捕获的内容：**
-
-| 类型 | 原因 | 示例 |
-|------|------|------|
-| 问句 | 以问号结尾或包含疑问词 | "我喜欢什么？" |
-| 普通对话 | 不匹配任何触发规则 | "今天天气不错" |
-| Prompt 注入 | 检测到注入攻击模式 | "Ignore previous instructions" |
-| 重复内容 | 与已有记忆相似度 > 95% | 连续说多次 "我喜欢猫" |
-
-### 记忆分类
-
-捕获的记忆会自动分类：
-
-| 分类 | 说明 | 示例 |
-|------|------|------|
-| `preference` | 用户偏好 | "我喜欢简洁的回答" |
-| `decision` | 决策记录 | "我决定使用 PostgreSQL" |
-| `entity` | 实体信息（联系方式等） | "我的邮箱是 xxx@example.com" |
-| `fact` | 事实信息 | "我的名字叫 Alice" |
-| `other` | 其他 | - |
-
-### 记忆配置
-
-```json
-{
-  "agents": {
-    "memory": {
-      "enabled": true,
-      "recentDays": 3,
-      "maxHistoryLines": 1000,
-      "autoRecall": true,
-      "autoRecallTopK": 3,
-      "autoRecallMinScore": 0.3,
-      "autoCapture": true,
-      "captureMaxChars": 500,
-      "vector": {
-        "enabled": true,
-        "embedding": {
-          "provider": "qwen",
-          "model": "text-embedding-v4"
-        },
-        "search": {
-          "vectorWeight": 0.7,
-          "bm25Weight": 0.3,
-          "minScore": 0.5
-        }
-      }
-    }
-  }
-}
-```
-
-### 记忆工具
-
-```
-memory add --category "User Preferences" --content "用户喜欢简洁的回答"
-memory search "用户偏好"
-memory history --recent 10
-```
-
-## 子代理系统
-
-子代理可以在后台异步执行复杂任务：
-
-```
-# 创建子任务
-task_spawn --task "分析代码库结构" --context "项目目录: /home/user/project"
-
-# 查询状态
-task_status --id "task_xxx"
-```
-
-子代理特点：
-- 独立的工具白名单（无 message、task_spawn）
-- 最多 15 次迭代
-- 完成后通知主代理
-
-## 目录结构
-
-```
-lingguard/
-├── cmd/
-│   ├── lingguard/       # 主程序入口
-│   └── cli/             # CLI 命令
-├── internal/
-│   ├── agent/           # 核心代理
-│   ├── providers/       # LLM 提供商
-│   ├── channels/        # 消息渠道
-│   ├── tools/           # 内置工具
-│   │   ├── mcp.go       # MCP Stdio 客户端
-│   │   └── mcp_http.go  # MCP HTTP 客户端
-│   ├── skills/          # 技能加载器
-│   ├── cron/            # 定时任务
-│   ├── subagent/        # 子代理
-│   ├── session/         # 会话管理
-│   └── config/          # 配置管理
-├── pkg/
-│   ├── llm/             # LLM 类型
-│   ├── stream/          # 流式响应
-│   ├── memory/          # 记忆系统
-│   ├── embedding/       # 向量嵌入
-│   ├── speech/          # 语音识别 (ASR)
-│   ├── tts/             # 语音合成 (TTS)
-│   └── logger/          # 日志
-├── skills/              # 内置技能
-├── configs/             # 配置文件
-└── docs/                # 文档
-```
-
-## 构建方法
-
-```bash
-# 标准构建
-go build -o lingguard ./cmd/lingguard
-
-# 优化体积
-go build -ldflags="-s -w" -o lingguard ./cmd/lingguard
-
-# 交叉编译
-GOOS=linux GOARCH=amd64 go build -o lingguard-linux ./cmd/lingguard
-GOOS=darwin GOARCH=amd64 go build -o lingguard-darwin ./cmd/lingguard
-GOOS=windows GOARCH=amd64 go build -o lingguard.exe ./cmd/lingguard
-```
-
-## 部署方式
-
-### Linux 部署
-
-```bash
-# 方式一：从源码安装
+# 安装（会自动创建配置文件模板）
 make install
 
-# 方式二：从发布包安装
-tar -xzf lingguard-xxx-linux-amd64.tar.gz
-cd lingguard-xxx
-./scripts/install.sh
+# 修改配置文件，填入 API Key
+vim ~/.lingguard/config.json
 
-# 启动服务 (systemd)
-systemctl --user start lingguard
-systemctl --user enable lingguard  # 开机自启
-
-# 查看日志
-journalctl --user -u lingguard -f
+# 重启服务
+systemctl --user restart lingguard  # Linux
+# 或
+launchctl load ~/Library/LaunchAgents/com.lingguard.plist  # macOS
 ```
 
-### macOS 部署
+## Make 命令
+
+### 构建 & 测试
 
 ```bash
-# 1. 下载发布包
-# Apple Silicon (M1/M2/M3): lingguard-xxx-darwin-arm64.tar.gz
-# Intel Mac: lingguard-xxx-darwin-amd64.tar.gz
-
-# 2. 解压并安装
-tar -xzf lingguard-xxx-darwin-arm64.tar.gz
-cd lingguard-xxx
-./scripts/install.sh
-
-# 3. 允许运行（macOS 安全限制）
-xattr -cr ~/.local/bin/lingguard
-
-# 4. 启动服务 (launchd)
-launchctl load ~/Library/LaunchAgents/com.lingguard.plist
-
-# 5. 查看日志
-tail -f ~/.lingguard/logs/lingguard.log
-```
-
-**macOS 服务管理：**
-```bash
-# 停止服务
-launchctl unload ~/Library/LaunchAgents/com.lingguard.plist
-
-# 启动服务
-launchctl load ~/Library/LaunchAgents/com.lingguard.plist
-
-# 查看状态
-launchctl list | grep lingguard
-```
-
-### Windows 部署
-
-```powershell
-# 解压
-Expand-Archive lingguard-xxx-windows-amd64.zip
-
-# 运行
-.\lingguard.exe gateway
-```
-
-### 手动安装
-
-```bash
-# 复制二进制
-mkdir -p ~/.local/bin
-cp lingguard ~/.local/bin/
-
-# macOS 需要移除隔离属性
-xattr -cr ~/.local/bin/lingguard
-
-# 创建配置目录
-mkdir -p ~/.lingguard/{workspace,memory,logs,cron}
-
-# 创建配置文件
-cp configs/config.json ~/.lingguard/
+make build          # 构建项目
+make run            # 构建并运行
+make clean          # 清理构建产物
+make test           # 运行测试（带 race 检测）
+make test-coverage  # 生成覆盖率报告
 ```
 
 ### 打包发布
 
 ```bash
-# 打包 Linux + macOS
-make package
+make package            # 打包 Linux + macOS
+make package-all        # 打包所有平台
+make package-linux      # Linux (amd64 + arm64)
+make package-darwin     # macOS (Intel + Apple Silicon)
+make package-windows    # Windows (amd64 + arm64)
+```
 
-# 打包所有平台
-make package-all
-
-# 单独打包
+单独平台：
+```bash
 make package-linux-amd64
 make package-darwin-arm64
 make package-windows-amd64
 ```
 
-发布包内容：
-```
-lingguard-xxx-darwin-arm64/
-├── lingguard              # 二进制
-├── scripts/
-│   ├── install.sh         # 安装脚本
-│   ├── uninstall.sh       # 卸载脚本
-│   ├── linguard.service   # Linux systemd
-│   └── com.lingguard.plist # macOS launchd
-├── configs/
-│   └── config.json        # 配置模板
-└── skills/builtin/        # 内置技能
-```
+### 安装部署
 
 ```bash
-# 打包发布版本
-make package
-
-# 打包并生成校验和
-make package VERSION=1.0.0
+make install        # 完整安装（二进制 + 配置 + 服务）
+make install-bin    # 仅安装二进制到 ~/.local/bin
+make uninstall      # 卸载
 ```
 
-打包后的文件结构：
-```
-dist/
-├── lingguard-1.0.0-linux-amd64.tar.gz
-├── lingguard-1.0.0-linux-arm64.tar.gz
-├── lingguard-1.0.0-darwin-amd64.tar.gz
-├── lingguard-1.0.0-darwin-arm64.tar.gz
-└── lingguard-1.0.0-windows-amd64.zip
-```
-
-部署打包文件：
+指定安装路径：
 ```bash
-# 解压到目标目录
-tar -xzf lingguard-1.0.0-linux-amd64.tar.gz -C /opt/
+PREFIX=/usr/local make install
+```
 
-# 创建配置目录
-mkdir -p ~/.lingguard
+### 开发
 
-# 复制配置模板
-cp /opt/lingguard/configs/config.example.json ~/.lingguard/config.json
+```bash
+make dev            # 开发模式运行
+make fmt            # 格式化代码
+make lint           # 静态检查
+make docker         # 构建 Docker 镜像
+```
 
-# 编辑配置
+### 帮助
+
+```bash
+make help           # 显示所有命令
+```
+
+## 配置
+
+配置文件位置（优先级从高到低）：
+1. 环境变量 `$LINGGUARD_CONFIG`
+2. 用户目录 `~/.lingguard/config.json`
+
+安装后会自动创建配置文件模板，需要修改后重启服务：
+
+```bash
 vim ~/.lingguard/config.json
-
-# 运行
-/opt/lingguard/lingguard gateway
+systemctl --user restart lingguard  # Linux
 ```
 
-## 依赖
+### agents 配置
 
-- Go 1.23+
-- [Cobra](https://github.com/spf13/cobra) - CLI 框架
-- [robfig/cron](https://github.com/robfig/cron) - Cron 调度
-- [larksuite/oapi-sdk-go](https://github.com/larksuite/oapi-sdk-go) - 飞书 SDK
+| 字段 | 说明 |
+|------|------|
+| `provider` | 主 LLM 提供商，用于文本对话和工具调用 |
+| `multimodalProvider` | 多模态提供商，用于处理图片/视频输入。**可选**，如未设置则使用 `provider` |
+
+**调用关系：**
+```
+用户消息
+    │
+    ├── 纯文本消息 → provider 处理
+    │
+    └── 包含图片/视频
+            │
+            ├── multimodalProvider 已配置？
+            │       │
+            │       ├── 是 → multimodalProvider 处理
+            │       │
+            │       └── 否 → provider 处理（需支持视觉）
+```
+
+**配置示例：**
+```json
+{
+  "providers": {
+    "deepseek": { "apiKey": "sk-xxx" },      // 文本模型，便宜
+    "qwen": { "apiKey": "sk-xxx" }           // 支持 vision
+  },
+  "agents": {
+    "provider": "deepseek",                   // 默认用 deepseek
+    "multimodalProvider": "qwen"              // 图片消息用 qwen
+  }
+}
+```
+
+### tools.websearch 配置
+
+| 字段 | 说明 |
+|------|------|
+| `tavilyApiKey` | Tavily Search API Key（国际搜索，质量高） |
+| `bochaApiKey` | 博查 AI 搜索 API Key（中文搜索优化） |
+
+**优先调用关系：**
+```
+web_search 工具调用
+    │
+    ├── tavilyApiKey 已配置？
+    │       │
+    │       ├── 是 → 调用 Tavily API
+    │       │       │
+    │       │       ├── 成功 → 返回结果
+    │       │       │
+    │       │       └── 失败 → 尝试博查（如有配置）
+    │       │
+    │       └── 否 ↓
+    │
+    └── bochaApiKey 已配置？
+            │
+            ├── 是 → 调用博查 AI API
+            │
+            └── 否 → 报错：未配置搜索 API Key
+```
+
+**配置示例：**
+```json
+{
+  "tools": {
+    "websearch": {
+      "tavilyApiKey": "tvly-xxx",      // 优先使用
+      "bochaApiKey": "bocha-xxx"       // 备用（中文优化）
+    }
+  }
+}
+```
+
+### tools.opencode 配置
+
+OpenCode 是一个 HTTP API 服务，用于执行编码任务。LingGuard 通过 HTTP 调用 OpenCode 服务。
+
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| `enabled` | 是否启用 OpenCode 工具 | `false` |
+| `baseURL` | OpenCode 服务地址 | `http://127.0.0.1:4096` |
+| `timeout` | 请求超时时间（秒） | `300` |
+
+**调用关系：**
+```
+用户请求编码任务
+    │
+    └── Agent 调用 opencode 工具
+            │
+            ├── 检查 OpenCode 服务健康状态
+            │       │
+            │       ├── 运行中 → 直接使用
+            │       │
+            │       └── 未运行 → 自动启动 opencode server
+            │                   （在工作目录执行 opencode 命令）
+            │
+            └── 发送 HTTP 请求到 baseURL
+                    │
+                    ├── POST /sessions        创建会话
+                    ├── POST /chat            发送消息
+                    └── GET /events (SSE)     接收流式响应
+```
+
+**配置示例：**
+```json
+{
+  "tools": {
+    "opencode": {
+      "enabled": true,
+      "baseURL": "http://127.0.0.1:4096",
+      "timeout": 300
+    }
+  }
+}
+```
+
+**前置条件：**
+- 需要安装 `opencode` 命令行工具
+- LingGuard 会自动启动/管理 OpenCode 服务
+
+## 内置工具
+
+| 工具 | 功能 |
+|------|------|
+| `shell` | 执行命令（支持沙箱） |
+| `file` | 文件读写、编辑 |
+| `web_search` | 网页搜索（Tavily/博查） |
+| `web_fetch` | 网页抓取 |
+| `aigc` | 图像/视频生成 |
+| `tts` | 语音合成 |
+| `memory` | 记忆操作 |
+| `skill` | 加载技能 |
+| `cron` | 定时任务 |
+| `opencode` | 编码任务（需配置） |
+| `mcp_*` | MCP 工具 |
+
+## 技能系统
+
+| 技能 | 描述 |
+|------|------|
+| `clawhub` | 技能仓库 |
+| `git-sync` | Git 工作流 |
+| `coding` | 编码任务 |
+| `weather` | 天气查询 |
+
+## 记忆系统
+
+```
+~/.lingguard/memory/
+├── MEMORY.md        # 长期记忆
+├── sessions/        # 会话持久化（JSON）
+├── vectors.db       # 向量索引
+└── 2026-03-04.md    # 每日日志
+```
+
+**自动功能：**
+- **Auto-Recall**: 对话开始时自动召回相关记忆
+- **Auto-Capture**: 对话结束时自动捕获重要内容
+
+## CLI 命令
+
+```bash
+./lingguard agent                    # 交互模式
+./lingguard agent -m "你好"          # 单次消息
+./lingguard gateway                  # 启动网关
+
+# 定时任务
+./lingguard cron add "日报" "cron:0 9 * * *" "生成日报"
+./lingguard cron list
+./lingguard status
+```
+
+## 目录结构
+
+```
+lingguard/
+├── cmd/lingguard/      # 主程序
+├── internal/
+│   ├── agent/          # 核心代理
+│   ├── providers/      # LLM 提供商
+│   ├── channels/       # 消息渠道
+│   └── tools/          # 内置工具
+├── pkg/
+│   ├── memory/         # 记忆系统
+│   └── embedding/      # 向量嵌入
+├── skills/             # 内置技能
+├── scripts/            # 安装脚本
+└── configs/            # 配置文件
+```
+
+## 服务管理
+
+### Linux (systemd)
+
+```bash
+make install                    # 安装并启动服务
+systemctl --user status lingguard
+systemctl --user restart lingguard
+journalctl --user -u lingguard -f
+```
+
+### macOS (launchd)
+
+```bash
+make install                    # 安装并启动服务
+launchctl list | grep lingguard
+launchctl unload ~/Library/LaunchAgents/com.lingguard.plist   # 停止
+launchctl load ~/Library/LaunchAgents/com.lingguard.plist     # 启动
+```
 
 ## 文档
 
-- [架构文档](docs/ARCHITECTURE.md) - 系统架构
-- [API 文档](docs/API.md) - API 接口和使用说明
+- [架构文档](docs/ARCHITECTURE.md)
+- [API 文档](docs/API.md)
 
 ## License
 

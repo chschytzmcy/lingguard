@@ -25,10 +25,10 @@ func TestFileStore_Init(t *testing.T) {
 		t.Error("MEMORY.md not created")
 	}
 
-	// 检查 HISTORY.md 是否创建
+	// HISTORY.md 不再创建
 	historyFile := filepath.Join(tmpDir, "HISTORY.md")
-	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
-		t.Error("HISTORY.md not created")
+	if _, err := os.Stat(historyFile); !os.IsNotExist(err) {
+		t.Error("HISTORY.md should not be created anymore")
 	}
 }
 
@@ -91,36 +91,6 @@ func TestFileStore_SearchMemory(t *testing.T) {
 
 	if len(results) == 0 {
 		t.Error("expected to find 'dark' in memory")
-	}
-}
-
-func TestFileStore_AddHistory(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "lingguard-memory-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	store := NewFileStore(tmpDir)
-	if err := store.Init(); err != nil {
-		t.Fatalf("failed to init store: %v", err)
-	}
-
-	// 添加历史
-	if err := store.AddHistory("Test Event", "This is a test", map[string]string{
-		"key": "value",
-	}); err != nil {
-		t.Fatalf("failed to add history: %v", err)
-	}
-
-	// 获取最近历史
-	history, err := store.GetRecentHistory(10)
-	if err != nil {
-		t.Fatalf("failed to get history: %v", err)
-	}
-
-	if len(history) == 0 {
-		t.Error("history is empty")
 	}
 }
 

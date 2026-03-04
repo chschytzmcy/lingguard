@@ -63,22 +63,6 @@ func (b *ContextBuilder) BuildContext(includeRecentDays int) (string, error) {
 		}
 	}
 
-	// 3. 加载最近的历史记录
-	recentHistory, err := b.store.GetRecentHistory(50)
-	if err == nil && len(recentHistory) > 0 {
-		context.WriteString("## Recent History\n\n")
-		// 只保留最近的几个事件
-		start := len(recentHistory) - 20
-		if start < 0 {
-			start = 0
-		}
-		for _, line := range recentHistory[start:] {
-			if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
-				context.WriteString(line + "\n")
-			}
-		}
-	}
-
 	return context.String(), nil
 }
 

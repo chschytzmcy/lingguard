@@ -433,16 +433,6 @@ func (s *HybridStore) SearchMemory(ctx context.Context, query string) ([]*Vector
 	return records, nil
 }
 
-// AddHistory 添加历史记录
-func (s *HybridStore) AddHistory(eventType, summary string, details map[string]string) error {
-	return s.fileStore.AddHistory(eventType, summary, details)
-}
-
-// GetRecentHistory 获取最近历史
-func (s *HybridStore) GetRecentHistory(lines int) ([]string, error) {
-	return s.fileStore.GetRecentHistory(lines)
-}
-
 // WriteDailyLog 写入每日日志
 func (s *HybridStore) WriteDailyLog(content string) error {
 	if err := s.fileStore.WriteDailyLog(content); err != nil {

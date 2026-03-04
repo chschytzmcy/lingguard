@@ -104,11 +104,15 @@ func NewAgentWithMultimodalAndConfig(cfg *config.AgentsConfig, provider provider
 	var memBuilder *memory.ContextBuilder
 	var sessionStore memory.Store
 
-	if cfg.MemoryConfig != nil && cfg.MemoryConfig.Enabled {
-		// 使用文件存储，目录固定为 ~/.lingguard/memory
-		home, _ := os.UserHomeDir()
-		memDir := filepath.Join(home, ".lingguard", "memory")
+	// 记忆目录
+	home, _ := os.UserHomeDir()
+	memDir := filepath.Join(home, ".lingguard", "memory")
 
+	// 始终初始化会话存储（每个会话一个JSON文件）
+	sessionStore = memory.NewSessionStore(memDir)
+	logger.Info("Session store initialized", "path", memDir+"/sessions/")
+
+	if cfg.MemoryConfig != nil && cfg.MemoryConfig.Enabled {
 		// 检查是否启用向量检索
 		if cfg.MemoryConfig.Vector != nil && cfg.MemoryConfig.Vector.Enabled {
 			// 使用混合存储（文件+向量）
@@ -130,7 +134,6 @@ func NewAgentWithMultimodalAndConfig(cfg *config.AgentsConfig, provider provider
 				hybridStore = nil
 			} else {
 				memStore = hybridStore.FileStore()
-				sessionStore = memStore
 				memBuilder = memory.NewContextBuilderWithHybrid(hybridStore)
 				logger.Info("Hybrid memory store initialized with vector search", "path", memDir)
 			}
@@ -140,17 +143,12 @@ func NewAgentWithMultimodalAndConfig(cfg *config.AgentsConfig, provider provider
 		if hybridStore == nil {
 			memStore = memory.NewFileStore(memDir)
 			if err := memStore.Init(); err != nil {
-				logger.Warn("Failed to init file memory store, using in-memory", "error", err)
-				sessionStore = memory.NewMemoryStore()
+				logger.Warn("Failed to init file memory store", "error", err)
 			} else {
-				sessionStore = memStore
 				memBuilder = memory.NewContextBuilder(memStore)
 				logger.Info("File-based memory store initialized", "path", memDir)
 			}
 		}
-	} else {
-		// 使用内存存储
-		sessionStore = memory.NewMemoryStore()
 	}
 
 	// 如果没有配置多模态 provider，使用主 provider
@@ -257,14 +255,6 @@ func (a *Agent) RegisterTaskBoardTool() {
 	}
 }
 
-// RecordEvent 记录事件到历史（参考 nanobot）
-func (a *Agent) RecordEvent(eventType, summary string, details map[string]string) error {
-	if a.memoryStore == nil {
-		return nil
-	}
-	return a.memoryStore.AddHistory(eventType, summary, details)
-}
-
 // GetMemoryStore 获取记忆存储
 func (a *Agent) GetMemoryStore() *memory.FileStore {
 	return a.memoryStore
@@ -356,10 +346,10 @@ func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMess
 	hasMedia := len(mediaPaths) > 0
 	if hasMedia && a.multimodalProvider.SupportsVision() {
 		// 使用多模态消息格式
-		s.AddMessageWithMedia("user", userMessage, mediaPaths)
+		a.sessions.AddMessageWithMediaAndPersist(sessionID, "user", userMessage, mediaPaths)
 		logger.Info("Processing multimodal message", "session", sessionID, "mediaCount", len(mediaPaths), "provider", a.multimodalProvider.Name())
 	} else {
-		s.AddMessage("user", userMessage)
+		a.sessions.AddMessageWithPersist(sessionID, "user", userMessage)
 		if hasMedia {
 			logger.Warn("Multimodal provider does not support vision, falling back to text mode", "session", sessionID)
 		}
@@ -446,10 +436,10 @@ func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, us
 	// 检查是否有多模态内容
 	hasMedia := len(mediaPaths) > 0
 	if hasMedia && a.multimodalProvider.SupportsVision() {
-		s.AddMessageWithMedia("user", userMessage, mediaPaths)
+		a.sessions.AddMessageWithMediaAndPersist(sessionID, "user", userMessage, mediaPaths)
 		logger.Info("Processing multimodal message (stream)", "session", sessionID, "mediaCount", len(mediaPaths), "provider", a.multimodalProvider.Name())
 	} else {
-		s.AddMessage("user", userMessage)
+		a.sessions.AddMessageWithPersist(sessionID, "user", userMessage)
 		if hasMedia {
 			logger.Warn("Multimodal provider does not support vision, falling back to text mode", "session", sessionID)
 		}
@@ -509,6 +499,13 @@ func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messa
 	if maxIterations <= 0 {
 		maxIterations = 10
 	}
+
+	// 确保在函数结束时执行自动捕获和历史记录
+	defer func() {
+		if a.config.MemoryConfig != nil && a.config.MemoryConfig.AutoCapture {
+			go a.captureMemories(sessionID, messages)
+		}
+	}()
 
 	for iterations < maxIterations {
 		iterations++
@@ -590,9 +587,8 @@ func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messa
 		assistantMsg := resp.ToMessage()
 
 		// 存储助手消息到会话（只有内容不为空时才保存）
-		s := a.sessions.GetOrCreate(sessionID)
 		if assistantMsg.Content != "" {
-			s.AddMessage("assistant", assistantMsg.Content)
+			a.sessions.AddMessageWithPersist(sessionID, "assistant", assistantMsg.Content)
 		}
 
 		// 检查是否有工具调用
@@ -825,9 +821,8 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 		}
 
 		// 存储助手消息到会话（只有内容不为空时才保存）
-		s := a.sessions.GetOrCreate(sessionID)
 		if assistantContent != "" {
-			s.AddMessage("assistant", assistantContent)
+			a.sessions.AddMessageWithPersist(sessionID, "assistant", assistantContent)
 		}
 
 		// 检查是否有工具调用

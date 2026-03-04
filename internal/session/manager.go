@@ -2,6 +2,7 @@
 package session
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -16,6 +17,9 @@ type Session struct {
 	Messages  []*memory.Message
 	CreatedAt time.Time
 	UpdatedAt time.Time
+
+	// store 持久化存储（可选）
+	store memory.Store
 
 	// processingMu 用于保证同一会话的消息串行处理
 	// 防止并发消息导致会话历史出现连续的 user 消息
@@ -71,9 +75,90 @@ func (m *Manager) GetOrCreate(key string) *Session {
 		UpdatedAt:   time.Now(),
 		forceUnlock: make(chan struct{}),
 	}
+
+	// 尝试从存储加载历史消息
+	if m.store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		msgs, err := m.store.Get(ctx, key, m.window)
+		if err == nil && len(msgs) > 0 {
+			s.Messages = msgs
+			logger.Info("Session restored from store", "key", key, "messageCount", len(msgs))
+		}
+	}
+
 	m.sessions[key] = s
 	logger.Info("Session created", "key", key)
 	return s
+}
+
+// PersistMessage 持久化消息到存储
+func (m *Manager) PersistMessage(sessionKey string, msg *memory.Message) {
+	if m.store == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := m.store.Add(ctx, sessionKey, msg); err != nil {
+		logger.Warn("Failed to persist message", "session", sessionKey, "error", err)
+	}
+}
+
+// AddMessageWithPersist 添加消息并持久化
+func (m *Manager) AddMessageWithPersist(sessionKey, role, content string) {
+	s := m.GetOrCreate(sessionKey)
+	s.AddMessage(role, content)
+
+	// 持久化到存储
+	msg := &memory.Message{
+		ID:        generateID(),
+		Role:      role,
+		Content:   content,
+		Timestamp: time.Now(),
+	}
+	m.PersistMessage(sessionKey, msg)
+}
+
+// AddMessageWithMediaAndPersist 添加带媒体的消息并持久化
+func (m *Manager) AddMessageWithMediaAndPersist(sessionKey, role, content string, media []string) {
+	s := m.GetOrCreate(sessionKey)
+	s.AddMessageWithMedia(role, content, media)
+
+	// 持久化到存储
+	msg := &memory.Message{
+		ID:        generateID(),
+		Role:      role,
+		Content:   content,
+		Media:     media,
+		Timestamp: time.Now(),
+	}
+	m.PersistMessage(sessionKey, msg)
+}
+
+// ClearSession 清空会话（同时清除存储）
+func (m *Manager) ClearSession(sessionKey string) {
+	m.mu.RLock()
+	s, ok := m.sessions[sessionKey]
+	m.mu.RUnlock()
+
+	if !ok {
+		return
+	}
+
+	s.Clear()
+
+	// 清除存储中的会话
+	if m.store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := m.store.Clear(ctx, sessionKey); err != nil {
+			logger.Warn("Failed to clear session from store", "session", sessionKey, "error", err)
+		}
+	}
 }
 
 // AddMessage 添加消息

@@ -229,7 +229,7 @@ LingGuard 的记忆系统融合了 nanobot 的文件存储和 OpenClaw 的自动
 |------|-----------|---------|----------|
 | **存储方式** | 文件 + 向量 | 文件 | 向量数据库 |
 | **长期记忆** | MEMORY.md | MEMORY.md | 向量存储 |
-| **事件日志** | HISTORY.md | 事件日志 | 无 |
+| **会话持久化** | sessions/*.json | 无 | 向量存储 |
 | **每日日志** | YYYY-MM-DD.md | 每日笔记 | 无 |
 | **检索方式** | grep + 向量搜索 | grep | 向量搜索 |
 | **自动召回** | ✅ | ❌ | ✅ |
@@ -283,15 +283,18 @@ LingGuard 的记忆系统融合了 nanobot 的文件存储和 OpenClaw 的自动
 #### 为什么借鉴 nanobot？
 
 1. **Provider 自动匹配**：根据模型名/API Key 自动选择
-2. **记忆文件方案**：MEMORY.md + HISTORY.md 简单有效
+2. **记忆文件方案**：MEMORY.md 简单有效的长期记忆
 3. **工具系统设计**：Tool 接口设计清晰
 4. **技能系统**：SKILL.md 格式易于扩展
+5. **单二进制部署**：Go 静态编译，无运行时依赖
 
 #### 为什么借鉴 OpenClaw？
 
 1. **自动记忆**：Auto-Recall 和 Auto-Capture 提升用户体验
-2. **语音交互**：TTS/ASR 集成参考
-3. **向量检索**：记忆的语义搜索能力
+2. **向量检索**：记忆的语义搜索能力，支持混合检索（向量 + BM25）
+3. **语音交互**：TTS/ASR 集成参考
+4. **会话持久化**：会话状态保存和恢复
+5. **智能去重**：三层去重机制（文件/缓冲区/向量）
 
 #### LingGuard 的独特价值
 
@@ -1243,7 +1246,7 @@ LingGuard 的记忆系统融合了 nanobot 的文件存储方案和 OpenClaw 的
 |------|-----------|---------|
 | **存储格式** | Markdown 文件 | Markdown 文件 |
 | **长期记忆** | MEMORY.md | MEMORY.md |
-| **事件日志** | HISTORY.md | 事件日志 |
+| **会话持久化** | sessions/*.json | 无 |
 | **每日日志** | YYYY-MM-DD.md | 每日笔记 |
 | **检索方式** | grep + 向量搜索 | grep |
 | **记忆工具** | memory 工具 | 内置函数 |
@@ -1258,7 +1261,9 @@ LingGuard 的记忆系统融合了 nanobot 的文件存储方案和 OpenClaw 的
 ```
 ~/.lingguard/memory/
 ├── MEMORY.md          # 长期记忆（用户偏好、重要事实）
-├── HISTORY.md         # 事件日志（系统事件）
+├── sessions/          # 会话持久化
+│   ├── session1.json
+│   └── session2.json
 ├── vectors.db         # 向量索引（sqlite-vec）
 └── 2026-02-20.md      # 每日日志
 ```
@@ -2006,7 +2011,7 @@ Heartbeat 服务是一个定期唤醒机制，让 Agent 在没有用户触发的
 
 ## 如果发现问题
 
-- 记录到 HISTORY.md
+- 记录到日志文件
 - 如果严重，发送通知到飞书群
 
 ## 无任务时
