@@ -26,6 +26,23 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 	// 视频大小限制：5MB（base64 编码后约 6.7MB）
 	const maxVideoSize = 5 * 1024 * 1024
 
+	// 统计图片数量，用于动态计算压缩限制
+	imageCount := 0
+	for _, path := range mediaPaths {
+		ext := strings.ToLower(filepath.Ext(path))
+		if !isVideoFile(ext) {
+			imageCount++
+		}
+	}
+
+	// 动态计算每张图片的最大 base64 大小
+	// 目标：所有图片的总 base64 大小不超过 8MB
+	maxBase64PerImage := 8 * 1024 * 1024 // 默认 8MB
+	if imageCount > 1 {
+		maxBase64PerImage = (8 * 1024 * 1024) / imageCount
+		logger.Info("Multiple images detected, adjusting compression limit", "imageCount", imageCount, "maxBase64PerImage", maxBase64PerImage)
+	}
+
 	// 添加图片/视频
 	for _, path := range mediaPaths {
 		// 读取媒体文件并转换为 base64
@@ -65,8 +82,8 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 			// 图片使用 image_url 格式
 			mimeType := detectMimeType(data)
 
-			// 压缩图片以符合 API 限制（base64 最大 10MB，但压缩到 8MB 以内更安全）
-			compressedData, err := compressImageForLLM(data, 8*1024*1024)
+			// 压缩图片以符合动态计算的 API 限制
+			compressedData, err := compressImageForLLM(data, maxBase64PerImage)
 			if err != nil {
 				logger.Warn("Failed to compress image, using original", "error", err)
 				compressedData = data
