@@ -38,12 +38,13 @@ func (t *SkillTool) Description() string {
 
 ## 触发条件
 
-- 图像/视频生成 → aigc
-- 网络搜索 → web
-- 代码分析/优化 → coding
-- git 下载/上传 → git-sync
-- 文件操作 → file
-- 定时任务 → cron
+- 图像/视频生成：生成图片、画图、生成视频、图生视频 → aigc
+- 网络搜索：搜索、查一下、网上查、抓取网页 → web
+- 代码分析/优化：分析代码、优化代码、重构、写代码 → coding
+- git 下载/上传：下载代码、上传代码、git clone、git push → git-sync
+- 文件操作：读取文件、写入文件、编辑文件、列出目录 → file
+- 定时任务：提醒我、X分钟后提醒、X点提醒、每天X点、定时、闹钟、别忘了、查看定时任务 → cron
+- 语音合成：朗读、读出来、转成语音、配音 → tts
 
 调用方式：skill --name <技能名>`
 }
@@ -71,7 +72,7 @@ var skillToToolMapping = map[string][]string{
 	"weather":     {"web_search"},
 	"file":        {"file"},
 	"system":      {"shell"},
-	"cron":        {"cron_add", "cron_list", "cron_remove"},
+	"cron":        {"cron"},
 	"tts":         {"tts"},
 }
 
