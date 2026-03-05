@@ -301,11 +301,18 @@ func (s *HybridStore) AddMemory(category, content string) error {
 		return err
 	}
 
+	// 同时写入每日日志（记录时间线）
+	logEntry := fmt.Sprintf("[%s] %s", category, content)
+	if err := s.fileStore.WriteDailyLog(logEntry); err != nil {
+		logger.Warn("Failed to write daily log", "error", err)
+		// 不影响主流程，继续执行
+	}
+
 	// 如果启用向量，索引记忆
 	if s.IsVectorEnabled() {
 		record := &VectorRecord{
 			ID:      uuid.New().String(),
-			Content: fmt.Sprintf("[%s] %s", category, content),
+			Content: logEntry,
 			Metadata: map[string]interface{}{
 				"type":     "memory",
 				"category": category,
