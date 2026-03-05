@@ -16,7 +16,7 @@ import (
 
 const (
 	// Qwen Rerank API 默认配置（可通过配置文件覆盖）
-	QwenRerankAPIBase = "https://dashscope.aliyuncs.com/compatible-api/v1"
+	QwenRerankAPIBase = "https://dashscope.aliyuncs.com/api/v1/services/rerank"
 	QwenRerankModel   = "qwen3-rerank"
 )
 
@@ -99,8 +99,8 @@ func (r *QwenReranker) Rerank(ctx context.Context, query string, documents []str
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	// 创建请求
-	req, err := http.NewRequestWithContext(ctx, "POST", r.apiBase+"/reranks", bytes.NewReader(jsonData))
+	// 创建请求 (apiBase 应为完整的 rerank 端点 URL)
+	req, err := http.NewRequestWithContext(ctx, "POST", r.apiBase, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
