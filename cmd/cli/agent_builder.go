@@ -343,6 +343,12 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 		logger.Info("Moltbook tool enabled", "agentName", b.cfg.Tools.Moltbook.AgentName)
 	}
 
+	// 注册 CalDAV 日历工具
+	if b.cfg.Tools.Calendar != nil && b.cfg.Tools.Calendar.Enabled {
+		ag.RegisterTool(tools.NewCalendarTool(b.cfg.Tools.Calendar))
+		logger.Info("Calendar tool enabled", "accounts", len(b.cfg.Tools.Calendar.Accounts), "default", b.cfg.Tools.Calendar.Default)
+	}
+
 	// 注册可选工具
 	if b.enableCron && b.cronService != nil {
 		ag.RegisterCronTool(b.cronService)

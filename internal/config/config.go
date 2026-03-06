@@ -152,6 +152,8 @@ type ToolsConfig struct {
 	Cron *CronConfig `json:"cron,omitempty"` // 定时任务配置
 	// Moltbook - AI 社交网络
 	Moltbook *MoltbookConfig `json:"moltbook,omitempty"` // Moltbook 配置
+	// Calendar - CalDAV 日历
+	Calendar *CalendarConfig `json:"calendar,omitempty"` // CalDAV 日历配置
 }
 
 // WebSearchConfig 网页搜索配置
@@ -180,6 +182,24 @@ type MoltbookConfig struct {
 	APIKey    string `json:"apiKey,omitempty"`    // API Key (可从注册获取并存储到本地)
 	AgentName string `json:"agentName,omitempty"` // Agent 名称，默认 LingGuard
 	CredPath  string `json:"credPath,omitempty"`  // 凭证文件路径，默认 ~/.lingguard/moltbook/credentials.json
+}
+
+// CalendarConfig CalDAV 日历配置
+type CalendarConfig struct {
+	Enabled  bool              `json:"enabled"`            // 是否启用
+	Accounts []CalendarAccount `json:"accounts,omitempty"` // 日历账户列表
+	Default  string            `json:"default,omitempty"`  // 默认账户名称
+}
+
+// CalendarAccount 日历账户配置
+type CalendarAccount struct {
+	Name     string `json:"name"`               // 账户名称
+	URL      string `json:"url,omitempty"`      // CalDAV 服务器 URL
+	Username string `json:"username,omitempty"` // 用户名
+	Password string `json:"password,omitempty"` // 密码或应用令牌
+	Token    string `json:"token,omitempty"`    // Bearer Token (可选)
+	Preset   string `json:"preset,omitempty"`   // 预设模板: "yuxiao" | "apple" | "google"
+	Timeout  int    `json:"timeout,omitempty"`  // 请求超时（秒），默认 30
 }
 
 // AIGCConfig AI 内容生成配置（图像/视频）
