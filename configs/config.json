@@ -30,7 +30,7 @@
   },
   "agents": {
     "workspace": "~/.lingguard/workspace",
-    "provider": "glm",
+    "provider": "qwencoder",
     "multimodalProvider": "qwencoder",
     "maxToolIterations": 50,
     "memoryWindow": 50,
@@ -127,6 +127,19 @@
     "cron": {
       "enabled": true,
       "storePath": "~/.lingguard/cron/jobs.json"
+    },
+    "calendar": {
+      "enabled": true,
+      "default": "feishu",
+      "accounts": [
+        {
+          "name": "feishu",
+          "url": "https://caldav.feishu.cn",
+          "username": "xxx",
+          "password": "xxx",
+          "timeout": 30
+        }
+      ]
     }
   },
   "logging": {
