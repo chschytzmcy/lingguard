@@ -23,6 +23,7 @@
 | 会话管理 | 内存会话管理，支持历史消息窗口 |
 | 技能系统 | 渐进式加载，按需注入技能内容 |
 | 记忆系统 | 持久化对话记忆和上下文管理（融合 nanobot + OpenClaw） |
+| 日历集成 | 飞书/钉钉日历 CalDAV 对接，支持查询日程、即将到来的事件 |
 | 定时任务 | Cron 调度，支持消息投递 |
 | 子代理系统 | 后台异步执行复杂任务 |
 | 安全沙箱 | 工作空间限制和权限控制 |
@@ -212,6 +213,7 @@ async def spawn_task(task: str):
 | 视频生视频 (V2V) | ✅ | ❌ | ❌ |
 | 任务看板 Web UI | ✅ | ❌ | ❌ |
 | LLM 调用追踪 | ✅ | ❌ | ❌ |
+| 日历集成 (CalDAV) | ✅ 飞书+钉钉 | ❌ | ❌ |
 | **nanobot 独有** |||
 | ClawHub 技能库 | ❌ | ✅ | ❌ |
 | OAuth 登录 | ❌ | ✅ | ❌ |
@@ -2211,7 +2213,85 @@ Heartbeat 服务是一个定期唤醒机制，让 Agent 在没有用户触发的
 - 心跳使用独立的会话 ID (`heartbeat-main`)，不影响用户对话
 - 心跳超时时间为 5 分钟
 
-### 4.13 内置文件工具
+### 4.13 日历工具（CalDAV）
+
+LingGuard 支持 CalDAV 协议的日历集成，可查询飞书日历、钉钉日历等服务的日程事件。
+
+#### 4.13.1 支持的服务
+
+| 服务 | URL | 查询 | 创建/更新/删除 |
+|------|-----|:---:|:--------------:|
+| 飞书日历 | `https://caldav.feishu.cn` | ✅ | ❌ 服务端限制 |
+| 钉钉日历 | `https://calendar.dingtalk.com/dav` | ✅ | ❌ 服务端限制 |
+| Apple iCloud | `https://caldav.icloud.com` | ✅ | ✅ |
+| Google Calendar | `https://apidata.googleusercontent.com/caldav/v2/{{username}}/events` | ✅ | ✅ |
+
+#### 4.13.2 配置示例
+
+```json
+{
+  "tools": {
+    "calendar": {
+      "enabled": true,
+      "default": "feishu",
+      "accounts": [
+        {
+          "name": "feishu",
+          "url": "https://caldav.feishu.cn",
+          "username": "u_xxxxxxxx",
+          "password": "your-app-token"
+        },
+        {
+          "name": "dingtalk",
+          "url": "https://calendar.dingtalk.com/dav",
+          "username": "u_xxxxxxxx",
+          "password": "your-app-token"
+        }
+      ]
+    }
+  }
+}
+```
+
+#### 4.13.3 支持的操作
+
+| 操作 | 说明 |
+|------|------|
+| `list_calendars` | 列出账户下的所有日历 |
+| `query` | 查询指定时间范围内的事件 |
+| `upcoming` | 获取从现在开始未来一段时间内的事件 |
+| `get` | 获取单个事件详情 |
+
+#### 4.13.4 Heartbeat 集成
+
+在 `HEARTBEAT.md` 中可以配置定期检查日程：
+
+```markdown
+## 日程检查
+
+检查未来1小时的日历事件，如果有即将开始的会议请提醒我。
+
+日历路径：/u_xxxxxxxx/primary/
+```
+
+#### 4.13.5 实现细节
+
+```
+pkg/caldav/
+├── client.go          # CalDAV 客户端
+├── ical.go            # iCalendar 解析/生成
+└── client_test.go     # 测试
+
+internal/tools/
+└── calendar.go        # 日历工具实现
+```
+
+**CalDAV 协议兼容性**：
+- 飞书：需要两步查询（calendar-query + calendar-multiget）
+- 钉钉：直接 calendar-query 返回完整数据
+- 代码自动检测并适配不同实现
+
+### 4.14 内置文件工具
 
 #### 4.13.1 与 MCP 文件系统的区别
 

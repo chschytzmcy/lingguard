@@ -4,8 +4,9 @@
 
 ## 特性
 
-- **多 LLM 支持** - OpenAI, Anthropic, DeepSeek, GLM, Qwen, MiniMax, Moonshot, Groq, Gemini 等
+- **多 LLM 支持** - OpenAI. Anthropic, DeepSeek, GLM, Qwen, MiniMax, Moonshot, Groq, Gemini 等
 - **飞书集成** - WebSocket 长连接，流式消息卡片
+- **日历集成** - 飞书日历、钉钉日历 CalDAV 对接（查询日程、即将到来的事件）
 - **工具系统** - Shell, 文件, Web 搜索, AIGC, TTS, MCP
 - **技能系统** - 渐进式加载，按需注入
 - **记忆系统** - 长期记忆 + 向量检索 + 会话持久化
@@ -143,37 +144,75 @@ systemctl --user restart lingguard  # Linux
 
 | 字段 | 说明 |
 |------|------|
-| `tavilyApiKey` | Tavily Search API Key（国际搜索，质量高） |
+| `tavilyApiKey` | Tavily Search API Key（国际搜索、质量高） |
 | `bochaApiKey` | 博查 AI 搜索 API Key（中文搜索优化） |
-
-**优先调用关系：**
-```
-web_search 工具调用
-    │
-    ├── tavilyApiKey 已配置？
-    │       │
-    │       ├── 是 → 调用 Tavily API
-    │       │       │
-    │       │       ├── 成功 → 返回结果
-    │       │       │
-    │       │       └── 失败 → 尝试博查（如有配置）
-    │       │
-    │       └── 否 ↓
-    │
-    └── bochaApiKey 已配置？
-            │
-            ├── 是 → 调用博查 AI API
-            │
-            └── 否 → 报错：未配置搜索 API Key
-```
 
 **配置示例：**
 ```json
 {
   "tools": {
     "websearch": {
-      "tavilyApiKey": "tvly-xxx",      // 优先使用
-      "bochaApiKey": "bocha-xxx"       // 备用（中文优化）
+      "tavilyApiKey": "tvly-xxx",
+      "bochaApiKey": "bocha-xxx"
+    }
+  }
+}
+```
+
+### tools.calendar 配置
+
+CalDAV 日历集成，支持飞书日历和钉钉日历。
+
+| 字段 | 说明 |
+|------|------|
+| `enabled` | 是否启用日历工具 |
+| `default` | 默认账户名称 |
+| `accounts` | 日历账户列表 |
+
+**账户配置:**
+| 字段 | 说明 |
+|------|------|
+| `name` | 账户名称（用于切换） |
+| `url` | CalDAV 服务地址 |
+| `username` | 用户名 |
+| `password` | 密码/令牌 |
+
+**支持的服务:**
+| 服务 | URL |
+|------|-----|
+| 飞书日历 | `https://caldav.feishu.cn` |
+| 钉钉日历 | `https://calendar.dingtalk.com/dav` |
+
+**能力对比:**
+| 操作 | 飞书 | 钉钉 |
+|------|------|------|
+| list_calendars | ✅ | ✅ |
+| query | ✅ | ✅ |
+| upcoming | ✅ | ✅ |
+| get | ❌ | ✅ |
+| create/update/delete | ❌ | ❌ |
+
+**配置示例:**
+```json
+{
+  "tools": {
+    "calendar": {
+      "enabled": true,
+      "default": "feishu",
+      "accounts": [
+        {
+          "name": "feishu",
+          "url": "https://caldav.feishu.cn",
+          "username": "u_xxxxxxxx",
+          "password": "your-token"
+        },
+        {
+          "name": "dingtalk",
+          "url": "https://calendar.dingtalk.com/dav",
+          "username": "u_xxxxxxxx",
+          "password": "your-token"
+        }
+      ]
     }
   }
 }
@@ -239,6 +278,7 @@ OpenCode 是一个 HTTP API 服务，用于执行编码任务。LingGuard 通过
 | `memory` | 记忆操作 |
 | `skill` | 加载技能 |
 | `cron` | 定时任务 |
+| `calendar` | 日历管理（飞书/钉钉） |
 | `opencode` | 编码任务（需配置） |
 | `mcp_*` | MCP 工具 |
 

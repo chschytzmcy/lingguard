@@ -144,8 +144,16 @@
   "tools": {
     "_comment": "==================== 工具配置 ====================",
     "restrictToWorkspace": true,
-    "tavilyApiKey": "",
-    "webMaxChars": 50000,
+    "websearch": {
+      "_comment": "网页搜索配置",
+      "tavilyApiKey": "tvly-xxx",
+      "bochaApiKey": "bocha-xxx",
+      "maxResults": 5
+    },
+    "webfetch": {
+      "_comment": "网页抓取配置",
+      "maxChars": 50000
+    },
     "mcpServers": {
       "_comment": "MCP (Model Context Protocol) 服务器配置 - 兼容 Claude Desktop / Cursor 格式",
       "_docs": "https://modelcontextprotocol.io",
@@ -240,6 +248,32 @@
     "_comment": "==================== 定时任务配置 ====================",
     "enabled": true,
     "storePath": "~/.lingguard/cron/jobs.json"
+  },
+
+  "calendar": {
+    "_comment": "==================== 日历配置 (CalDAV) ====================",
+    "_desc": "飞书/钉钉日历集成，支持查询日程、即将到来的事件",
+    "_note": "飞书和钉钉均不支持通过 CalDAV 创建/修改/删除事件",
+    "enabled": true,
+    "default": "feishu",
+    "accounts": [
+      {
+        "name": "feishu",
+        "_comment": "飞书日历",
+        "url": "https://caldav.feishu.cn",
+        "username": "u_xxxxxxxx",
+        "password": "your-app-token",
+        "timeout": 30
+      },
+      {
+        "name": "dingtalk",
+        "_comment": "钉钉日历",
+        "url": "https://calendar.dingtalk.com/dav",
+        "username": "u_xxxxxxxx",
+        "password": "your-app-token",
+        "timeout": 30
+      }
+    ]
   },
 
   "heartbeat": {
