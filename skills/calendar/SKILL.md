@@ -15,6 +15,7 @@ metadata: {"nanobot":{"emoji":"📅"}}
 | Preset | 服务 | URL |
 |--------|------|-----|
 | `feishu` | 飞书日历 | `https://caldav.feishu.cn` |
+| `dingtalk` | 钉钉日历 | `https://calendar.dingtalk.com/dav` |
 | `apple` | Apple iCloud | `https://caldav.icloud.com` |
 | `google` | Google Calendar | `https://apidata.googleusercontent.com/caldav/v2/{{username}}/events` |
 
@@ -32,6 +33,12 @@ metadata: {"nanobot":{"emoji":"📅"}}
         {
           "name": "feishu",
           "url": "https://caldav.feishu.cn",
+          "username": "u_xxxxxxxx",
+          "password": "your-app-token"
+        },
+        {
+          "name": "dingtalk",
+          "url": "https://calendar.dingtalk.com/dav",
           "username": "u_xxxxxxxx",
           "password": "your-app-token"
         },

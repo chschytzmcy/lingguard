@@ -18,9 +18,10 @@ import (
 
 // PresetURLs maps preset names to URL templates
 var PresetURLs = map[string]string{
-	"feishu": "https://caldav.feishu.cn/",
-	"apple":  "https://caldav.icloud.com",
-	"google": "https://apidata.googleusercontent.com/caldav/v2/{{username}}/events",
+	"feishu":   "https://caldav.feishu.cn/",
+	"dingtalk": "https://calendar.dingtalk.com/dav/",
+	"apple":    "https://caldav.icloud.com",
+	"google":   "https://apidata.googleusercontent.com/caldav/v2/{{username}}/events",
 }
 
 // Client is a CalDAV client
@@ -248,25 +249,28 @@ func isCalendarResource(innerXML string) bool {
 }
 
 // QueryEvents queries events in a calendar within a time range
-// Uses a two-step process for better compatibility with CalDAV servers like Feishu:
-// 1. calendar-query to get event hrefs
-// 2. calendar-multiget to fetch actual event data
+// Supports different CalDAV server implementations:
+// - DingTalk: calendar-query returns calendar-data directly
+// - Feishu: requires two-step (calendar-query + calendar-multiget)
 func (c *Client) QueryEvents(ctx context.Context, calendarHref string, start, end time.Time) ([]Event, error) {
-	// Build calendar-query REPORT to get event hrefs
 	startStr := start.UTC().Format("20060102T150405Z")
 	endStr := end.UTC().Format("20060102T150405Z")
 
+	// Try standard calendar-query first (works for DingTalk, Apple, etc.)
 	report := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
-<calendar-query xmlns="urn:ietf:params:xml:ns:caldav" xmlns:DAV="DAV:">
-  <DAV:prop>
-    <DAV:getetag/>
-  </DAV:prop>
-  <filter>
-    <comp-filter name="VEVENT">
-      <time-range start="%s" end="%s"/>
-    </comp-filter>
-  </filter>
-</calendar-query>`, startStr, endStr)
+<C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">
+  <D:prop>
+    <D:getetag/>
+    <C:calendar-data/>
+  </D:prop>
+  <C:filter>
+    <C:comp-filter name="VCALENDAR">
+      <C:comp-filter name="VEVENT">
+        <C:time-range start="%s" end="%s"/>
+      </C:comp-filter>
+    </C:comp-filter>
+  </C:filter>
+</C:calendar-query>`, startStr, endStr)
 
 	headers := map[string]string{
 		"Depth": "1",
@@ -288,7 +292,14 @@ func (c *Client) QueryEvents(ctx context.Context, calendarHref string, start, en
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	// Parse to get event hrefs
+	// Try to parse events directly (DingTalk style)
+	events, err := parseEventMultiStatus(body)
+	if err == nil && len(events) > 0 {
+		return events, nil
+	}
+
+	// Fallback: two-step approach for Feishu
+	// First get event hrefs, then use calendar-multiget
 	hrefs, err := parseEventHrefs(body)
 	if err != nil {
 		return nil, fmt.Errorf("parse event hrefs: %w", err)
@@ -298,7 +309,6 @@ func (c *Client) QueryEvents(ctx context.Context, calendarHref string, start, en
 		return []Event{}, nil
 	}
 
-	// Use calendar-multiget to fetch actual event data
 	return c.fetchEventsByHrefs(ctx, calendarHref, hrefs)
 }
 
