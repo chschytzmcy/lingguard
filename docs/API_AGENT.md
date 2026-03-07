@@ -46,7 +46,7 @@ Token 在 `config.json` 中配置：
 
 ### 对话 API
 
-#### POST /v1/agents/{agent_id}/chat
+#### POST /v1/agent/chat
 
 与智能体进行对话。支持流式和非流式响应。
 
@@ -77,8 +77,8 @@ Token 在 `config.json` 中配置：
 | `session_id` | string | 否 | 会话 ID，不传则新建 |
 | `stream` | bool | 否 | 是否流式响应，默认 `false` |
 | `clear_history` | bool | 否 | 是否清空历史后对话，默认 `false` |
-| `tools` | []string | 否 | 指定可用工具，不传则使用默认集 |
-| `system_prompt` | string | 否 | 覆盖默认系统提示词 |
+| ~~`tools`~~ | []string | - | **不实现** |
+| ~~`system_prompt`~~ | string | - | **不实现** |
 
 **非流式响应**
 
@@ -252,6 +252,11 @@ data: {"code": "tool_error", "message": "工具执行失败"}
 
 用于长时间运行的异步任务。
 
+**特性**：
+- 最大并发：3 个任务同时执行
+- 排队机制：超过并发限制的任务进入 FIFO 队列等待
+- 自动会话：不传 `session_id` 时自动创建独立会话
+
 #### POST /v1/tasks
 
 创建异步任务。
@@ -260,20 +265,19 @@ data: {"code": "tool_error", "message": "工具执行失败"}
 
 ```json
 {
-  "prompt": "帮我重构整个项目的代码结构，优化性能",
-  "session_id": "user-123",
-  "agent_id": "coding",
-  "tools": ["shell", "file", "opencode"],
+  "message": "帮我重构整个项目的代码结构，优化性能",
+  "session_id": "session-abc123",
+  "media": [],
   "callback_url": "https://your-server.com/callback"
 }
 ```
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `prompt` | string | 是 | 任务描述 |
-| `session_id` | string | 否 | 关联的会话 ID |
-| `agent_id` | string | 否 | 智能体 ID，默认 `default` |
-| `tools` | []string | 否 | 可用工具列表 |
+| `message` | string | 是 | 任务描述 |
+| `session_id` | string | 否 | 会话 ID，不传则自动创建 |
+| `media` | []string | 否 | 多媒体 URL 列表 |
+| `stream` | bool | 否 | 是否流式，默认 `false` |
 | `callback_url` | string | 否 | 任务完成回调 URL |
 
 **响应**
@@ -282,11 +286,14 @@ data: {"code": "tool_error", "message": "工具执行失败"}
 {
   "id": "task-abc123",
   "status": "pending",
-  "prompt": "帮我重构整个项目的代码结构...",
-  "agent_id": "coding",
+  "session_id": "session-abc123",
+  "message": "帮我重构整个项目的代码结构...",
+  "agent_id": "default",
   "created_at": "2026-03-06T10:00:00Z"
 }
 ```
+
+> **注意**： 响应中包含 `session_id`，客户端可保存用于后续对话复用。
 
 ---
 
@@ -322,17 +329,16 @@ data: {"code": "tool_error", "message": "工具执行失败"}
 
 ---
 
-#### POST /v1/tasks/{task_id}/cancel
+#### DELETE /v1/tasks/{task_id}
 
-取消正在执行的任务。
+删除/取消任务。如果任务正在运行，会先取消再删除。
 
 **响应**
 
 ```json
 {
-  "id": "task-abc123",
-  "status": "cancelled",
-  "message": "task cancelled by user"
+  "message": "task deleted",
+  "id": "task-abc123"
 }
 ```
 
@@ -366,132 +372,31 @@ data: {"result": "重构方案已生成，共 5 个优化点", "progress": 100}
 
 ---
 
-### 工具 API
+## 实现状态总结
 
-#### GET /v1/tools
+### 已实现
 
-获取可用工具列表。
+| API | 端点 | 说明 |
+|-----|------|------|
+| Chat API | `POST /v1/agent/chat` | ✅ 对话（流式/非流式） |
+| Session API | `GET /v1/sessions` | ✅ 会话列表 |
+| Session API | `GET /v1/sessions/{id}` | ✅ 会话详情 |
+| Session API | `DELETE /v1/sessions/{id}` | ✅ 删除会话 |
+| Session API | `POST /v1/sessions/{id}/clear` | ✅ 清空历史 |
+| Task API | `POST /v1/tasks` | ✅ 创建异步任务 |
+| Task API | `GET /v1/tasks/{id}` | ✅ 查询任务状态 |
+| Task API | `DELETE /v1/tasks/{id}` | ✅ 删除/取消任务 |
+| Task API | `GET /v1/tasks/{id}/events` | ✅ SSE 事件流 |
+| Task API | `GET /v1/tasks` | ✅ 任务列表 |
 
-**响应**
+### Task API 特性
 
-```json
-{
-  "tools": [
-    {
-      "name": "shell",
-      "description": "执行 shell 命令",
-      "dangerous": true,
-      "enabled": true
-    },
-    {
-      "name": "file",
-      "description": "文件读写操作",
-      "dangerous": false,
-      "enabled": true
-    },
-    {
-      "name": "calendar",
-      "description": "日历管理（飞书/钉钉）",
-      "dangerous": false,
-      "enabled": true
-    },
-    {
-      "name": "web_search",
-      "description": "网页搜索",
-      "dangerous": false,
-      "enabled": true
-    },
-    {
-      "name": "aigc",
-      "description": "AI 图像/视频生成",
-      "dangerous": false,
-      "enabled": false
-    }
-  ]
-}
-```
-
----
-
-#### POST /v1/tools/{tool_name}/execute
-
-直接执行工具（不经过 Agent）。
-
-**请求体**
-
-```json
-{
-  "action": "query",
-  "params": {
-    "start": "today",
-    "end": "tomorrow"
-  }
-}
-```
-
-**响应**
-
-```json
-{
-  "tool": "calendar",
-  "action": "query",
-  "result": "找到 3 个事件：\n1. 10:00 - 项目评审\n2. 14:00 - 客户电话\n3. 16:00 - 周会",
-  "success": true,
-  "duration_ms": 320
-}
-```
-
----
-
-### 智能体 API
-
-#### GET /v1/agents
-
-获取可用智能体列表。
-
-**响应**
-
-```json
-{
-  "agents": [
-    {
-      "id": "default",
-      "name": "灵侍",
-      "description": "通用智能助手",
-      "enabled": true,
-      "default": true
-    },
-    {
-      "id": "coding",
-      "name": "编程助手",
-      "description": "专注于代码开发和调试",
-      "enabled": true,
-      "default": false
-    }
-  ]
-}
-```
-
----
-
-#### GET /v1/agents/{agent_id}
-
-获取智能体详情。
-
-**响应**
-
-```json
-{
-  "id": "default",
-  "name": "灵侍",
-  "description": "通用智能助手",
-  "provider": "glm",
-  "model": "glm-5",
-  "tools": ["shell", "file", "calendar", "web_search", "memory"],
-  "skills": ["calendar", "weather", "clawhub"],
-  "system_prompt": "你是灵侍，一个乐于助人的 AI 助手..."
-}
-```
+| 特性 | 说明 |
+|------|------|
+| 并发限制 | 最大 3 个任务同时执行 |
+| 排队机制 | FIFO 队列，超过限制自动排队 |
+| 自动会话 | 不传 session_id 时自动创建独立会话 |
+| 回调通知 | 任务完成后 POST 到 callback_url |
 
 ---
 
@@ -548,7 +453,7 @@ class LingGuardClient {
 
     // 简单对话
     func chat(message: String, sessionId: String? = nil) async throws -> ChatResponse {
-        var request = URLRequest(url: URL(string: "\(baseURL)/v1/agents/default/chat")!)
+        var request = URLRequest(url: URL(string: "\(baseURL)/v1/agent/chat")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -567,7 +472,7 @@ class LingGuardClient {
     func streamChat(message: String, sessionId: String? = nil) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
-                var request = URLRequest(url: URL(string: "\(baseURL)/v1/agents/default/chat")!)
+                var request = URLRequest(url: URL(string: "\(baseURL)/v1/agent/chat")!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -638,7 +543,7 @@ class LingGuardClient(
         }
 
         val request = Request.Builder()
-            .url("$baseURL/v1/agents/$agentId/chat")
+            .url("$baseURL/v1/agent/chat")
             .header("Authorization", "Bearer $token")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
@@ -661,7 +566,7 @@ class LingGuardClient(
         }
 
         val request = Request.Builder()
-            .url("$baseURL/v1/agents/$agentId/chat")
+            .url("$baseURL/v1/agent/chat")
             .header("Authorization", "Bearer $token")
             .header("Accept", "text/event-stream")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
@@ -733,7 +638,7 @@ class LingGuardClient {
 
   // 简单对话
   async chat(message: string, sessionId?: string): Promise<ChatResponse> {
-    const response = await fetch(`${this.baseURL}/v1/agents/default/chat`, {
+    const response = await fetch(`${this.baseURL}/v1/agent/chat`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.token}`,
@@ -758,7 +663,7 @@ class LingGuardClient {
     message: string,
     sessionId?: string
   ): AsyncGenerator<StreamEvent> {
-    const response = await fetch(`${this.baseURL}/v1/agents/default/chat`, {
+    const response = await fetch(`${this.baseURL}/v1/agent/chat`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.token}`,
@@ -921,27 +826,35 @@ internal/taskboard/
 Gin Router (单端口 :8080)
 │
 ├── /v1/*                          # Agent API (新增)
-│   ├── POST /agents/:id/chat      # 对话
+│   ├── POST /agent/chat           # 对话（流式/非流式）
 │   ├── GET  /sessions             # 会话列表
 │   ├── GET  /sessions/:id         # 会话详情
+│   ├── DELETE /sessions/:id       # 删除会话
+│   ├── POST /sessions/:id/clear   # 清空历史
 │   ├── POST /tasks                # 创建任务
-│   ├── GET  /tasks/:id/events     # SSE
-│   ├── GET  /tools                # 工具列表
-│   └── GET  /agents               # 智能体列表
-│
-├── /api/*                         # TaskBoard API (迁移)
 │   ├── GET  /tasks                # 任务列表
-│   ├── POST /tasks                # 创建任务
-│   ├── GET  /crons                # 定时任务
-│   └── GET  /stats                # 统计
+│   ├── GET  /tasks/:id            # 任务状态
+│   ├── DELETE /tasks/:id          # 删除任务
+│   └── GET  /tasks/:id/events     # SSE
 │
-├── /ws/*                          # WebSocket (迁移)
-│   └── /ws/chat                   # WebChat
+├── /api/*                         # 内部 API
+│   ├── /crons/*                   # 定时任务
+│   │   ├── GET  /crons            # 列表
+│   │   ├── DELETE /crons/:id      # 删除
+│   │   ├── GET  /crons/stats      # 统计
+│   │   └── GET  /crons/events     # SSE 事件流
+│   ├── /webchat/*                 # WebChat
+│   │   ├── GET/POST /sessions     # 会话列表
+│   │   └── GET/DELETE /session    # 单个会话
+│   └── /traces/*                  # Trace
+│       ├── GET  /traces           # 列表
+│       ├── GET/DELETE /traces/:id # 详情/删除
+│       ├── GET  /traces/stats     # 统计
+│       └── GET  /traces/events    # SSE 事件流
 │
-├── /trace/*                       # Trace API (迁移)
-│   └── GET  /sessions             # 追踪会话
+├── /ws/chat                       # WebSocket
 │
-└── /*                             # 静态文件 (迁移)
+└── /*                             # 静态文件
     └── /index.html, /static/*     # Web UI
 ```
 
@@ -1959,8 +1872,8 @@ func (a *Agent) StreamChat(ctx context.Context, message string, callback StreamC
 ```
 
 **验收标准**:
-- ✅ `POST /v1/agents/default/chat` 非流式响应正常
-- ✅ `POST /v1/agents/default/chat` (stream=true) SSE 事件正确
+- ✅ `POST /v1/agent/chat` 非流式响应正常
+- ✅ `POST /v1/agent/chat` (stream=true) SSE 事件正确
 - ✅ Session 历史自动管理
 - ✅ 工具调用事件正确推送
 
@@ -2557,11 +2470,11 @@ func TestChatHandler_NonStream(t *testing.T) {
     // Setup
     router := gin.New()
     handler := NewChatHandler(mockAgentService, mockSessionMgr)
-    router.POST("/v1/agents/:agent_id/chat", handler.Handle)
+    router.POST("/v1/agent/chat", handler.Handle)
 
     // Request
     body := `{"message": "hello", "stream": false}`
-    req := httptest.NewRequest("POST", "/v1/agents/default/chat", bytes.NewBufferString(body))
+    req := httptest.NewRequest("POST", "/v1/agent/chat", bytes.NewBufferString(body))
     req.Header.Set("Content-Type", "application/json")
     w := httptest.NewRecorder()
 
@@ -2701,7 +2614,7 @@ curl $API_URL/v1/health
 #### 非流式对话
 
 ```bash
-curl -X POST $API_URL/v1/agents/default/chat \
+curl -X POST $API_URL/v1/agent/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -2724,7 +2637,7 @@ curl -X POST $API_URL/v1/agents/default/chat \
 #### 流式对话
 
 ```bash
-curl -X POST $API_URL/v1/agents/default/chat \
+curl -X POST $API_URL/v1/agent/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -2758,7 +2671,7 @@ data: {"id":"xxx","session_id":"test-session-2","agent_id":"default"}
 #### 带媒体的消息
 
 ```bash
-curl -X POST $API_URL/v1/agents/default/chat \
+curl -X POST $API_URL/v1/agent/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -2771,7 +2684,7 @@ curl -X POST $API_URL/v1/agents/default/chat \
 #### 清空历史后对话
 
 ```bash
-curl -X POST $API_URL/v1/agents/default/chat \
+curl -X POST $API_URL/v1/agent/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -2877,7 +2790,7 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 #### 无 Token 访问（返回 401）
 
 ```bash
-curl $API_URL/v1/agents/default/chat \
+curl $API_URL/v1/agent/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "test"}'
 ```
@@ -2895,7 +2808,7 @@ curl $API_URL/v1/agents/default/chat \
 #### 无效请求（返回 400）
 
 ```bash
-curl -X POST $API_URL/v1/agents/default/chat \
+curl -X POST $API_URL/v1/agent/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{}'

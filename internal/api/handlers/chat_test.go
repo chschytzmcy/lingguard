@@ -34,7 +34,7 @@ func TestChatHandler_HandleChat_NonStream(t *testing.T) {
 	body, _ := json.Marshal(reqBody)
 
 	// 创建 HTTP 请求
-	req := httptest.NewRequest("POST", "/v1/agents/default/chat", bytes.NewReader(body))
+	req := httptest.NewRequest("POST", "/v1/agent/chat", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	// 执行请求
@@ -69,7 +69,7 @@ func TestChatHandler_HandleChat_InvalidRequest(t *testing.T) {
 	handler.RegisterRoutes(v1)
 
 	// 创建空请求（缺少 message 字段）
-	req := httptest.NewRequest("POST", "/v1/agents/default/chat", bytes.NewReader([]byte("{}")))
+	req := httptest.NewRequest("POST", "/v1/agent/chat", bytes.NewReader([]byte("{}")))
 	req.Header.Set("Content-Type", "application/json")
 
 	// 执行请求
@@ -111,7 +111,7 @@ func TestChatHandler_HandleChat_WithSessionID(t *testing.T) {
 	body, _ := json.Marshal(reqBody)
 
 	// 创建 HTTP 请求
-	req := httptest.NewRequest("POST", "/v1/agents/default/chat", bytes.NewReader(body))
+	req := httptest.NewRequest("POST", "/v1/agent/chat", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	// 执行请求

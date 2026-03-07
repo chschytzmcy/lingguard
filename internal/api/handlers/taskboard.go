@@ -29,19 +29,13 @@ func (h *TaskboardHandler) SetCronDeleter(deleter taskboard.CronDeleter) {
 
 // RegisterRoutes 注册路由
 func (h *TaskboardHandler) RegisterRoutes(r *gin.RouterGroup) {
-	tasks := r.Group("/api")
+	// 定时任务 API
+	cron := r.Group("/api/crons")
 	{
-		tasks.GET("/tasks", h.ListTasks)
-		tasks.GET("/tasks/:id", h.GetTask)
-		tasks.POST("/tasks", h.CreateTask)
-		tasks.PUT("/tasks/:id", h.UpdateTask)
-		tasks.DELETE("/tasks/:id", h.DeleteTask)
-		tasks.PUT("/tasks/:id/status", h.UpdateStatus)
-		tasks.PUT("/tasks/:id/column", h.MoveColumn)
-		tasks.POST("/tasks/:id/assign", h.Assign)
-		tasks.GET("/board", h.GetBoard)
-		tasks.GET("/stats", h.GetStats)
-		tasks.GET("/events", h.SSE)
+		cron.GET("", h.ListCrons)
+		cron.DELETE("/:id", h.DeleteCron)
+		cron.GET("/stats", h.GetStats)
+		cron.GET("/events", h.SSE)
 	}
 }
 
@@ -188,6 +182,58 @@ func (h *TaskboardHandler) DeleteTask(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{"message": "task deleted"})
+}
+
+// ListCrons 列出定时任务
+func (h *TaskboardHandler) ListCrons(c *gin.Context) {
+	cronSource := taskboard.TaskSourceCron
+	filter := &taskboard.TaskFilter{
+		Source: &cronSource,
+	}
+
+	tasks, err := h.service.ListTasks(filter)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, tasks)
+}
+
+// DeleteCron 删除定时任务
+func (h *TaskboardHandler) DeleteCron(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(400, gin.H{"error": "cron id is required"})
+		return
+	}
+
+	// 获取任务信息
+	task, err := h.service.GetTask(id)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "cron task not found"})
+		return
+	}
+
+	// 确认是 cron 任务
+	if task.Source != taskboard.TaskSourceCron {
+		c.JSON(400, gin.H{"error": "task is not a cron job"})
+		return
+	}
+
+	// 删除看板任务
+	if err := h.service.DeleteTask(id); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 同时删除 cron job
+	if task.SourceRef != "" && h.cronDeleter != nil {
+		logger.Info("Deleting cron job", "taskId", id, "cronId", task.SourceRef)
+		h.cronDeleter.RemoveJob(task.SourceRef)
+	}
+
+	c.JSON(200, gin.H{"message": "cron deleted", "id": id})
 }
 
 // UpdateStatus 更新状态

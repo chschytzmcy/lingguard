@@ -78,15 +78,11 @@ type ErrorDetail struct {
 
 // RegisterRoutes 注册路由
 func (h *ChatHandler) RegisterRoutes(r *gin.RouterGroup) {
-	r.POST("/agents/:agent_id/chat", h.HandleChat)
+	r.POST("/agent/chat", h.HandleChat)
 }
 
 // HandleChat 处理对话请求
 func (h *ChatHandler) HandleChat(c *gin.Context) {
-	agentID := c.Param("agent_id")
-	if agentID == "" {
-		agentID = "default"
-	}
 
 	var req ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -116,16 +112,16 @@ func (h *ChatHandler) HandleChat(c *gin.Context) {
 
 	// 流式响应
 	if req.Stream {
-		h.handleStream(c, agentID, sessionID, req)
+		h.handleStream(c, sessionID, req)
 		return
 	}
 
 	// 非流式响应
-	h.handleNonStream(c, agentID, sessionID, req)
+	h.handleNonStream(c, sessionID, req)
 }
 
 // handleNonStream 处理非流式请求
-func (h *ChatHandler) handleNonStream(c *gin.Context, agentID, sessionID string, req ChatRequest) {
+func (h *ChatHandler) handleNonStream(c *gin.Context, sessionID string, req ChatRequest) {
 	if h.agent == nil {
 		c.JSON(503, ErrorResponse{
 			Error: ErrorDetail{
@@ -159,14 +155,14 @@ func (h *ChatHandler) handleNonStream(c *gin.Context, agentID, sessionID string,
 	c.JSON(200, ChatResponse{
 		ID:        uuid.New().String(),
 		SessionID: sessionID,
-		AgentID:   agentID,
+		AgentID:   "default",
 		Content:   content,
 		CreatedAt: time.Now(),
 	})
 }
 
 // handleStream 处理流式请求
-func (h *ChatHandler) handleStream(c *gin.Context, agentID, sessionID string, req ChatRequest) {
+func (h *ChatHandler) handleStream(c *gin.Context, sessionID string, req ChatRequest) {
 	if h.agent == nil {
 		sse.SetupHeaders(c)
 		writer := sse.NewWriter(c.Writer)
@@ -227,7 +223,7 @@ func (h *ChatHandler) handleStream(c *gin.Context, agentID, sessionID string, re
 			writer.WriteEvent("completed", gin.H{
 				"id":         uuid.New().String(),
 				"session_id": sessionID,
-				"agent_id":   agentID,
+				"agent_id":   "default",
 			})
 
 		case stream.EventError:
