@@ -2,7 +2,10 @@
 package task
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
 	"sync"
 	"time"
 
@@ -100,19 +103,46 @@ func WithCallbackURL(url string) TaskOption {
 	}
 }
 
+// DefaultMaxConcurrent 默认最大并发数
+const DefaultMaxConcurrent = 3
+
 // Manager 任务管理器
 type Manager struct {
-	tasks map[string]*Task
-	mu    sync.RWMutex
-	agent *agent.Agent
+	tasks         map[string]*Task
+	mu            sync.RWMutex
+	agent         *agent.Agent
+	maxConcurrent int
+	sem           chan struct{} // 并发信号量
+	queue         []*Task       // 等待队列
+	queueMu       sync.Mutex
+}
+
+// ManagerOption 管理器选项
+type ManagerOption func(*Manager)
+
+// WithMaxConcurrent 设置最大并发数
+func WithMaxConcurrent(n int) ManagerOption {
+	return func(m *Manager) {
+		if n > 0 {
+			m.maxConcurrent = n
+		}
+	}
 }
 
 // NewManager 创建任务管理器
-func NewManager(ag *agent.Agent) *Manager {
-	return &Manager{
-		tasks: make(map[string]*Task),
-		agent: ag,
+func NewManager(ag *agent.Agent, opts ...ManagerOption) *Manager {
+	m := &Manager{
+		tasks:         make(map[string]*Task),
+		agent:         ag,
+		maxConcurrent: DefaultMaxConcurrent,
 	}
+
+	for _, opt := range opts {
+		opt(m)
+	}
+
+	m.sem = make(chan struct{}, m.maxConcurrent)
+	return m
 }
 
 // Create 创建新任务
@@ -122,12 +152,13 @@ func (m *Manager) Create(message string, opts ...TaskOption) (*Task, error) {
 		Status:    TaskStatusPending,
 		Message:   message,
 		AgentID:   "default",
+		SessionID: "session-" + uuid.New().String()[:8], // 自动生成 session_id
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 		events:    make(chan Event, 100),
 	}
 
-	// 应用选项
+	// 应用选项（可能覆盖 SessionID）
 	for _, opt := range opts {
 		opt(task)
 	}
@@ -136,13 +167,49 @@ func (m *Manager) Create(message string, opts ...TaskOption) (*Task, error) {
 	m.tasks[task.ID] = task
 	m.mu.Unlock()
 
-	// 启动异步执行
-	ctx, cancel := context.WithCancel(context.Background())
-	task.cancel = cancel
-	go m.execute(ctx, task)
+	// 加入 FIFO 队列
+	m.queueMu.Lock()
+	m.queue = append(m.queue, task)
+	m.queueMu.Unlock()
 
-	logger.Info("Task created", "taskId", task.ID, "agentId", task.AgentID)
+	// 启动队列处理（异步）
+	go m.processQueue()
+
+	logger.Info("Task created", "taskId", task.ID, "queueLength", len(m.queue))
 	return task, nil
+}
+
+// processQueue 处理队列，等待信号量槽位
+func (m *Manager) processQueue() {
+	m.queueMu.Lock()
+	if len(m.queue) == 0 {
+		m.queueMu.Unlock()
+		return
+	}
+
+	// 取出队首任务 (FIFO)
+	task := m.queue[0]
+	m.queue = m.queue[1:]
+	m.queueMu.Unlock()
+
+	// 等待获取信号量槽位（阻塞直到有空位）
+	m.sem <- struct{}{}
+
+	// 获得槽位，检查任务是否已取消
+	task.mu.Lock()
+	if task.Status == TaskStatusCancelled {
+		task.mu.Unlock()
+		<-m.sem // 已取消，释放槽位
+		return
+	}
+	task.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	task.mu.Lock()
+	task.cancel = cancel
+	task.mu.Unlock()
+
+	m.execute(ctx, task)
 }
 
 // execute 执行任务
@@ -150,10 +217,16 @@ func (m *Manager) execute(ctx context.Context, task *Task) {
 	task.mu.Lock()
 	task.Status = TaskStatusRunning
 	task.UpdatedAt = time.Now()
+
+	// 如果没有 session_id，生成一个
+	if task.SessionID == "" {
+		task.SessionID = "task-session-" + task.ID
+	}
 	task.mu.Unlock()
 
 	task.emit(Event{Type: EventStarted, Data: map[string]interface{}{
-		"task_id": task.ID,
+		"task_id":    task.ID,
+		"session_id": task.SessionID,
 	}})
 
 	var result string
@@ -196,6 +269,14 @@ func (m *Manager) execute(ctx context.Context, task *Task) {
 
 	// 关闭事件通道
 	close(task.events)
+
+	// 发送回调
+	if task.CallbackURL != "" {
+		go m.sendCallback(task, result, err)
+	}
+
+	// 释放信号量槽位
+	<-m.sem
 }
 
 // Get 获取任务
@@ -318,4 +399,57 @@ func (t *Task) emit(event Event) {
 // Events 获取事件通道
 func (t *Task) Events() <-chan Event {
 	return t.events
+}
+
+// CallbackPayload 回调请求体
+type CallbackPayload struct {
+	TaskID      string     `json:"task_id"`
+	Status      TaskStatus `json:"status"`
+	Result      string     `json:"result,omitempty"`
+	Error       string     `json:"error,omitempty"`
+	CompletedAt string     `json:"completed_at"`
+	DurationMs  int64      `json:"duration_ms"`
+}
+
+// sendCallback 发送回调请求
+func (m *Manager) sendCallback(task *Task, result string, execErr error) {
+	task.mu.RLock()
+	payload := CallbackPayload{
+		TaskID:      task.ID,
+		Status:      task.Status,
+		CompletedAt: task.CompletedAt.Format(time.RFC3339),
+		DurationMs:  task.CompletedAt.Sub(task.CreatedAt).Milliseconds(),
+	}
+	if execErr != nil {
+		payload.Error = execErr.Error()
+	} else {
+		payload.Result = result
+	}
+	callbackURL := task.CallbackURL
+	task.mu.RUnlock()
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		logger.Error("Failed to marshal callback payload", "taskId", task.ID, "error", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", callbackURL, bytes.NewReader(body))
+	if err != nil {
+		logger.Error("Failed to create callback request", "taskId", task.ID, "error", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		logger.Error("Failed to send callback", "taskId", task.ID, "url", callbackURL, "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	logger.Info("Callback sent", "taskId", task.ID, "url", callbackURL, "status", resp.StatusCode)
 }
