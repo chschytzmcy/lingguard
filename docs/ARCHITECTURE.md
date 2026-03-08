@@ -239,6 +239,8 @@ LingGuard 的记忆系统融合了 nanobot 的文件存储和 OpenClaw 的自动
 | **智能去重** | ✅ 三层去重 | ❌ | ✅ 相似度 |
 | **问句过滤** | ✅ | ❌ | ❌ |
 | **分类检测** | ✅ 自动分类 | ❌ | ❌ |
+| **记忆提炼** | ✅ 相似度合并 | ❌ | ❌ |
+| **日志清理** | ✅ 可配置保留期 | ❌ | ❌ |
 
 ### 2.8 语音能力对比
 
@@ -1257,6 +1259,8 @@ LingGuard 的记忆系统融合了 nanobot 的文件存储方案和 OpenClaw 的
 | **智能去重** | ✅ 三层去重 | ❌ |
 | **问句过滤** | ✅ 排除问句 | ❌ |
 | **分类检测** | ✅ 自动分类 | ❌ |
+| **记忆提炼** | ✅ 相似度合并 | ❌ |
+| **日志清理** | ✅ 可配置保留期 | ❌ |
 
 #### 4.6.3 文件结构
 
@@ -1420,7 +1424,110 @@ func (s *HybridStore) AddMemory(category, content string) error {
 }
 ```
 
-#### 4.6.8 配置示例
+#### 4.6.8 记忆提炼 (Memory Refinement)
+
+记忆提炼功能用于定期清理和合并重复的记忆条目，保持记忆库的整洁。
+
+**触发方式：**
+1. **手动触发**：通过 memory 工具调用 `{"action": "refine"}`
+2. **自动触发**：当条目数达到阈值时自动执行（可配置）
+
+**提炼流程：**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      记忆提炼流程                                │
+├─────────────────────────────────────────────────────────────────┤
+│  1. 读取 MEMORY.md                                              │
+│     └─ 解析所有条目（分类、内容、时间戳）                        │
+├─────────────────────────────────────────────────────────────────┤
+│  2. 按分类分组                                                   │
+│     └─ User Preferences, Project Context, Important Facts...   │
+├─────────────────────────────────────────────────────────────────┤
+│  3. 相似度检测与去重                                            │
+│     ├─ 计算条目间相似度（关键词 40% + 字符级 60%）              │
+│     ├─ 相似度 >= 阈值的条目归为重复组                           │
+│     └─ 每组保留最新条目，删除其他重复                           │
+├─────────────────────────────────────────────────────────────────┤
+│  4. 条目数限制                                                   │
+│     └─ 每分类超过 maxEntriesPerCategory 时删除最旧条目          │
+├─────────────────────────────────────────────────────────────────┤
+│  5. 备份与写入                                                   │
+│     ├─ 创建备份文件 MEMORY.backup.YYYYMMDD-HHMMSS.md           │
+│     └─ 写入新的 MEMORY.md                                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**相似度算法：**
+```go
+// 综合评分 = 关键词相似度 × 0.4 + 字符级相似度 × 0.6 + 包含关系加分
+func calculateSimilarity(a, b string) float32 {
+    // 1. 关键词相似度（Jaccard）
+    keywordsA := extractKeywords(a)
+    keywordsB := extractKeywords(b)
+    keywordSim := jaccard(keywordsA, keywordsB)
+
+    // 2. 字符级相似度（对中文更有效）
+    charSim := characterOverlap(a, b)
+
+    // 3. 包含关系加分
+    if strings.Contains(a, b) || strings.Contains(b, a) {
+        return min(keywordSim*0.4 + charSim*0.6 + 0.3, 1.0)
+    }
+    return keywordSim*0.4 + charSim*0.6
+}
+```
+
+**配置参数：**
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `enabled` | `true` | 是否启用提炼功能 |
+| `autoTrigger` | `false` | 是否自动触发（达到阈值时） |
+| `threshold` | `50` | 自动触发的条目数阈值 |
+| `similarityThreshold` | `0.85` | 判定为重复的相似度阈值 |
+| `keepBackup` | `true` | 是否保留备份文件 |
+| `maxEntriesPerCategory` | `20` | 每分类最大条目数 |
+
+**使用示例：**
+```json
+// Agent 调用
+{"action": "refine"}
+```
+
+**输出示例：**
+```
+## Memory Refinement Complete
+
+- **Total entries**: 45
+- **Merged entries**: 38
+- **Removed duplicates**: 7
+- **Duplicate groups found**: 3
+- **Backup saved to**: ~/.lingguard/memory/MEMORY.backup.20260308-174500.md
+
+### Changes Made
+- 备份已保存到: ~/.lingguard/memory/MEMORY.backup.20260308-174500.md
+- [Project Context] 合并 3 条相似条目: 我的项目叫 LingGuard
+- [User Preferences] 合并 2 条相似条目: 我喜欢用 Go 语言
+```
+
+#### 4.6.9 每日日志清理
+
+自动清理过期的每日日志文件（YYYY-MM-DD.md），防止磁盘空间无限增长。
+
+**配置参数：**
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `maxDailyLogAge` | `0` | 保留天数（0 表示不清理） |
+
+**示例配置：**
+```json
+{
+  "memory": {
+    "maxDailyLogAge": 30  // 保留最近 30 天的每日日志
+  }
+}
+```
+
+#### 4.6.10 配置示例
 
 ```json
 {
@@ -1429,11 +1536,20 @@ func (s *HybridStore) AddMemory(category, content string) error {
       "enabled": true,
       "recentDays": 3,
       "maxHistoryLines": 1000,
+      "maxDailyLogAge": 30,
       "autoRecall": true,
       "autoRecallTopK": 3,
       "autoRecallMinScore": 0.3,
       "autoCapture": true,
       "captureMaxChars": 500,
+      "refine": {
+        "enabled": true,
+        "autoTrigger": false,
+        "threshold": 50,
+        "similarityThreshold": 0.85,
+        "keepBackup": true,
+        "maxEntriesPerCategory": 20
+      },
       "vector": {
         "enabled": true,
         "embedding": {
@@ -1458,7 +1574,7 @@ func (s *HybridStore) AddMemory(category, content string) error {
 }
 ```
 
-#### 4.6.9 核心文件
+#### 4.6.11 核心文件
 
 | 文件 | 说明 |
 |------|------|
@@ -1466,7 +1582,10 @@ func (s *HybridStore) AddMemory(category, content string) error {
 | `pkg/memory/hybrid_store.go` | 混合存储、三层去重 |
 | `pkg/memory/context_builder.go` | 上下文构建、语义搜索 |
 | `pkg/memory/vector_store.go` | 向量索引（sqlite-vec） |
+| `pkg/memory/refiner.go` | 记忆提炼、去重合并、备份 |
+| `pkg/memory/file_store.go` | 文件存储、每日日志清理 |
 | `internal/agent/agent.go` | 自动召回、自动捕获逻辑 |
+| `internal/tools/memory_tool.go` | memory 工具实现 |
 | `internal/config/config.go` | 记忆配置结构 |
 
 ### 4.7 技能系统

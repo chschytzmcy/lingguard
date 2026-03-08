@@ -97,6 +97,7 @@ type MemoryConfig struct {
 	Path            string        `json:"path,omitempty"`            // 记忆存储路径，默认 ~/.lingguard/memory
 	RecentDays      int           `json:"recentDays,omitempty"`      // 加载最近几天的日志，默认 3
 	MaxHistoryLines int           `json:"maxHistoryLines,omitempty"` // 历史记录最大行数，默认 1000
+	MaxDailyLogAge  int           `json:"maxDailyLogAge,omitempty"`  // 每日日志保留天数，超过则删除，0 表示永不删除
 	Vector          *VectorConfig `json:"vector,omitempty"`          // 向量检索配置
 	// 自动召回配置
 	AutoRecall         bool    `json:"autoRecall,omitempty"`         // 是否启用自动召回，默认 true
@@ -105,6 +106,18 @@ type MemoryConfig struct {
 	// 自动捕获配置
 	AutoCapture     bool `json:"autoCapture,omitempty"`     // 是否启用自动捕获，默认 true
 	CaptureMaxChars int  `json:"captureMaxChars,omitempty"` // 捕获内容最大字符数，默认 500
+	// 提炼配置
+	Refine *RefineConfig `json:"refine,omitempty"` // 记忆提炼配置
+}
+
+// RefineConfig 记忆提炼配置
+type RefineConfig struct {
+	Enabled               bool    `json:"enabled,omitempty"`               // 是否启用提炼功能
+	AutoTrigger           bool    `json:"autoTrigger,omitempty"`           // 是否自动触发提炼
+	Threshold             int     `json:"threshold,omitempty"`             // 触发阈值（总条目数超过此值触发），默认 50
+	SimilarityThreshold   float32 `json:"similarityThreshold,omitempty"`   // 相似度阈值，默认 0.85
+	KeepBackup            bool    `json:"keepBackup,omitempty"`            // 是否保留备份，默认 true
+	MaxEntriesPerCategory int     `json:"maxEntriesPerCategory,omitempty"` // 每分类最大条目数，默认 20
 }
 
 // VectorConfig 向量检索配置

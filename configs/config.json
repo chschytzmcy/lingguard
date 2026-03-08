@@ -40,11 +40,20 @@
       "path": "~/.lingguard/memory",
       "recentDays": 3,
       "maxHistoryLines": 1000,
+      "maxDailyLogAge": 30,
       "autoRecall": true,
       "autoRecallTopK": 3,
       "autoRecallMinScore": 0.3,
       "autoCapture": true,
       "captureMaxChars": 500,
+      "refine": {
+        "enabled": true,
+        "autoTrigger": true,
+        "threshold": 50,
+        "similarityThreshold": 0.85,
+        "keepBackup": true,
+        "maxEntriesPerCategory": 20
+      },
       "vector": {
         "enabled": false,
         "embedding": {

@@ -245,6 +245,68 @@ func (s *FileStore) GetMemoryDir() string {
 	return s.memoryDir
 }
 
+// CleanOldDailyLogs 清理过期的每日日志
+// maxAge: 保留天数，超过此天数的日志文件会被删除；0 表示不清理
+func (s *FileStore) CleanOldDailyLogs(maxAge int) (int, error) {
+	if maxAge <= 0 {
+		return 0, nil // 不清理
+	}
+
+	entries, err := os.ReadDir(s.memoryDir)
+	if err != nil {
+		return 0, fmt.Errorf("read memory dir: %w", err)
+	}
+
+	cutoffDate := time.Now().AddDate(0, 0, -maxAge)
+	var deleted int
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		fileName := entry.Name()
+		// 只处理日期格式的 .md 文件（YYYY-MM-DD.md）
+		if !isDailyLogFile(fileName) {
+			continue
+		}
+
+		// 解析文件名中的日期
+		fileDate, err := time.Parse("2006-01-02.md", fileName)
+		if err != nil {
+			continue
+		}
+
+		// 如果文件日期早于截止日期，删除
+		if fileDate.Before(cutoffDate) {
+			filePath := filepath.Join(s.memoryDir, fileName)
+			if err := os.Remove(filePath); err != nil {
+				// 记录错误但继续处理其他文件
+				continue
+			}
+			deleted++
+		}
+	}
+
+	return deleted, nil
+}
+
+// isDailyLogFile 检查文件名是否为每日日志格式
+func isDailyLogFile(fileName string) bool {
+	// 排除 MEMORY.md 和其他特殊文件
+	if fileName == "MEMORY.md" || !strings.HasSuffix(fileName, ".md") {
+		return false
+	}
+
+	// 检查是否为 YYYY-MM-DD.md 格式
+	if len(fileName) != 13 { // "2006-01-02.md" = 13 characters
+		return false
+	}
+
+	_, err := time.Parse("2006-01-02.md", fileName)
+	return err == nil
+}
+
 // expandHome 展开 ~ 为用户主目录
 func expandHome(path string) string {
 	if len(path) > 0 && path[0] == '~' {

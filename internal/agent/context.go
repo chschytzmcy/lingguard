@@ -258,6 +258,39 @@ func (a *Agent) captureMemories(sessionID string, messages []llm.Message) {
 	if capturedCount == 0 {
 		logger.Debug("Auto-capture completed: no memories captured")
 	}
+
+	// 检查是否触发自动提炼
+	a.checkAutoRefine()
+}
+
+// checkAutoRefine 检查并触发自动提炼
+func (a *Agent) checkAutoRefine() {
+	if a.memoryRefiner == nil {
+		return
+	}
+
+	cfg := a.config.MemoryConfig.Refine
+	if cfg == nil || !cfg.Enabled || !cfg.AutoTrigger {
+		return
+	}
+
+	if a.memoryRefiner.ShouldTriggerRefine() {
+		logger.Info("Auto-refine triggered: threshold reached")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		result, err := a.memoryRefiner.Refine(ctx)
+		if err != nil {
+			logger.Warn("Auto-refine failed", "error", err)
+			return
+		}
+
+		logger.Info("Auto-refine completed",
+			"total", result.TotalEntries,
+			"merged", result.MergedEntries,
+			"removed", result.RemovedEntries,
+			"backup", result.BackupPath)
+	}
 }
 
 // min 返回两个整数中的较小值

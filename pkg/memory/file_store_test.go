@@ -1,9 +1,11 @@
 package memory
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestFileStore_Init(t *testing.T) {
@@ -119,6 +121,74 @@ func TestFileStore_DailyLog(t *testing.T) {
 
 	if len(logs) == 0 {
 		t.Error("daily logs is empty")
+	}
+}
+
+func TestFileStore_CleanOldDailyLogs(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "lingguard-memory-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	store := NewFileStore(tmpDir)
+	if err := store.Init(); err != nil {
+		t.Fatalf("failed to init store: %v", err)
+	}
+
+	// 创建一些测试日志文件
+	now := time.Now()
+	dates := []string{
+		now.Format("2006-01-02"),                    // 今天
+		now.AddDate(0, 0, -1).Format("2006-01-02"),  // 昨天
+		now.AddDate(0, 0, -5).Format("2006-01-02"),  // 5 天前
+		now.AddDate(0, 0, -10).Format("2006-01-02"), // 10 天前
+		now.AddDate(0, 0, -31).Format("2006-01-02"), // 31 天前
+	}
+
+	for _, date := range dates {
+		dailyFile := filepath.Join(tmpDir, date+".md")
+		content := fmt.Sprintf("# Daily Log - %s\n\nTest content\n", date)
+		if err := os.WriteFile(dailyFile, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to create daily log %s: %v", date, err)
+		}
+	}
+
+	// 测试清理（保留 7 天）
+	deleted, err := store.CleanOldDailyLogs(7)
+	if err != nil {
+		t.Fatalf("failed to clean old daily logs: %v", err)
+	}
+
+	// 应该删除 10 天前和 31 天前的日志
+	if deleted != 2 {
+		t.Errorf("expected 2 files deleted, got %d", deleted)
+	}
+
+	// 验证今天和昨天的日志还在
+	todayFile := filepath.Join(tmpDir, now.Format("2006-01-02")+".md")
+	if _, err := os.Stat(todayFile); os.IsNotExist(err) {
+		t.Error("today's log should not be deleted")
+	}
+
+	yesterdayFile := filepath.Join(tmpDir, now.AddDate(0, 0, -1).Format("2006-01-02")+".md")
+	if _, err := os.Stat(yesterdayFile); os.IsNotExist(err) {
+		t.Error("yesterday's log should not be deleted")
+	}
+
+	// 验证 31 天前的日志已被删除
+	oldFile := filepath.Join(tmpDir, now.AddDate(0, 0, -31).Format("2006-01-02")+".md")
+	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
+		t.Error("31 days old log should be deleted")
+	}
+
+	// 测试不清理（maxAge = 0）
+	deleted2, err := store.CleanOldDailyLogs(0)
+	if err != nil {
+		t.Fatalf("failed to clean with maxAge=0: %v", err)
+	}
+	if deleted2 != 0 {
+		t.Errorf("expected 0 files deleted with maxAge=0, got %d", deleted2)
 	}
 }
 

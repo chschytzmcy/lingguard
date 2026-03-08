@@ -72,6 +72,7 @@ type Agent struct {
 	memoryStore        *memory.FileStore      // 文件持久化存储（参考 nanobot）
 	hybridStore        *memory.HybridStore    // 混合存储（文件+向量），可选
 	memoryBuilder      *memory.ContextBuilder // 记忆上下文构建器
+	memoryRefiner      *memory.Refiner        // 记忆提炼器，	traceCollector     trace.Collector        // 追踪采集器，可选
 	taskboard          *taskboard.Service     // 定时任务看板服务（仅用于定时任务跟踪和分析）
 	cronWrapper        CronWrapper            // 定时任务服务包装器
 	traceCollector     trace.Collector        // 追踪采集器，可选
@@ -116,6 +117,7 @@ func NewAgentWithMultimodalAndConfig(cfg *config.AgentsConfig, provider provider
 	var memStore *memory.FileStore
 	var hybridStore *memory.HybridStore
 	var memBuilder *memory.ContextBuilder
+	var refiner *memory.Refiner
 	var sessionStore memory.Store
 
 	// 记忆目录
@@ -136,9 +138,10 @@ func NewAgentWithMultimodalAndConfig(cfg *config.AgentsConfig, provider provider
 			}
 
 			hybridCfg := &memory.HybridStoreConfig{
-				MemoryDir:    memDir,
-				VectorConfig: cfg.MemoryConfig.Vector,
-				Providers:    providers,
+				MemoryDir:      memDir,
+				VectorConfig:   cfg.MemoryConfig.Vector,
+				Providers:      providers,
+				MaxDailyLogAge: cfg.MemoryConfig.MaxDailyLogAge,
 			}
 
 			var err error
@@ -161,7 +164,21 @@ func NewAgentWithMultimodalAndConfig(cfg *config.AgentsConfig, provider provider
 			} else {
 				memBuilder = memory.NewContextBuilder(memStore)
 				logger.Info("File-based memory store initialized", "path", memDir)
+				// 清理过期日志
+				if cfg.MemoryConfig.MaxDailyLogAge > 0 {
+					if deleted, err := memStore.CleanOldDailyLogs(cfg.MemoryConfig.MaxDailyLogAge); err != nil {
+						logger.Warn("Failed to clean old daily logs", "error", err)
+					} else if deleted > 0 {
+						logger.Info("Cleaned old daily logs", "deleted", deleted, "maxAge", cfg.MemoryConfig.MaxDailyLogAge)
+					}
+				}
 			}
+		}
+
+		// 初始化记忆提炼器
+		if cfg.MemoryConfig.Refine != nil && cfg.MemoryConfig.Refine.Enabled {
+			refiner = memory.NewRefiner(memStore, hybridStore, cfg.MemoryConfig.Refine)
+			logger.Info("Memory refiner initialized", "threshold", cfg.MemoryConfig.Refine.Threshold)
 		}
 	}
 
@@ -181,6 +198,7 @@ func NewAgentWithMultimodalAndConfig(cfg *config.AgentsConfig, provider provider
 		memoryStore:         memStore,
 		hybridStore:         hybridStore,
 		memoryBuilder:       memBuilder,
+		memoryRefiner:       refiner,
 		sessionDynamicTools: make(map[string]*sessionDynamicToolsInfo),
 		profileStore:        memory.NewProfileStore(""),
 	}

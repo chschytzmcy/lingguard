@@ -37,9 +37,10 @@ type HybridStore struct {
 
 // HybridStoreConfig 混合存储配置
 type HybridStoreConfig struct {
-	MemoryDir    string
-	VectorConfig *config.VectorConfig
-	Providers    map[string]config.ProviderConfig // 用于获取 API Key
+	MemoryDir      string
+	VectorConfig   *config.VectorConfig
+	Providers      map[string]config.ProviderConfig // 用于获取 API Key
+	MaxDailyLogAge int                              // 每日日志保留天数，0 表示不清理
 }
 
 // NewHybridStore 创建混合存储
@@ -54,6 +55,15 @@ func NewHybridStore(cfg *HybridStoreConfig) (*HybridStore, error) {
 		fileStore:     fileStore,
 		bufferSize:    10, // 缓冲10条记录
 		vectorEnabled: cfg.VectorConfig != nil && cfg.VectorConfig.Enabled,
+	}
+
+	// 清理过期的每日日志
+	if cfg.MaxDailyLogAge > 0 {
+		if deleted, err := fileStore.CleanOldDailyLogs(cfg.MaxDailyLogAge); err != nil {
+			logger.Warn("Failed to clean old daily logs", "error", err)
+		} else if deleted > 0 {
+			logger.Info("Cleaned old daily logs", "deleted", deleted, "maxAge", cfg.MaxDailyLogAge)
+		}
 	}
 
 	// 如果启用向量检索，初始化向量存储

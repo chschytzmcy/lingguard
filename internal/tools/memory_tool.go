@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lingguard/internal/config"
 	"github.com/lingguard/pkg/memory"
 )
 
@@ -19,6 +20,7 @@ type MemoryTool struct {
 	store       *memory.FileStore
 	hybridStore *memory.HybridStore // 可选：支持向量检索
 	builder     *memory.ContextBuilder
+	refiner     *memory.Refiner // 可选：记忆提炼器
 }
 
 // NewMemoryTool 创建记忆工具
@@ -55,7 +57,13 @@ func NewMemoryToolFromHybridStore(store *memory.HybridStore) *MemoryTool {
 		store:       store.FileStore(),
 		hybridStore: store,
 		builder:     memory.NewContextBuilderWithHybrid(store),
+		refiner:     memory.NewRefiner(store.FileStore(), store, nil),
 	}
+}
+
+// SetRefiner 设置提炼器
+func (t *MemoryTool) SetRefiner(cfg *config.RefineConfig) {
+	t.refiner = memory.NewRefiner(t.store, t.hybridStore, cfg)
 }
 
 // Name 返回工具名称
@@ -72,12 +80,14 @@ Actions:
 - recall: Search memories for relevant information
 - log: Write an event to daily log
 - context: Get current memory context
+- refine: Deduplicate and consolidate memory entries
 
 Usage:
 {"action": "remember", "category": "User Preferences", "fact": "User prefers Go over Python"}
 {"action": "recall", "query": "user preferences"}
 {"action": "log", "event": "Completed task X"}
-{"action": "context"}`
+{"action": "context"}
+{"action": "refine"}`
 
 	if t.hybridStore != nil && t.hybridStore.IsVectorEnabled() {
 		desc += `
@@ -95,7 +105,7 @@ func (t *MemoryTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"action": map[string]interface{}{
 				"type":        "string",
-				"enum":        []string{"remember", "recall", "log", "context"},
+				"enum":        []string{"remember", "recall", "log", "context", "refine"},
 				"description": "The memory action to perform",
 			},
 			"category": map[string]interface{}{
@@ -142,6 +152,8 @@ func (t *MemoryTool) Execute(ctx context.Context, args json.RawMessage) (string,
 		return t.actionLog(params.Event)
 	case "context":
 		return t.actionContext()
+	case "refine":
+		return t.actionRefine(ctx)
 	default:
 		return "", fmt.Errorf("unknown action: %s", params.Action)
 	}
@@ -254,6 +266,43 @@ func (t *MemoryTool) actionContext() (string, error) {
 	}
 
 	return ctx, nil
+}
+
+// actionRefine 执行记忆提炼
+func (t *MemoryTool) actionRefine(ctx context.Context) (string, error) {
+	if t.refiner == nil {
+		// 如果没有配置提炼器，创建一个默认的
+		t.refiner = memory.NewRefiner(t.store, t.hybridStore, nil)
+	}
+
+	result, err := t.refiner.Refine(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to refine memory: %w", err)
+	}
+
+	var output strings.Builder
+	output.WriteString("## Memory Refinement Complete\n\n")
+	output.WriteString(fmt.Sprintf("- **Total entries**: %d\n", result.TotalEntries))
+	output.WriteString(fmt.Sprintf("- **Merged entries**: %d\n", result.MergedEntries))
+	output.WriteString(fmt.Sprintf("- **Removed duplicates**: %d\n", result.RemovedEntries))
+	output.WriteString(fmt.Sprintf("- **Duplicate groups found**: %d\n", result.DuplicateGroups))
+
+	if result.BackupPath != "" {
+		output.WriteString(fmt.Sprintf("- **Backup saved to**: %s\n", result.BackupPath))
+	}
+
+	if len(result.Changes) > 0 {
+		output.WriteString("\n### Changes Made\n")
+		for _, change := range result.Changes {
+			output.WriteString(fmt.Sprintf("- %s\n", change))
+		}
+	}
+
+	if result.RemovedEntries == 0 {
+		output.WriteString("\nNo duplicate entries found. Memory is already well-organized.\n")
+	}
+
+	return output.String(), nil
 }
 
 // GetStore 获取存储实例
