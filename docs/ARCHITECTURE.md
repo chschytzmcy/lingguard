@@ -1210,6 +1210,67 @@ Remember: You are an executor. Execute commands, don't just describe them!`
 
 LingGuard 的记忆系统融合了 nanobot 的文件存储方案和 OpenClaw 的自动记忆功能。
 
+#### 4.6.0 数据管理概览
+
+系统管理三种类型的数据，采用统一的**滑动窗口策略**：
+
+| 数据类型 | 存储位置 | 窗口配置 | 超窗口处理 |
+|----------|----------|----------|------------|
+| **长期记忆** | MEMORY.md | `recentDays: 3` | 归档到 ARCHIVE.md |
+| **会话消息** | sessions/*.json | `threshold: 50, keepRecent: 5` | 压缩为摘要 |
+| **每日日志** | YYYY-MM-DD.md | `maxDailyLogAge: 30` | 删除 |
+
+**整体数据流：**
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          用户对话                                        │
+└─────────────────────────────────────────────────────────────────────────┘
+       │                    │                      │
+       ▼                    ▼                      ▼
+┌──────────────┐    ┌──────────────┐      ┌──────────────┐
+│  长期记忆     │    │  会话消息     │      │  每日日志     │
+│  MEMORY.md   │    │  sessions/   │      │  YYYY-MM-DD  │
+└──────────────┘    └──────────────┘      └──────────────┘
+       │                    │                      │
+       │ 超过 recentDays    │ 超过 threshold       │ 超过 maxDailyLogAge
+       │ (默认3天)          │ (默认50条)           │ (默认30天)
+       ▼                    ▼                      ▼
+┌──────────────┐    ┌──────────────┐      ┌──────────────┐
+│ 归档提炼      │    │ LLM 摘要压缩  │      │ 自动删除      │
+│ ARCHIVE.md   │    │ 1条摘要+N条   │      │              │
+└──────────────┘    └──────────────┘      └──────────────┘
+```
+
+**触发时机：**
+| 操作 | 触发时机 | 说明 |
+|------|----------|------|
+| 记忆归档 | Heartbeat 凌晨 2:00 | 定时执行，合并旧记忆 |
+| 会话压缩 | 对话结束检测 | 消息数 ≥ 50 时触发 |
+| 日志清理 | 启动时 | 删除超过保留期的日志 |
+
+**配置总览：**
+```json
+{
+  "agents": {
+    "memoryWindow": 50,           // 会话历史消息窗口（与 sessionCompress.threshold 配合）
+    "memory": {
+      "recentDays": 3,            // 记忆加载窗口（只加载最近N天）
+      "maxDailyLogAge": 30,       // 每日日志保留天数
+      "refine": {
+        "similarityThreshold": 0.85,
+        "keepBackup": true
+      }
+    },
+    "sessionCompress": {
+      "enabled": true,
+      "threshold": 50,            // 触发压缩的消息数阈值
+      "keepRecent": 5,            // 保留最近N条原始消息
+      "summaryMaxLen": 500
+    }
+  }
+}
+```
+
 #### 4.6.1 系统架构
 
 ```
@@ -1249,7 +1310,7 @@ LingGuard 的记忆系统融合了 nanobot 的文件存储方案和 OpenClaw 的
 | 方面 | LingGuard | nanobot |
 |------|-----------|---------|
 | **存储格式** | Markdown 文件 | Markdown 文件 |
-| **长期记忆** | MEMORY.md | MEMORY.md |
+| **长期记忆** | MEMORY.md + ARCHIVE.md | MEMORY.md |
 | **会话持久化** | sessions/*.json | 无 |
 | **每日日志** | YYYY-MM-DD.md | 每日笔记 |
 | **检索方式** | grep + 向量搜索 | grep |
@@ -1259,14 +1320,17 @@ LingGuard 的记忆系统融合了 nanobot 的文件存储方案和 OpenClaw 的
 | **智能去重** | ✅ 三层去重 | ❌ |
 | **问句过滤** | ✅ 排除问句 | ❌ |
 | **分类检测** | ✅ 自动分类 | ❌ |
-| **记忆提炼** | ✅ 相似度合并 | ❌ |
+| **记忆提炼** | ✅ 相似度合并 + 归档 | ❌ |
+| **记忆归档** | ✅ ARCHIVE.md 分离存储 | ❌ |
+| **会话压缩** | ✅ LLM 摘要 | ❌ |
 | **日志清理** | ✅ 可配置保留期 | ❌ |
 
 #### 4.6.3 文件结构
 
 ```
 ~/.lingguard/memory/
-├── MEMORY.md          # 长期记忆（用户偏好、重要事实）
+├── MEMORY.md          # 长期记忆（最近 recentDays 窗口内的活跃记忆）
+├── ARCHIVE.md         # 归档记忆（超过窗口的压缩历史记忆）
 ├── sessions/          # 会话持久化
 │   ├── session1.json
 │   └── session2.json
@@ -1658,7 +1722,7 @@ func (s *HybridStore) AddMemory(category, content string) error {
 }
 ```
 
-#### 4.6.11 核心文件
+#### 4.6.12 核心文件
 
 | 文件 | 说明 |
 |------|------|
