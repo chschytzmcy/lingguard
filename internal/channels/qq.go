@@ -1148,22 +1148,16 @@ func (q *QQChannel) handleGroupMessage(msg *qqGroupMessage) {
 }
 
 // handleMessageStream 流式处理消息
+// 注意：QQ API 限制每分钟每用户只能发送 5 条消息，且不支持消息编辑
+// 因此不进行流式文本输出，只在完成时发送最终消息
 func (q *QQChannel) handleMessageStream(ctx context.Context, msg *Message, userID string, msgID string) {
 	var contentBuilder strings.Builder
-	var lastUpdate time.Time
-	updateInterval := 500 * time.Millisecond
 
 	err := q.streamingHandler.HandleMessageStream(ctx, msg, func(event stream.StreamEvent) {
 		switch event.Type {
 		case stream.EventText:
+			// 只累积内容，不发送（QQ 限流严格，不支持消息编辑）
 			contentBuilder.WriteString(event.Content)
-
-			// 节流更新
-			now := time.Now()
-			if now.Sub(lastUpdate) < updateInterval {
-				return
-			}
-			lastUpdate = now
 
 		case stream.EventToolEnd:
 			// 检查工具结果是否包含生成的图片，如果有则发送
@@ -1219,8 +1213,9 @@ func (q *QQChannel) handleMessageStream(ctx context.Context, msg *Message, userI
 			}
 
 		case stream.EventDone:
+			// 发送完整内容（QQ 限流严格，不支持流式编辑，只发送最终结果）
 			content := contentBuilder.String()
-			if content != "" {
+			if strings.TrimSpace(content) != "" {
 				// 检查是否包含生成的图片标记
 				if strings.Contains(content, "[GENERATED_IMAGE:") {
 					q.sendC2CWithImages(ctx, userID, content, msgID)
@@ -1231,8 +1226,10 @@ func (q *QQChannel) handleMessageStream(ctx context.Context, msg *Message, userI
 
 		case stream.EventError:
 			logger.Error("Stream error", "error", event.Error)
-			errorContent := contentBuilder.String() + fmt.Sprintf("\n\n错误: %s", event.Error.Error())
-			if errorContent != "" {
+			// 发送内容加错误信息
+			content := contentBuilder.String()
+			errorContent := content + fmt.Sprintf("\n\n❌ 错误: %s", event.Error.Error())
+			if strings.TrimSpace(errorContent) != "" {
 				q.sendC2CMessage(ctx, userID, errorContent, msgID)
 			}
 		}
