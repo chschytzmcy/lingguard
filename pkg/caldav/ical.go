@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lingguard/pkg/logger"
 )
 
 // Event represents a calendar event
@@ -45,6 +47,13 @@ type Calendar struct {
 func ParseICS(content string) (*Event, error) {
 	event := &Event{
 		Status: "CONFIRMED",
+	}
+
+	// Debug: log raw ICS content (first 2000 chars)
+	if len(content) > 2000 {
+		logger.Info("[ICS] Raw content (truncated)", "content", content[:2000])
+	} else {
+		logger.Info("[ICS] Raw content", "content", content)
 	}
 
 	// Normalize line endings
@@ -129,10 +138,24 @@ func parseICSProperty(event *Event, key, value string) {
 	case "LOCATION":
 		event.Location = unescapeICS(value)
 	case "DTSTART":
-		event.Start = parseICSDateTime(key, value)
-		event.AllDay = !strings.Contains(key, "TZID") && len(strings.ReplaceAll(value, "-", "")) == 8
+		// Only parse if not already set (avoid overwriting with invalid values)
+		if event.Start.IsZero() {
+			logger.Info("[ICS] DTSTART raw", "key", key, "value", value)
+			event.Start = parseICSDateTime(key, value)
+			event.AllDay = !strings.Contains(key, "TZID") && len(strings.ReplaceAll(value, "-", "")) == 8
+			logger.Info("[ICS] DTSTART parsed", "key", key, "value", value, "result", event.Start, "isZero", event.Start.IsZero())
+		} else {
+			logger.Info("[ICS] DTSTART skipped (already set)", "key", key, "value", value, "existing", event.Start)
+		}
 	case "DTEND":
-		event.End = parseICSDateTime(key, value)
+		// Only parse if not already set (avoid overwriting with invalid values)
+		if event.End.IsZero() {
+			logger.Info("[ICS] DTEND raw", "key", key, "value", value)
+			event.End = parseICSDateTime(key, value)
+			logger.Info("[ICS] DTEND parsed", "key", key, "value", value, "result", event.End, "isZero", event.End.IsZero())
+		} else {
+			logger.Info("[ICS] DTEND skipped (already set)", "key", key, "value", value, "existing", event.End)
+		}
 	case "STATUS":
 		event.Status = strings.ToUpper(value)
 	case "CATEGORIES":
@@ -154,6 +177,8 @@ func parseICSProperty(event *Event, key, value string) {
 
 // parseICSDateTime parses an ICS date/time value
 func parseICSDateTime(key, value string) time.Time {
+	logger.Info("[ICS] parseICSDateTime called", "key", key, "value", value)
+
 	// Remove VALUE=DATE for all-day events
 	isDateOnly := strings.Contains(key, "VALUE=DATE") || len(strings.ReplaceAll(value, "-", "")) == 8
 
@@ -174,6 +199,9 @@ func parseICSDateTime(key, value string) time.Time {
 	if tzid != "" && !isUTC {
 		if l, err := time.LoadLocation(tzid); err == nil {
 			loc = l
+			logger.Info("[ICS] Timezone loaded", "tzid", tzid)
+		} else {
+			logger.Warn("[ICS] Failed to load timezone", "tzid", tzid, "error", err)
 		}
 	}
 
@@ -181,12 +209,16 @@ func parseICSDateTime(key, value string) time.Time {
 		// Date only format: YYYYMMDD
 		t, err := time.ParseInLocation("20060102", value, loc)
 		if err == nil {
+			logger.Info("[ICS] Parsed as date only", "result", t)
 			return t
 		}
+		logger.Warn("[ICS] Failed to parse as date only", "value", value, "error", err)
 	} else {
 		// DateTime format: YYYYMMDDTHHMMSS
 		value = strings.ReplaceAll(value, "-", "")
 		value = strings.ReplaceAll(value, ":", "")
+
+		logger.Info("[ICS] Trying to parse datetime", "cleaned_value", value, "location", loc.String())
 
 		// Try parsing with different layouts
 		layouts := []string{
@@ -198,9 +230,12 @@ func parseICSDateTime(key, value string) time.Time {
 		for _, layout := range layouts {
 			t, err := time.ParseInLocation(layout, value, loc)
 			if err == nil {
+				logger.Info("[ICS] Parsed successfully", "layout", layout, "result", t)
 				return t
 			}
+			logger.Debug("[ICS] Parse failed for layout", "layout", layout, "error", err)
 		}
+		logger.Warn("[ICS] All layouts failed", "value", value)
 	}
 
 	return time.Time{}

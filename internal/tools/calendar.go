@@ -495,7 +495,7 @@ func (t *CalendarTool) getUpcoming(ctx context.Context, client *caldav.Client, c
 
 func (t *CalendarTool) IsDangerous() bool { return true }
 
-func (t *CalendarTool) ShouldLoadByDefault() bool { return false }
+func (t *CalendarTool) ShouldLoadByDefault() bool { return true }
 
 // getAccountNames returns a list of available account names
 func (t *CalendarTool) getAccountNames() []string {

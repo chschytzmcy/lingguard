@@ -45,6 +45,7 @@ func (t *SkillTool) Description() string {
 - 文件操作：读取文件、写入文件、编辑文件、列出目录 → file
 - 定时任务：提醒我、X分钟后提醒、X点提醒、每天X点、定时、闹钟、别忘了、查看定时任务 → cron
 - 语音合成：朗读、读出来、转成语音、配音 → tts
+- 日历日程：查看日历、查看日程、今天有什么安排、明天有什么会议、添加日程、创建事件 → calendar
 
 调用方式：skill --name <技能名>`
 }
@@ -74,6 +75,7 @@ var skillToToolMapping = map[string][]string{
 	"system":      {"shell"},
 	"cron":        {"cron"},
 	"tts":         {"tts"},
+	"calendar":    {"calendar"},
 }
 
 // skillResponse skill 工具返回格式

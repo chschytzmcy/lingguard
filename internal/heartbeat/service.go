@@ -19,7 +19,13 @@ const DefaultInterval = 30 * time.Minute
 // HeartbeatPromptTemplate 心跳提示模板
 const HeartbeatPromptTemplate = `Read the file at %s (if it exists).
 Follow any instructions or tasks listed there.
-If nothing needs attention, reply with just: HEARTBEAT_OK`
+
+## 输出规则（重要！）
+
+- 如果所有任务都正常（无会议、系统正常、无告警），只回复: HEARTBEAT_OK
+- 只有当有需要通知用户的内容时，才输出具体信息（如即将开始的会议、系统告警、AI资讯等）
+- 不要输出"我检查了..."、"一切正常"等无意义的确认信息
+- 有效通知示例：会议提醒、磁盘/内存告警、每日资讯汇总`
 
 // HeartbeatOKToken 无任务时的响应标识
 const HeartbeatOKToken = "HEARTBEAT_OK"
@@ -299,7 +305,10 @@ func (s *Service) sendNotification(response, target, to string) {
 	// 检查响应是否只有 HEARTBEAT_OK（无需通知）
 	trimmed := strings.TrimSpace(response)
 	upperResponse := strings.ToUpper(trimmed)
+
+	// 如果响应只是 HEARTBEAT_OK，不发送通知
 	if upperResponse == HeartbeatOKToken {
+		logger.Debug("Heartbeat: no notification needed (HEARTBEAT_OK)")
 		return
 	}
 
@@ -309,9 +318,65 @@ func (s *Service) sendNotification(response, target, to string) {
 	} else if strings.HasSuffix(upperResponse, HeartbeatOKToken) {
 		trimmed = strings.TrimSpace(trimmed[:len(trimmed)-len(HeartbeatOKToken)])
 	}
+	upperResponse = strings.ToUpper(trimmed)
 
 	// 如果内容为空，不需要通知
 	if trimmed == "" {
+		logger.Debug("Heartbeat: no notification needed (empty content)")
+		return
+	}
+
+	// 过滤掉无意义的"正常"响应（说明没有实际需要通知的内容）
+	// 这些模式表示系统正常但 Agent 输出了确认信息
+	noisePatterns := []string{
+		"一切正常",
+		"没有会议",
+		"无会议",
+		"本周没有",
+		"系统正常",
+		"磁盘空间充足",
+		"内存充足",
+		"没有需要",
+		"无需通知",
+		"检查完成",
+		"已检查",
+		"正常",
+	}
+
+	// 如果响应只包含这些噪音模式，不发送通知
+	isNoise := false
+	for _, pattern := range noisePatterns {
+		if strings.Contains(trimmed, pattern) {
+			// 检查是否只有噪音内容（排除掉包含实际数据的情况）
+			// 如果响应很短且只包含噪音模式，则认为是噪音
+			if len(trimmed) < 100 {
+				isNoise = true
+				break
+			}
+		}
+	}
+
+	// 检查是否包含有效的通知内容
+	// 有效内容特征：包含数字、时间、链接、或特定格式
+	hasValidContent := false
+	validIndicators := []string{
+		"http://", "https://", // 链接
+		"📅", "📌", "⚠️", "🚨", "🔔", // 表情符号（表示有结构化内容）
+		"会议", "告警", "告警", "资讯", // 关键词
+		"使用率", "已用", "剩余", // 系统监控
+		"合并", "删除", "提炼", // 记忆操作
+	}
+
+	for _, indicator := range validIndicators {
+		if strings.Contains(trimmed, indicator) {
+			hasValidContent = true
+			break
+		}
+	}
+
+	// 如果响应很短，没有有效内容，且包含噪音模式，则不发送通知
+	if isNoise && !hasValidContent {
+		logger.Debug("Heartbeat: no notification needed (noise response)", "content", trimmed)
 		return
 	}
 
