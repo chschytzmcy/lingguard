@@ -413,7 +413,7 @@
                 const selectedTask = ref(null);
 
                 let eventSource = null;
-                const apiBase = '';
+                const apiBase = '/api';
 
                 // Computed
                 const inProgressTasks = computed(() => {
@@ -428,7 +428,7 @@
                 const loadBoard = async () => {
                     loading.value = true;
                     try {
-                        const res = await fetch(`${apiBase}/api/board`);
+                        const res = await fetch(`${apiBase}/board`);
                         const data = await res.json();
                         tasks.value = [
                             ...(data.inProgress || []),
@@ -443,7 +443,7 @@
                 // Load stats
                 const loadStats = async () => {
                     try {
-                        const res = await fetch(`${apiBase}/api/stats`);
+                        const res = await fetch(`${apiBase}/stats`);
                         const data = await res.json();
                         Object.assign(stats, data);
                     } catch (e) {
@@ -456,7 +456,7 @@
                     if (eventSource) {
                         eventSource.close();
                     }
-                    eventSource = new EventSource(`${apiBase}/api/events`);
+                    eventSource = new EventSource(`${apiBase}/events`);
 
                     eventSource.onopen = () => {
                         connected.value = true;
@@ -488,7 +488,7 @@
                         // 立即关闭详情框，防止后续操作出现 race condition
                         showDetailDialog.value = false;
 
-                        const res = await fetch(`${apiBase}/api/tasks/${task.id}`, {
+                        const res = await fetch(`${apiBase}/tasks/${task.id}`, {
                             method: 'DELETE'
                         });
                         if (res.ok) {

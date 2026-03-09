@@ -582,7 +582,7 @@
                 const totalTraces = ref(0);
 
                 let eventSource = null;
-                const apiBase = '';
+                const apiBase = '/api';
 
                 // Load traces
                 const loadTraces = async () => {
@@ -595,7 +595,7 @@
                         if (filters.status) params.set('status', filters.status);
                         if (filters.type) params.set('type', filters.type);
 
-                        const res = await fetch(`${apiBase}/api/traces?${params}`);
+                        const res = await fetch(`${apiBase}/traces?${params}`);
                         const data = await res.json();
                         traces.value = Array.isArray(data) ? data : [];
                         totalTraces.value = traces.value.length < pageSize ? (currentPage.value - 1) * pageSize + traces.value.length : currentPage.value * pageSize + 1;
@@ -609,7 +609,7 @@
                 // Load stats
                 const loadStats = async () => {
                     try {
-                        const res = await fetch(`${apiBase}/api/traces/stats`);
+                        const res = await fetch(`${apiBase}/traces/stats`);
                         const data = await res.json();
                         if (data) {
                             Object.assign(stats, data);
@@ -622,7 +622,7 @@
                 // Load trace detail
                 const loadTraceDetail = async (trace) => {
                     try {
-                        const res = await fetch(`${apiBase}/api/traces/${trace.id}`);
+                        const res = await fetch(`${apiBase}/traces/${trace.id}`);
                         const data = await res.json();
                         selectedTrace.value = data.trace;
                         spans.value = data.spans || [];
@@ -642,7 +642,7 @@
                         await ElMessageBox.confirm('确定要删除此追踪吗？', '确认删除', {
                             type: 'warning'
                         });
-                        const res = await fetch(`${apiBase}/api/traces/${trace.id}`, {
+                        const res = await fetch(`${apiBase}/traces/${trace.id}`, {
                             method: 'DELETE'
                         });
                         if (res.ok) {
@@ -667,7 +667,7 @@
                         await ElMessageBox.confirm('确定要清理 7 天前的追踪数据吗？', '确认清理', {
                             type: 'warning'
                         });
-                        const res = await fetch(`${apiBase}/api/traces/cleanup?days=7`, {
+                        const res = await fetch(`${apiBase}/traces/cleanup?days=7`, {
                             method: 'DELETE'
                         });
                         if (res.ok) {
@@ -688,7 +688,7 @@
                     if (eventSource) {
                         eventSource.close();
                     }
-                    eventSource = new EventSource(`${apiBase}/api/trace/events`);
+                    eventSource = new EventSource(`${apiBase}/traces/events`);
 
                     eventSource.onopen = () => {
                         connected.value = true;

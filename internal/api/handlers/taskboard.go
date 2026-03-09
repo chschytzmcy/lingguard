@@ -29,13 +29,19 @@ func (h *TaskboardHandler) SetCronDeleter(deleter taskboard.CronDeleter) {
 
 // RegisterRoutes 注册路由
 func (h *TaskboardHandler) RegisterRoutes(r *gin.RouterGroup) {
-	// 定时任务 API（内部 WebUI）
+	// 任务看板 API（前端调用路径）
+	r.GET("/board", h.GetBoard)
+	r.GET("/stats", h.GetStats)
+	r.GET("/events", h.SSE)
+	r.GET("/tasks", h.ListTasks)
+	r.GET("/tasks/:id", h.GetTask)
+	r.DELETE("/tasks/:id", h.DeleteTask)
+
+	// 定时任务 API（兼容旧路径）
 	cron := r.Group("/crons")
 	{
 		cron.GET("", h.ListCrons)
 		cron.DELETE("/:id", h.DeleteCron)
-		cron.GET("/stats", h.GetStats)
-		cron.GET("/events", h.SSE)
 	}
 }
 

@@ -235,6 +235,16 @@ func (s *Server) registerRoutes() {
 		s.traceHandler.RegisterRoutes(internal)
 	}
 
+	// ========== Frontend API (/api/*) ==========
+	// 前端 WebUI API (与 _internal 路由相同，但路径为 /api)
+	api := s.router.Group("/api")
+	if s.taskboardHandler != nil {
+		s.taskboardHandler.RegisterRoutes(api)
+	}
+	if s.traceHandler != nil {
+		s.traceHandler.RegisterRoutes(api)
+	}
+
 	// 注意：WebChat API 路由在 SetWebChatAPIHandler 中动态注册
 	// 注意：WebSocket 路由在 SetWebSocketHandler 中动态注册
 
