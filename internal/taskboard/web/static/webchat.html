@@ -554,13 +554,6 @@
                         const msgs = currentSession.value.messages;
                         const lastMsg = msgs[msgs.length - 1];
 
-                        // 在内容更新前检测滚动位置
-                        let shouldScroll = false;
-                        if (messagesContainer.value) {
-                            const el = messagesContainer.value;
-                            shouldScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-                        }
-
                         if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.complete) {
                             lastMsg.content += data.content;
                         } else {
@@ -571,14 +564,12 @@
                             });
                         }
 
-                        // 如果之前在底部，滚动到底部
-                        if (shouldScroll) {
-                            nextTick(() => {
-                                if (messagesContainer.value) {
-                                    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-                                }
-                            });
-                        }
+                        // 流式输出时强制滚动到底部
+                        nextTick(() => {
+                            if (messagesContainer.value) {
+                                messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+                            }
+                        });
                         saveSessions();
                     } else if (data.type === 'stream_end') {
                         isTyping.value = false;
@@ -588,18 +579,12 @@
                             lastMsg.complete = true;
                         }
                         updateSessionPreview();
-                        // 结束时也检查是否在底部
-                        if (messagesContainer.value) {
-                            const el = messagesContainer.value;
-                            const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-                            if (isAtBottom) {
-                                nextTick(() => {
-                                    if (messagesContainer.value) {
-                                        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-                                    }
-                                });
+                        // 流式结束时强制滚动到底部
+                        nextTick(() => {
+                            if (messagesContainer.value) {
+                                messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
                             }
-                        }
+                        });
                         saveSessions();
                     } else if (data.type === 'chat') {
                         isTyping.value = false;
