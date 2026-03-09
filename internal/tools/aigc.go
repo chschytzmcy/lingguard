@@ -340,7 +340,8 @@ func (t *AIGCTool) generateVideo(ctx context.Context, prompt string, duration in
 	}
 
 	// 返回特殊格式，让飞书 channel 自动发送视频
-	return fmt.Sprintf("视频生成成功！\n描述: %s\n时长: %d 秒\n\n[GENERATED_VIDEO:%s]", prompt, duration, localPath), nil
+	// 同时包含公网 URL 供 QQ 等渠道使用
+	return fmt.Sprintf("视频生成成功！\n描述: %s\n时长: %d 秒\n\n[GENERATED_VIDEO:%s][VIDEO_URL:%s]", prompt, duration, localPath, result.Output.VideoURL), nil
 }
 
 // generateVideoFromImage 图生视频
@@ -424,7 +425,8 @@ func (t *AIGCTool) generateVideoFromImage(ctx context.Context, imagePath, prompt
 	}
 
 	// 返回特殊格式，让飞书 channel 自动发送视频
-	return fmt.Sprintf("视频生成成功！\n描述: %s\n时长: %d 秒\n\n[GENERATED_VIDEO:%s]", prompt, duration, localPath), nil
+	// 同时包含公网 URL 供 QQ 等渠道使用
+	return fmt.Sprintf("视频生成成功！\n描述: %s\n时长: %d 秒\n\n[GENERATED_VIDEO:%s][VIDEO_URL:%s]", prompt, duration, localPath, result.Output.VideoURL), nil
 }
 
 // generateVideoFromVideo 参考视频生成视频（视频生视频）
@@ -504,7 +506,8 @@ func (t *AIGCTool) generateVideoFromVideo(ctx context.Context, videoPath, prompt
 	}
 
 	// 返回特殊格式，让飞书 channel 自动发送视频
-	return fmt.Sprintf("视频生成成功！\n参考视频: %s\n描述: %s\n时长: %d 秒\n\n[GENERATED_VIDEO:%s]", videoPath, prompt, duration, localPath), nil
+	// 同时包含公网 URL 供 QQ 等渠道使用
+	return fmt.Sprintf("视频生成成功！\n参考视频: %s\n描述: %s\n时长: %d 秒\n\n[GENERATED_VIDEO:%s][VIDEO_URL:%s]", videoPath, prompt, duration, localPath, result.Output.VideoURL), nil
 }
 
 // submitVideoToVideoTask 提交参考生视频任务

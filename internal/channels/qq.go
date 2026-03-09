@@ -1192,6 +1192,32 @@ func (q *QQChannel) handleMessageStream(ctx context.Context, msg *Message, userI
 				}()
 			}
 
+			// 处理视频 - 使用公网 URL 发送
+			if strings.Contains(event.ToolResult, "[GENERATED_VIDEO:") {
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							logger.Error("QQ video upload goroutine panic recovered", "error", r)
+						}
+					}()
+
+					// 处理视频 - 优先使用公网 URL
+					videoURLPattern := regexp.MustCompile(`\[VIDEO_URL:([^\]]+)\]`)
+					videoURLMatches := videoURLPattern.FindAllStringSubmatch(event.ToolResult, -1)
+
+					for _, match := range videoURLMatches {
+						if len(match) > 1 {
+							videoURL := match[1]
+							logger.Info("Sending generated video to QQ via URL", "url", videoURL[:min(80, len(videoURL))])
+
+							if err := q.sendC2CVideoURL(ctx, userID, videoURL, msgID); err != nil {
+								logger.Warn("Failed to send video URL to QQ", "error", err)
+							}
+						}
+					}
+				}()
+			}
+
 		case stream.EventDone:
 			content := contentBuilder.String()
 			if content != "" {
@@ -1462,6 +1488,68 @@ func (q *QQChannel) sendC2CImageURL(ctx context.Context, openid string, imageURL
 	}
 
 	logger.Info("QQ image message sent via files API", "to", openid, "response", string(respBody)[:min(200, len(respBody))])
+	return nil
+}
+
+// sendC2CVideoURL 发送私聊视频消息（使用公网 URL）
+// 根据 QQ 官方文档：使用 /v2/users/{openid}/files API 上传并发送视频
+func (q *QQChannel) sendC2CVideoURL(ctx context.Context, openid string, videoURL string, msgID string) error {
+	if openid == "" {
+		return fmt.Errorf("openid is empty")
+	}
+
+	// 获取 access token
+	accessToken, err := q.getAccessToken()
+	if err != nil {
+		return fmt.Errorf("get access token: %w", err)
+	}
+
+	// 限流控制
+	limiter := q.getRateLimiter(openid)
+	if !limiter.allow() {
+		return fmt.Errorf("rate limit exceeded: QQ API limits 5 messages per minute per user")
+	}
+	limiter.record()
+
+	// 使用 /v2/users/{openid}/files API 发送视频
+	// 参考: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/send-receive/rich-media.html
+	apiURL := fmt.Sprintf("%s/v2/users/%s/files", qqAPIBase, openid)
+
+	body := map[string]any{
+		"file_type":    2,        // 2=视频
+		"url":          videoURL, // 公网 URL
+		"srv_send_msg": true,     // 直接发送消息
+	}
+
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal message: %w", err)
+	}
+
+	logger.Debug("Sending QQ video via files API", "url", apiURL, "videoURL", videoURL[:min(80, len(videoURL))])
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("%s %s", qqTokenType, accessToken))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Union-Appid", q.cfg.AppID)
+
+	resp, err := q.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("QQ API error: status=%d, body=%s", resp.StatusCode, string(respBody))
+	}
+
+	logger.Info("QQ video message sent via files API", "to", openid, "response", string(respBody)[:min(200, len(respBody))])
 	return nil
 }
 
