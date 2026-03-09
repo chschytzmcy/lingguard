@@ -191,8 +191,8 @@ type FeishuConfig struct {
 // QQConfig QQ机器人配置
 type QQConfig struct {
 	Enabled   bool     `json:"enabled"`
-	AppID     string   `json:"appId"`  // QQ机器人 AppID
-	Secret    string   `json:"secret"` // QQ机器人 Secret
+	AppID     string   `json:"appId"`     // QQ机器人 AppID
+	AppSecret string   `json:"appSecret"` // QQ机器人 ClientSecret（从机器人开放平台获取）
 	AllowFrom []string `json:"allowFrom,omitempty"`
 }
 
@@ -590,7 +590,7 @@ func (c *Config) Validate() error {
 		if c.Channels.QQ.AppID == "" {
 			errors = append(errors, "channels.qq.appId 不能为空")
 		}
-		if c.Channels.QQ.Secret == "" {
+		if c.Channels.QQ.AppSecret == "" {
 			errors = append(errors, "channels.qq.secret 不能为空")
 		}
 	}

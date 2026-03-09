@@ -373,11 +373,12 @@ func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace strin
 
 	// QQ 渠道
 	if cfg.Channels.QQ != nil && cfg.Channels.QQ.Enabled {
-		if cfg.Channels.QQ.AppID == "" || cfg.Channels.QQ.Secret == "" {
-			return nil, fmt.Errorf("qq channel enabled but appId or secret not configured")
+		if cfg.Channels.QQ.AppID == "" || cfg.Channels.QQ.AppSecret == "" {
+			return nil, fmt.Errorf("qq channel enabled but appId or appSecret not configured")
 		}
+		// WebSocket 模式
 		mgr.RegisterChannel(channels.NewQQChannel(cfg.Channels.QQ, handler))
-		logger.Info("QQ channel registered")
+		logger.Info("QQ channel registered (websocket mode)")
 	}
 
 	// WebChat 渠道（随 Server 自动启用，无需额外配置）

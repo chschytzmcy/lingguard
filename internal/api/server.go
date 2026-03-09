@@ -119,6 +119,17 @@ func (s *Server) SetWebChatAPIHandler(h WebChatAPIHandler) {
 	h.RegisterRoutes(s.router.Group("/_internal"))
 }
 
+// RegisterQQWebhook 注册 QQ Webhook 路由
+func (s *Server) RegisterQQWebhook(handler func(*gin.Context)) {
+	s.router.POST("/qqbot", handler)
+	logger.Info("QQ Webhook route registered", "path", "/qqbot")
+}
+
+// GetRouter 获取 Gin 路由引擎（用于自定义路由注册）
+func (s *Server) GetRouter() *gin.Engine {
+	return s.router
+}
+
 // NewServer 创建统一服务器
 func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 	// 设置 Gin 模式

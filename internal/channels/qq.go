@@ -21,8 +21,9 @@ import (
 
 // QQ Bot API endpoints
 const (
-	qqAPIBase    = "https://api.sgroup.qq.com"
-	qqGatewayURL = "wss://api.sgroup.qq.com/websocket"
+	qqAPIBase   = "https://api.sgroup.qq.com"
+	qqTokenURL  = "https://bots.qq.com/app/getAppAccessToken"
+	qqTokenType = "QQBot" // 官方 botgo SDK 使用的 token 类型
 )
 
 // QQ opcode constants
@@ -42,9 +43,47 @@ const (
 // QQ event types
 const (
 	qqEventReady            = "READY"
+	qqEventResumed          = "RESUMED"
 	qqEventC2CMessageCreate = "C2C_MESSAGE_CREATE"
 	qqEventDirectMessage    = "DIRECT_MESSAGE_CREATE"
+	qqEventGroupAtMessage   = "GROUP_AT_MESSAGE_CREATE"
+	qqEventAtMessageCreate  = "AT_MESSAGE_CREATE" // 频道 @ 消息
 )
+
+// QQ intent flags - 参考 OpenClaw 实现
+const (
+	qqIntentGuilds         = 1 << 0  // 频道相关
+	qqIntentGuildMembers   = 1 << 1  // 频道成员
+	qqIntentPublicMessages = 1 << 30 // 频道公开消息（公域）
+	qqIntentDirectMessage  = 1 << 12 // 频道私信
+	qqIntentGroupAndC2C    = 1 << 25 // 群聊和 C2C 私聊（需申请）
+)
+
+// qqIntentLevel Intent 权限级别 - 参考 OpenClaw 的 3 级降级机制
+type qqIntentLevel struct {
+	Name        string
+	Intents     int
+	Description string
+}
+
+// 3 级权限：从高到低依次尝试
+var qqIntentLevels = []qqIntentLevel{
+	{
+		Name:        "full",
+		Intents:     qqIntentPublicMessages | qqIntentDirectMessage | qqIntentGroupAndC2C,
+		Description: "群聊+私信+频道",
+	},
+	{
+		Name:        "group+channel",
+		Intents:     qqIntentPublicMessages | qqIntentGroupAndC2C,
+		Description: "群聊+频道",
+	},
+	{
+		Name:        "channel-only",
+		Intents:     qqIntentPublicMessages | qqIntentGuildMembers,
+		Description: "仅频道消息",
+	},
+}
 
 // QQ payload structures
 type qqPayload struct {
@@ -59,15 +98,24 @@ type qqHelloData struct {
 }
 
 type qqIdentifyData struct {
-	Token      qqToken `json:"token"`
+	Token      string  `json:"token"` // 格式: "QQBot {access_token}"
 	Intents    int     `json:"intents"`
 	Shard      []int   `json:"shard,omitempty"`
 	Properties qqProps `json:"properties,omitempty"`
 }
 
-type qqToken struct {
-	AppID string `json:"appId"`
-	Token string `json:"token"` // 实际上是 secret
+type qqResumeData struct {
+	Token     string `json:"token"`
+	SessionID string `json:"session_id"`
+	Seq       int    `json:"seq"`
+}
+
+// qqAccessTokenResponse 获取 AccessToken 的响应
+type qqAccessTokenResponse struct {
+	Code        int    `json:"code"`
+	Message     string `json:"message"`
+	AccessToken string `json:"access_token"`
+	ExpiresIn   any    `json:"expires_in"` // 可能是 string 或 int
 }
 
 type qqProps struct {
@@ -90,10 +138,21 @@ type qqUser struct {
 }
 
 type qqC2CMessage struct {
-	ID        string   `json:"id"`
-	Content   string   `json:"content"`
-	Timestamp string   `json:"timestamp"`
-	Author    qqAuthor `json:"author"`
+	ID          string         `json:"id"`
+	Content     string         `json:"content"`
+	Timestamp   string         `json:"timestamp"`
+	Author      qqAuthor       `json:"author"`
+	Attachments []qqAttachment `json:"attachments,omitempty"`
+}
+
+type qqGroupMessage struct {
+	ID          string         `json:"id"`
+	Content     string         `json:"content"`
+	Timestamp   string         `json:"timestamp"`
+	Author      qqGroupAuthor  `json:"author"`
+	GroupID     string         `json:"group_id"`
+	GroupOpenID string         `json:"group_openid"`
+	Attachments []qqAttachment `json:"attachments,omitempty"`
 }
 
 type qqAuthor struct {
@@ -102,17 +161,16 @@ type qqAuthor struct {
 	Avatar   string `json:"avatar"`
 }
 
-// QQ intent flags
-const (
-	qqIntentGuilds                = 1 << 0
-	qqIntentGuildMembers          = 1 << 1
-	qqIntentGuildMessages         = 1 << 9
-	qqIntentGuildMessageReactions = 1 << 10
-	qqIntentDirectMessage         = 1 << 12
-	qqIntentOpenForumEvent        = 1 << 28
-	qqIntentAudioAction           = 1 << 29
-	qqIntentPublicMessages        = 1 << 30
-)
+type qqGroupAuthor struct {
+	MemberOpenID string `json:"member_openid"`
+}
+
+type qqAttachment struct {
+	Type        string `json:"type"`
+	URL         string `json:"url"`
+	ContentType string `json:"content_type"`
+	Filename    string `json:"filename"`
+}
 
 // QQChannel QQ机器人渠道 (使用 WebSocket Gateway)
 type QQChannel struct {
@@ -143,6 +201,74 @@ type QQChannel struct {
 
 	// HTTP client for API calls
 	httpClient *http.Client
+
+	// Rate limiting (QQ API: 5 messages per minute per user)
+	rateLimiters sync.Map // key: userID, value: *qqRateLimiter
+
+	// AccessToken management (官方 botgo SDK 鉴权方式)
+	accessToken    string
+	accessTokenMu  sync.RWMutex
+	tokenExpiry    time.Time
+	tokenRefreshCh chan struct{}
+
+	// Intent level management - 参考 OpenClaw
+	intentLevelIndex          int // 当前使用的权限级别索引
+	lastSuccessfulIntentLevel int // 上次成功的权限级别
+
+	// Reconnect management - 参考 OpenClaw
+	reconnectAttempts        int
+	maxReconnectAttempts     int
+	reconnectDelays          []time.Duration
+	lastConnectTime          time.Time
+	quickDisconnectCount     int
+	quickDisconnectThreshold time.Duration
+	maxQuickDisconnectCount  int
+
+	// msg_seq tracker - 用于对同一条消息的多次回复
+	msgSeqTracker sync.Map // key: msgID, value: current seq
+	seqBaseTime   int64    // 基于时间戳的基准值
+
+	// Gateway URL cache
+	gatewayURL string
+}
+
+// qqRateLimiter 用户级限流器
+type qqRateLimiter struct {
+	mu         sync.Mutex
+	timestamps []time.Time   // 最近发送的消息时间戳
+	limit      int           // 每分钟限制
+	window     time.Duration // 时间窗口
+}
+
+func newQQRateLimiter(limit int, window time.Duration) *qqRateLimiter {
+	return &qqRateLimiter{
+		limit:      limit,
+		window:     window,
+		timestamps: make([]time.Time, 0, limit),
+	}
+}
+
+func (r *qqRateLimiter) allow() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := time.Now()
+	// 清理过期的记录
+	valid := r.timestamps[:0]
+	for _, t := range r.timestamps {
+		if now.Sub(t) <= r.window {
+			valid = append(valid, t)
+		}
+	}
+	r.timestamps = valid
+
+	return len(r.timestamps) < r.limit
+}
+
+func (r *qqRateLimiter) record() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.timestamps = append(r.timestamps, time.Now())
 }
 
 // NewQQChannel 创建QQ渠道
@@ -151,11 +277,21 @@ func NewQQChannel(cfg *config.QQConfig, handler MessageHandler) *QQChannel {
 	for _, id := range cfg.AllowFrom {
 		allowMap[id] = true
 	}
+
 	qc := &QQChannel{
-		cfg:        cfg,
-		handler:    handler,
-		allowMap:   allowMap,
-		httpClient: httpclient.Default(),
+		cfg:            cfg,
+		handler:        handler,
+		allowMap:       allowMap,
+		httpClient:     httpclient.Default(),
+		rateLimiters:   sync.Map{},
+		tokenRefreshCh: make(chan struct{}, 1),
+		// Reconnect config - 参考 OpenClaw
+		maxReconnectAttempts:     100,
+		reconnectDelays:          []time.Duration{1 * time.Second, 2 * time.Second, 5 * time.Second, 10 * time.Second, 30 * time.Second, 60 * time.Second},
+		quickDisconnectThreshold: 5 * time.Second,
+		maxQuickDisconnectCount:  3,
+		// msg_seq 基准时间
+		seqBaseTime: time.Now().Unix() % 100000000,
 	}
 	// 检查是否实现了流式处理器接口
 	if sh, ok := handler.(StreamingMessageHandler); ok {
@@ -177,11 +313,19 @@ func (q *QQChannel) Start(ctx context.Context) error {
 	q.ctx, q.cancel = context.WithCancel(ctx)
 	q.running = true
 
+	// 获取初始 AccessToken
+	if err := q.fetchAccessToken(); err != nil {
+		return fmt.Errorf("get initial access token: %w", err)
+	}
+
+	// 启动 token 自动刷新
+	q.startTokenRefresh()
+
 	// Start connection loop in goroutine
 	go q.connectionLoop()
 
-	logger.Info("QQ channel started (C2C private message)")
-	logger.Info("Using WebSocket Gateway - no public IP required")
+	logger.Info("QQ channel started (WebSocket Gateway)")
+	logger.Info("Features: Intent downgrade, Session Resume, Quick disconnect detection")
 	return nil
 }
 
@@ -202,12 +346,114 @@ func (q *QQChannel) IsRunning() bool {
 	return q.running
 }
 
-// Send 主动发送消息
-func (q *QQChannel) Send(ctx context.Context, to string, content string) error {
-	return q.sendC2CMessage(ctx, to, content)
+// fetchAccessToken 从 QQ 服务器获取 AccessToken（官方 botgo SDK 鉴权方式）
+func (q *QQChannel) fetchAccessToken() error {
+	reqBody := map[string]string{
+		"appId":        q.cfg.AppID,
+		"clientSecret": q.cfg.AppSecret,
+	}
+	bodyJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("marshal token request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(q.ctx, "POST", qqTokenURL, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return fmt.Errorf("create token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := q.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read token response: %w", err)
+	}
+
+	var tokenResp qqAccessTokenResponse
+	if err := json.Unmarshal(respBody, &tokenResp); err != nil {
+		return fmt.Errorf("unmarshal token response: %w", err)
+	}
+
+	if tokenResp.Code != 0 {
+		return fmt.Errorf("token API error: code=%d, message=%s", tokenResp.Code, tokenResp.Message)
+	}
+
+	if tokenResp.AccessToken == "" {
+		return fmt.Errorf("empty access token received")
+	}
+
+	// 存储 token 和过期时间（提前 5 分钟刷新，参考 OpenClaw）
+	expiresIn := parseExpiresIn(tokenResp.ExpiresIn)
+	q.accessTokenMu.Lock()
+	q.accessToken = tokenResp.AccessToken
+	q.tokenExpiry = time.Now().Add(time.Duration(expiresIn-300) * time.Second)
+	q.accessTokenMu.Unlock()
+
+	logger.Info("QQ AccessToken obtained", "expiresIn", expiresIn)
+	return nil
 }
 
-// connectionLoop WebSocket连接循环
+// getAccessToken 获取当前有效的 AccessToken，如果过期则刷新
+func (q *QQChannel) getAccessToken() (string, error) {
+	q.accessTokenMu.RLock()
+	token := q.accessToken
+	expiry := q.tokenExpiry
+	q.accessTokenMu.RUnlock()
+
+	// 如果 token 有效（提前 5 分钟），直接返回
+	if token != "" && time.Now().Before(expiry) {
+		return token, nil
+	}
+
+	// Token 过期或不存在，需要刷新
+	if err := q.fetchAccessToken(); err != nil {
+		return "", err
+	}
+
+	q.accessTokenMu.RLock()
+	token = q.accessToken
+	q.accessTokenMu.RUnlock()
+
+	return token, nil
+}
+
+// startTokenRefresh 启动 token 自动刷新协程 - 参考 OpenClaw 后台刷新
+func (q *QQChannel) startTokenRefresh() {
+	go func() {
+		for {
+			q.accessTokenMu.RLock()
+			expiry := q.tokenExpiry
+			q.accessTokenMu.RUnlock()
+
+			// 计算到期的剩余时间，提前 5 分钟刷新
+			sleepDuration := time.Until(expiry)
+			if sleepDuration <= 0 {
+				sleepDuration = 30 * time.Second
+			}
+
+			select {
+			case <-q.ctx.Done():
+				return
+			case <-time.After(sleepDuration):
+				if err := q.fetchAccessToken(); err != nil {
+					logger.Error("Failed to refresh QQ AccessToken", "error", err)
+				}
+			}
+		}
+	}()
+}
+
+// Send 主动发送消息
+func (q *QQChannel) Send(ctx context.Context, to string, content string) error {
+	return q.sendC2CMessage(ctx, to, content, "")
+}
+
+// connectionLoop WebSocket连接循环 - 参考 OpenClaw 的重连机制
 func (q *QQChannel) connectionLoop() {
 	for q.running {
 		select {
@@ -215,21 +461,72 @@ func (q *QQChannel) connectionLoop() {
 			return
 		default:
 			if err := q.connect(); err != nil {
-				logger.Warn("QQ WebSocket connection failed, reconnecting in 5s...", "error", err)
-				time.Sleep(5 * time.Second)
+				delay := q.getReconnectDelay()
+				logger.Warn("QQ WebSocket connection failed", "error", err, "retryIn", delay)
+				q.scheduleReconnect(delay)
 				continue
 			}
+
+			// 记录连接成功时间
+			q.lastConnectTime = time.Now()
+			q.reconnectAttempts = 0
 
 			// Connection established, start message loop
 			q.messageLoop()
 
-			// Connection lost, wait before reconnect
+			// Connection lost
 			if q.running {
-				logger.Info("QQ connection lost, reconnecting in 5s...")
-				time.Sleep(5 * time.Second)
+				q.handleDisconnect()
 			}
 		}
 	}
+}
+
+// getReconnectDelay 获取重连延迟 - 参考 OpenClaw 递增延迟
+func (q *QQChannel) getReconnectDelay() time.Duration {
+	idx := q.reconnectAttempts
+	if idx >= len(q.reconnectDelays) {
+		idx = len(q.reconnectDelays) - 1
+	}
+	return q.reconnectDelays[idx]
+}
+
+// scheduleReconnect 安排重连
+func (q *QQChannel) scheduleReconnect(delay time.Duration) {
+	q.reconnectAttempts++
+	if q.reconnectAttempts > q.maxReconnectAttempts {
+		logger.Error("QQ max reconnect attempts reached")
+		return
+	}
+	time.Sleep(delay)
+}
+
+// handleDisconnect 处理断开连接 - 参考 OpenClaw 快速断开检测
+func (q *QQChannel) handleDisconnect() {
+	connectionDuration := time.Since(q.lastConnectTime)
+
+	// 检测是否是快速断开
+	if connectionDuration < q.quickDisconnectThreshold && !q.lastConnectTime.IsZero() {
+		q.quickDisconnectCount++
+		logger.Warn("QQ quick disconnect detected",
+			"duration", connectionDuration,
+			"count", q.quickDisconnectCount)
+
+		// 如果连续快速断开超过阈值，可能是权限问题
+		if q.quickDisconnectCount >= q.maxQuickDisconnectCount {
+			logger.Error("QQ too many quick disconnects - possible permission issue",
+				"hint", "Check: 1) AppID/Secret correct 2) Bot permissions on QQ Open Platform")
+			q.quickDisconnectCount = 0
+			// 等待更长时间
+			time.Sleep(60 * time.Second)
+			return
+		}
+	} else {
+		// 连接持续时间够长，重置计数
+		q.quickDisconnectCount = 0
+	}
+
+	time.Sleep(5 * time.Second)
 }
 
 // connect 建立WebSocket连接
@@ -237,15 +534,71 @@ func (q *QQChannel) connect() error {
 	q.connMu.Lock()
 	defer q.connMu.Unlock()
 
+	// 获取 Gateway URL（动态获取或使用缓存）
+	gatewayURL, err := q.getGatewayURL()
+	if err != nil {
+		return fmt.Errorf("get gateway URL: %w", err)
+	}
+
+	logger.Info("QQ connecting to gateway", "url", gatewayURL)
+
 	dialer := websocket.DefaultDialer
-	conn, _, err := dialer.DialContext(q.ctx, qqGatewayURL, nil)
+	conn, _, err := dialer.DialContext(q.ctx, gatewayURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial gateway: %w", err)
 	}
 	q.conn = conn
 
-	// Start reading messages
 	return nil
+}
+
+// getGatewayURL 获取 Gateway URL - 参考 OpenClaw 动态获取
+func (q *QQChannel) getGatewayURL() (string, error) {
+	// 优先使用缓存
+	if q.gatewayURL != "" {
+		return q.gatewayURL, nil
+	}
+
+	accessToken, err := q.getAccessToken()
+	if err != nil {
+		return "", fmt.Errorf("get access token: %w", err)
+	}
+
+	url := qqAPIBase + "/gateway"
+	req, err := http.NewRequestWithContext(q.ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("create gateway request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("%s %s", qqTokenType, accessToken))
+
+	resp, err := q.httpClient.Do(req)
+	if err != nil {
+		// 如果获取失败，使用默认 URL
+		logger.Warn("Failed to get gateway URL, using default", "error", err)
+		return "wss://api.sgroup.qq.com/websocket", nil
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read gateway response: %w", err)
+	}
+
+	var gatewayResp struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(respBody, &gatewayResp); err != nil {
+		return "", fmt.Errorf("unmarshal gateway response: %w", err)
+	}
+
+	if gatewayResp.URL == "" {
+		return "", fmt.Errorf("empty gateway URL received")
+	}
+
+	// 缓存 gateway URL
+	q.gatewayURL = gatewayResp.URL
+	return gatewayResp.URL, nil
 }
 
 // closeConnection 关闭WebSocket连接
@@ -274,7 +627,13 @@ func (q *QQChannel) messageLoop() {
 			_, message, err := q.conn.ReadMessage()
 			if err != nil {
 				if q.running {
-					logger.Warn("QQ WebSocket read error", "error", err)
+					// 检查是否是认证失败
+					if strings.Contains(err.Error(), "4004") {
+						logger.Error("QQ 认证失败！",
+							"hint", "检查 AppID 和 AppSecret 是否正确")
+					} else {
+						logger.Warn("QQ WebSocket read error", "error", err)
+					}
 				}
 				return
 			}
@@ -286,7 +645,7 @@ func (q *QQChannel) messageLoop() {
 	}
 }
 
-// handlePayload 处理WebSocket消息
+// handlePayload 处理WebSocket消息 - 参考 OpenClaw
 func (q *QQChannel) handlePayload(data []byte) error {
 	var payload qqPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
@@ -300,13 +659,18 @@ func (q *QQChannel) handlePayload(data []byte) error {
 
 	switch payload.Op {
 	case qqOpHello:
-		// Server hello, need to identify
+		// Server hello, need to identify or resume
 		var helloData qqHelloData
 		if err := json.Unmarshal(payload.D, &helloData); err != nil {
 			return fmt.Errorf("unmarshal hello: %w", err)
 		}
 		q.heartbeatInterval = time.Duration(helloData.HeartbeatInterval) * time.Millisecond
 		q.startHeartbeat()
+
+		// 如果有 session_id，尝试 Resume；否则 Identify
+		if q.sessionID != "" && q.sequence > 0 {
+			return q.resume()
+		}
 		return q.identify()
 
 	case qqOpDispatch:
@@ -321,8 +685,32 @@ func (q *QQChannel) handlePayload(data []byte) error {
 		return fmt.Errorf("reconnect requested")
 
 	case qqOpInvalidSession:
-		logger.Warn("QQ invalid session, will re-identify")
-		q.sessionID = ""
+		// 参考 OpenClaw：Invalid Session 处理
+		var canResume bool
+		if err := json.Unmarshal(payload.D, &canResume); err != nil {
+			canResume = false
+		}
+
+		currentLevel := qqIntentLevels[q.intentLevelIndex]
+		logger.Warn("QQ invalid session",
+			"intentLevel", currentLevel.Name,
+			"canResume", canResume)
+
+		if !canResume {
+			q.sessionID = ""
+			q.sequence = 0
+
+			// 尝试降级到下一个权限级别
+			if q.intentLevelIndex < len(qqIntentLevels)-1 {
+				q.intentLevelIndex++
+				nextLevel := qqIntentLevels[q.intentLevelIndex]
+				logger.Info("QQ downgrading intents", "newLevel", nextLevel.Description)
+			} else {
+				// 已经是最低权限级别
+				logger.Error("QQ all intent levels failed, please check AppID/Secret")
+			}
+		}
+
 		return fmt.Errorf("invalid session")
 
 	default:
@@ -332,7 +720,7 @@ func (q *QQChannel) handlePayload(data []byte) error {
 	return nil
 }
 
-// handleDispatch 处理事件分发
+// handleDispatch 处理事件分发 - 参考 OpenClaw
 func (q *QQChannel) handleDispatch(eventType string, data json.RawMessage) error {
 	switch eventType {
 	case qqEventReady:
@@ -341,14 +729,31 @@ func (q *QQChannel) handleDispatch(eventType string, data json.RawMessage) error
 			return fmt.Errorf("unmarshal ready: %w", err)
 		}
 		q.sessionID = ready.SessionID
-		logger.Info("QQ bot ready", "username", ready.User.Username, "session", ready.SessionID[:8])
+		// 记录成功的权限级别
+		q.lastSuccessfulIntentLevel = q.intentLevelIndex
+
+		currentLevel := qqIntentLevels[q.intentLevelIndex]
+		logger.Info("QQ bot ready",
+			"username", ready.User.Username,
+			"session", ready.SessionID[:min(8, len(ready.SessionID))],
+			"intentLevel", currentLevel.Description)
+
+	case qqEventResumed:
+		logger.Info("QQ session resumed")
 
 	case qqEventC2CMessageCreate, qqEventDirectMessage:
 		var msg qqC2CMessage
 		if err := json.Unmarshal(data, &msg); err != nil {
 			return fmt.Errorf("unmarshal message: %w", err)
 		}
-		go q.handleMessage(&msg)
+		go q.handleC2CMessage(&msg)
+
+	case qqEventGroupAtMessage:
+		var msg qqGroupMessage
+		if err := json.Unmarshal(data, &msg); err != nil {
+			return fmt.Errorf("unmarshal group message: %w", err)
+		}
+		go q.handleGroupMessage(&msg)
 
 	default:
 		logger.Debug("QQ unhandled event", "event", eventType)
@@ -356,16 +761,36 @@ func (q *QQChannel) handleDispatch(eventType string, data json.RawMessage) error
 	return nil
 }
 
-// identify 发送身份认证
+// identify 发送身份认证 - 参考 OpenClaw Intent 机制
 func (q *QQChannel) identify() error {
+	accessToken, err := q.getAccessToken()
+	if err != nil {
+		logger.Error("Failed to get QQ AccessToken", "error", err)
+		return fmt.Errorf("get access token: %w", err)
+	}
+
+	// 使用官方 SDK 的 token 格式: "QQBot {access_token}"
+	token := fmt.Sprintf("%s %s", qqTokenType, accessToken)
+
+	// 如果有上次成功的级别，直接使用；否则从当前级别开始
+	levelToUse := q.intentLevelIndex
+	if q.lastSuccessfulIntentLevel >= 0 {
+		levelToUse = q.lastSuccessfulIntentLevel
+	}
+
+	intentLevel := qqIntentLevels[min(levelToUse, len(qqIntentLevels)-1)]
+	logger.Info("QQ identifying",
+		"appId", q.cfg.AppID,
+		"intents", intentLevel.Intents,
+		"level", intentLevel.Description,
+		"tokenType", qqTokenType)
+
 	identify := qqPayload{
 		Op: qqOpIdentify,
 		D: mustMarshal(qqIdentifyData{
-			Token: qqToken{
-				AppID: q.cfg.AppID,
-				Token: q.cfg.Secret,
-			},
-			Intents: qqIntentDirectMessage | qqIntentPublicMessages,
+			Token:   token,
+			Intents: intentLevel.Intents,
+			Shard:   []int{0, 1},
 			Properties: qqProps{
 				OS:      "linux",
 				Browser: "lingguard",
@@ -373,7 +798,30 @@ func (q *QQChannel) identify() error {
 			},
 		}),
 	}
+
 	return q.sendPayload(&identify)
+}
+
+// resume 恢复会话 - 参考 OpenClaw Session Resume
+func (q *QQChannel) resume() error {
+	accessToken, err := q.getAccessToken()
+	if err != nil {
+		return fmt.Errorf("get access token: %w", err)
+	}
+
+	token := fmt.Sprintf("%s %s", qqTokenType, accessToken)
+	logger.Info("QQ attempting session resume", "session", q.sessionID[:min(8, len(q.sessionID))])
+
+	resume := qqPayload{
+		Op: qqOpResume,
+		D: mustMarshal(qqResumeData{
+			Token:     token,
+			SessionID: q.sessionID,
+			Seq:       q.sequence,
+		}),
+	}
+
+	return q.sendPayload(&resume)
 }
 
 // startHeartbeat 启动心跳
@@ -437,8 +885,8 @@ func (q *QQChannel) sendPayload(payload *qqPayload) error {
 	return q.conn.WriteMessage(websocket.TextMessage, data)
 }
 
-// handleMessage 处理接收到的消息
-func (q *QQChannel) handleMessage(msg *qqC2CMessage) {
+// handleC2CMessage 处理私聊消息
+func (q *QQChannel) handleC2CMessage(msg *qqC2CMessage) {
 	// Deduplication check
 	if q.isProcessed(msg.ID) {
 		logger.Debug("Skipping duplicate QQ message", "id", msg.ID)
@@ -458,9 +906,13 @@ func (q *QQChannel) handleMessage(msg *qqC2CMessage) {
 
 	// Permission check
 	if len(q.allowMap) > 0 && !q.allowMap[userID] {
-		logger.Warn("Access denied on channel qq. Add to allowFrom list to grant access.", "sender", userID)
+		logger.Warn("Access denied on channel qq", "sender", userID)
 		return
 	}
+
+	logger.Info("QQ C2C message received",
+		"sender", userID,
+		"content", truncateContent(content, 100))
 
 	// Build Message
 	channelMsg := &Message{
@@ -473,14 +925,13 @@ func (q *QQChannel) handleMessage(msg *qqC2CMessage) {
 			"user_id":    userID,
 			"username":   msg.Author.Username,
 			"message_id": msg.ID,
+			"msg_type":   "c2c",
 		},
 	}
 
-	logger.Debug("Received QQ message", "sender", userID, "content", truncateContent(content, 100))
-
 	// 检查是否支持流式处理
 	if q.streamingHandler != nil {
-		q.handleMessageStream(q.ctx, channelMsg, userID)
+		q.handleMessageStream(q.ctx, channelMsg, userID, msg.ID)
 		return
 	}
 
@@ -493,18 +944,68 @@ func (q *QQChannel) handleMessage(msg *qqC2CMessage) {
 
 	// Send reply
 	if reply != "" {
-		if err := q.sendC2CMessage(q.ctx, userID, reply); err != nil {
+		if err := q.sendC2CMessage(q.ctx, userID, reply, msg.ID); err != nil {
 			logger.Error("Failed to send QQ reply", "error", err)
 		}
 	}
 }
 
+// handleGroupMessage 处理群消息
+func (q *QQChannel) handleGroupMessage(msg *qqGroupMessage) {
+	// Deduplication check
+	if q.isProcessed(msg.ID) {
+		return
+	}
+	q.markProcessed(msg.ID)
+
+	content := strings.TrimSpace(msg.Content)
+	if content == "" {
+		return
+	}
+
+	userID := msg.Author.MemberOpenID
+	groupID := msg.GroupOpenID
+
+	logger.Info("QQ group message received",
+		"group", groupID,
+		"sender", userID,
+		"content", truncateContent(content, 100))
+
+	// Build Message
+	channelMsg := &Message{
+		ID:        msg.ID,
+		SessionID: "qq-group-" + groupID,
+		Content:   content,
+		Channel:   "qq",
+		UserID:    userID,
+		Metadata: map[string]any{
+			"user_id":    userID,
+			"group_id":   groupID,
+			"message_id": msg.ID,
+			"msg_type":   "group",
+		},
+	}
+
+	// Call handler
+	reply, err := q.handler.HandleMessage(q.ctx, channelMsg)
+	if err != nil {
+		logger.Error("Handler error", "error", err)
+		return
+	}
+
+	// Send reply to group
+	if reply != "" {
+		if err := q.sendGroupMessage(q.ctx, groupID, reply, msg.ID); err != nil {
+			logger.Error("Failed to send QQ group reply", "error", err)
+		}
+	}
+}
+
 // handleMessageStream 流式处理消息
-func (q *QQChannel) handleMessageStream(ctx context.Context, msg *Message, userID string) {
+func (q *QQChannel) handleMessageStream(ctx context.Context, msg *Message, userID string, msgID string) {
 	var contentBuilder strings.Builder
-	var lastContent string
 	var lastUpdate time.Time
-	updateInterval := 500 * time.Millisecond // QQ API 限流较严，降低更新频率
+	updateInterval := 500 * time.Millisecond
 
 	err := q.streamingHandler.HandleMessageStream(ctx, msg, func(event stream.StreamEvent) {
 		switch event.Type {
@@ -518,17 +1019,10 @@ func (q *QQChannel) handleMessageStream(ctx context.Context, msg *Message, userI
 			}
 			lastUpdate = now
 
-			// QQ 不支持消息编辑，需要发送新消息或累积后发送
-			// 这里采用累积后一次性发送的策略
-
-		case stream.EventToolStart:
-			// 工具执行状态（静默处理，最终结果会在完成时显示）
-
 		case stream.EventDone:
-			// 最终发送
 			content := contentBuilder.String()
 			if content != "" {
-				if err := q.sendC2CMessage(ctx, userID, content); err != nil {
+				if err := q.sendC2CMessage(ctx, userID, content, msgID); err != nil {
 					logger.Error("Failed to send QQ message", "error", err)
 				}
 			}
@@ -536,8 +1030,8 @@ func (q *QQChannel) handleMessageStream(ctx context.Context, msg *Message, userI
 		case stream.EventError:
 			logger.Error("Stream error", "error", event.Error)
 			errorContent := contentBuilder.String() + fmt.Sprintf("\n\n错误: %s", event.Error.Error())
-			if errorContent != "" && errorContent != lastContent {
-				q.sendC2CMessage(ctx, userID, errorContent)
+			if errorContent != "" {
+				q.sendC2CMessage(ctx, userID, errorContent, msgID)
 			}
 		}
 	})
@@ -547,20 +1041,79 @@ func (q *QQChannel) handleMessageStream(ctx context.Context, msg *Message, userI
 	}
 }
 
-// sendC2CMessage 发送私聊消息
-func (q *QQChannel) sendC2CMessage(ctx context.Context, openid string, content string) error {
+// getNextMsgSeq 获取并递增消息序号 - 参考 OpenClaw
+func (q *QQChannel) getNextMsgSeq(msgID string) int {
+	current := 0
+	if val, ok := q.msgSeqTracker.Load(msgID); ok {
+		current = val.(int)
+	}
+	next := current + 1
+	q.msgSeqTracker.Store(msgID, next)
+
+	// 清理过期的序号（简单策略：保留最近 1000 条）
+	// 结合时间戳基准值，确保唯一性
+	return int(q.seqBaseTime) + next
+}
+
+// getRateLimiter 获取或创建用户限流器
+func (q *QQChannel) getRateLimiter(userID string) *qqRateLimiter {
+	if limiter, ok := q.rateLimiters.Load(userID); ok {
+		return limiter.(*qqRateLimiter)
+	}
+	newLimiter := newQQRateLimiter(5, time.Minute)
+	q.rateLimiters.Store(userID, newLimiter)
+	return newLimiter
+}
+
+// sendC2CMessage 发送私聊消息 - 支持 msg_id 回复
+func (q *QQChannel) sendC2CMessage(ctx context.Context, openid string, content string, msgID string) error {
 	if openid == "" {
 		return fmt.Errorf("openid is empty")
 	}
 
-	// QQ API 限流：每分钟最多 5 条消息给同一用户
-	// 这里简单实现，实际可能需要更复杂的限流控制
+	// 限流控制
+	limiter := q.getRateLimiter(openid)
+	if !limiter.allow() {
+		return fmt.Errorf("rate limit exceeded: QQ API limits 5 messages per minute per user")
+	}
+	limiter.record()
+
+	// QQ 消息长度限制
+	const maxMsgLen = 2000
+	if len(content) > maxMsgLen {
+		chunks := splitMessage(content, maxMsgLen-2)
+		for i, chunk := range chunks {
+			if err := q.sendC2CChunk(ctx, openid, chunk, msgID); err != nil {
+				return fmt.Errorf("send chunk %d: %w", i, err)
+			}
+			if i < len(chunks)-1 {
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+		return nil
+	}
+
+	return q.sendC2CChunk(ctx, openid, content, msgID)
+}
+
+// sendC2CChunk 发送单个消息块
+func (q *QQChannel) sendC2CChunk(ctx context.Context, openid string, content string, msgID string) error {
+	accessToken, err := q.getAccessToken()
+	if err != nil {
+		return fmt.Errorf("get access token: %w", err)
+	}
 
 	url := fmt.Sprintf("%s/v2/users/%s/messages", qqAPIBase, openid)
 
 	body := map[string]any{
 		"content":  content,
-		"msg_type": 0, // 文本消息
+		"msg_type": 0,
+		"msg_seq":  q.getNextMsgSeq(msgID),
+	}
+
+	// 如果有 msgID，添加到请求体（被动回复）
+	if msgID != "" {
+		body["msg_id"] = msgID
 	}
 
 	bodyJSON, err := json.Marshal(body)
@@ -573,9 +1126,10 @@ func (q *QQChannel) sendC2CMessage(ctx context.Context, openid string, content s
 		return fmt.Errorf("create request: %w", err)
 	}
 
-	// QQ Bot API Authorization: Bot {appid}.{secret}
-	req.Header.Set("Authorization", fmt.Sprintf("Bot %s.%s", q.cfg.AppID, q.cfg.Secret))
+	// 使用官方 SDK 的 Authorization 格式
+	req.Header.Set("Authorization", fmt.Sprintf("%s %s", qqTokenType, accessToken))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Union-Appid", q.cfg.AppID)
 
 	resp, err := q.httpClient.Do(req)
 	if err != nil {
@@ -593,12 +1147,85 @@ func (q *QQChannel) sendC2CMessage(ctx context.Context, openid string, content s
 	return nil
 }
 
+// sendGroupMessage 发送群消息
+func (q *QQChannel) sendGroupMessage(ctx context.Context, groupOpenID string, content string, msgID string) error {
+	if groupOpenID == "" {
+		return fmt.Errorf("groupOpenID is empty")
+	}
+
+	accessToken, err := q.getAccessToken()
+	if err != nil {
+		return fmt.Errorf("get access token: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/v2/groups/%s/messages", qqAPIBase, groupOpenID)
+
+	body := map[string]any{
+		"content":  content,
+		"msg_type": 0,
+		"msg_seq":  q.getNextMsgSeq(msgID),
+	}
+
+	if msgID != "" {
+		body["msg_id"] = msgID
+	}
+
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal message: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("%s %s", qqTokenType, accessToken))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Union-Appid", q.cfg.AppID)
+
+	resp, err := q.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("QQ API error: status=%d, body=%s", resp.StatusCode, string(respBody))
+	}
+
+	logger.Debug("QQ group message sent", "to", groupOpenID)
+	return nil
+}
+
+// splitMessage 分割长消息
+func splitMessage(content string, maxLen int) []string {
+	var chunks []string
+
+	for len(content) > 0 {
+		if idx := strings.Index(content, "\n\n"); idx >= 0 && idx < maxLen-2 {
+			chunks = append(chunks, strings.TrimSpace(content[:idx+2]))
+			content = content[idx+2:]
+			continue
+		}
+		if len(content) <= maxLen {
+			chunks = append(chunks, content)
+			break
+		}
+		chunks = append(chunks, content[:maxLen])
+		content = content[maxLen:]
+	}
+
+	return chunks
+}
+
 // isProcessed 检查消息是否已处理
 func (q *QQChannel) isProcessed(messageID string) bool {
 	q.dedupeMu.Lock()
 	defer q.dedupeMu.Unlock()
 
-	// Clean up old entries (keep last 1 hour)
 	now := time.Now()
 	cutoff := now.Add(-1 * time.Hour)
 	var toDelete []string
@@ -633,4 +1260,30 @@ func truncateContent(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// min 辅助函数
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// parseExpiresIn 解析 ExpiresIn 字段（可能是 string 或 int）
+func parseExpiresIn(v any) int64 {
+	switch val := v.(type) {
+	case float64:
+		return int64(val)
+	case int64:
+		return val
+	case int:
+		return int64(val)
+	case string:
+		var result int64
+		fmt.Sscanf(val, "%d", &result)
+		return result
+	default:
+		return 7200 // 默认 2 小时
+	}
 }
