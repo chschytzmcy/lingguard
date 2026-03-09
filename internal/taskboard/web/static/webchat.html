@@ -454,7 +454,7 @@
                 // 加载服务器端存储的会话
                 const loadSessions = async () => {
                     try {
-                        const res = await fetch('/api/webchat/sessions');
+                        const res = await fetch('/_internal/webchat/sessions');
                         if (res.ok) {
                             const data = await res.json();
                             sessions.value = data || [];
@@ -474,7 +474,7 @@
                 const saveSessions = async () => {
                     if (!currentSession.value) return;
                     try {
-                        await fetch('/api/webchat/sessions', {
+                        await fetch('/_internal/webchat/sessions', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify([currentSession.value])
@@ -553,6 +553,14 @@
                         isTyping.value = true;
                         const msgs = currentSession.value.messages;
                         const lastMsg = msgs[msgs.length - 1];
+
+                        // 在内容更新前检测滚动位置
+                        let shouldScroll = false;
+                        if (messagesContainer.value) {
+                            const el = messagesContainer.value;
+                            shouldScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+                        }
+
                         if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.complete) {
                             lastMsg.content += data.content;
                         } else {
@@ -562,7 +570,15 @@
                                 complete: false
                             });
                         }
-                        scrollToBottom();
+
+                        // 如果之前在底部，滚动到底部
+                        if (shouldScroll) {
+                            nextTick(() => {
+                                if (messagesContainer.value) {
+                                    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+                                }
+                            });
+                        }
                         saveSessions();
                     } else if (data.type === 'stream_end') {
                         isTyping.value = false;
@@ -572,6 +588,18 @@
                             lastMsg.complete = true;
                         }
                         updateSessionPreview();
+                        // 结束时也检查是否在底部
+                        if (messagesContainer.value) {
+                            const el = messagesContainer.value;
+                            const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+                            if (isAtBottom) {
+                                nextTick(() => {
+                                    if (messagesContainer.value) {
+                                        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+                                    }
+                                });
+                            }
+                        }
                         saveSessions();
                     } else if (data.type === 'chat') {
                         isTyping.value = false;
@@ -644,6 +672,25 @@
                     });
                 };
 
+                // 检查是否在底部附近（允许 100px 误差）
+                const checkIfAtBottom = () => {
+                    if (!messagesContainer.value) return true;
+                    const el = messagesContainer.value;
+                    return el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+                };
+
+                // 流式输出时滚动（先检测位置，再更新内容，最后滚动）
+                const scrollToBottomIfAtBottom = () => {
+                    if (!messagesContainer.value) return;
+                    const el = messagesContainer.value;
+                    // 先记住当前距离底部的距离
+                    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+                    // 如果距离底部小于 100px，就滚动到底部
+                    if (distanceFromBottom < 100) {
+                        el.scrollTop = el.scrollHeight;
+                    }
+                };
+
                 // 生成 UUID
                 const generateUUID = () => {
                     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -699,7 +746,7 @@
                         }
                         // 从服务器删除
                         try {
-                            await fetch(`/api/webchat/session?id=${id}`, { method: 'DELETE' });
+                            await fetch(`/_internal/webchat/session?id=${id}`, { method: 'DELETE' });
                         } catch (e) {
                             console.error('Failed to delete session:', e);
                         }

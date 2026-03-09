@@ -300,7 +300,7 @@ func runGateway() error {
 		logger.Info("WebChat WebSocket handler registered")
 
 		// 初始化 WebChat API 处理器（从 LLM 会话文件读取）
-		webchatMemoryDir := utils.ExpandHome("~/.lingguard/memory/sessions")
+		webchatMemoryDir := utils.ExpandHome("~/.lingguard/memory")
 		webchatHTTPHandler := webchat.NewHTTPHandler(webchatMemoryDir)
 		webchatHandler := handlers.NewWebChatHandler(webchatHTTPHandler)
 		apiServer.SetWebChatAPIHandler(webchatHandler)
