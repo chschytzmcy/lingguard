@@ -3,6 +3,7 @@ package heartbeat
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,8 +16,8 @@ import (
 // DefaultInterval 默认心跳间隔 (30分钟)
 const DefaultInterval = 30 * time.Minute
 
-// HeartbeatPrompt 心跳提示
-const HeartbeatPrompt = `Read HEARTBEAT.md in your workspace (if it exists).
+// HeartbeatPromptTemplate 心跳提示模板
+const HeartbeatPromptTemplate = `Read the file at %s (if it exists).
 Follow any instructions or tasks listed there.
 If nothing needs attention, reply with just: HEARTBEAT_OK`
 
@@ -26,11 +27,23 @@ const HeartbeatOKToken = "HEARTBEAT_OK"
 // AgentCallback Agent 处理回调
 type AgentCallback func(ctx context.Context, prompt string) (string, error)
 
+// MessageSender 消息发送接口
+type MessageSender interface {
+	SendMessage(channelName string, to string, content string) error
+}
+
+// LastChannelGetter 获取最后使用渠道的接口
+type LastChannelGetter interface {
+	GetLastUsedChannel() (channel, chatID string)
+}
+
 // Config 心跳服务配置
 type Config struct {
 	Enabled       bool          `json:"enabled"`                 // 是否启用心跳
 	Interval      time.Duration `json:"interval"`                // 心跳间隔
 	WorkspacePath string        `json:"workspacePath,omitempty"` // 工作空间路径，用于读取 HEARTBEAT.md
+	Target        string        `json:"target,omitempty"`        // 发送目标: "last", "none", "feishu", "qq"
+	To            string        `json:"to,omitempty"`            // 收件人 ID
 }
 
 // DefaultConfig 默认配置
@@ -38,6 +51,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Enabled:  true,
 		Interval: DefaultInterval,
+		Target:   "last",
 	}
 }
 
@@ -46,6 +60,10 @@ type Service struct {
 	config       *Config
 	onHeartbeat  AgentCallback
 	heartbeatDir string // HEARTBEAT.md 所在目录
+
+	// 消息发送相关
+	messageSender     MessageSender
+	lastChannelGetter LastChannelGetter
 
 	mu      sync.RWMutex
 	running bool
@@ -80,6 +98,20 @@ func (s *Service) SetWorkspace(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.heartbeatDir = path
+}
+
+// SetMessageSender 设置消息发送器
+func (s *Service) SetMessageSender(sender MessageSender) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messageSender = sender
+}
+
+// SetLastChannelGetter 设置最后渠道获取器
+func (s *Service) SetLastChannelGetter(getter LastChannelGetter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastChannelGetter = getter
 }
 
 // Start 启动心跳服务
@@ -138,6 +170,8 @@ func (s *Service) tick() {
 	s.mu.RLock()
 	heartbeatDir := s.heartbeatDir
 	onHeartbeat := s.onHeartbeat
+	target := s.config.Target
+	to := s.config.To
 	s.mu.RUnlock()
 
 	// 检查是否有回调
@@ -157,12 +191,16 @@ func (s *Service) tick() {
 
 	logger.Info("Heartbeat: checking for tasks...")
 
+	// 生成包含完整路径的 prompt
+	heartbeatPath := filepath.Join(heartbeatDir, "HEARTBEAT.md")
+	prompt := fmt.Sprintf(HeartbeatPromptTemplate, heartbeatPath)
+
 	// 执行心跳回调
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	start := time.Now()
-	response, err := onHeartbeat(ctx, HeartbeatPrompt)
+	response, err := onHeartbeat(ctx, prompt)
 	duration := time.Since(start)
 
 	// 更新统计
@@ -185,6 +223,11 @@ func (s *Service) tick() {
 		}
 	}
 	s.mu.Unlock()
+
+	// 发送通知（如果有需要通知的内容）
+	if err == nil && target != "none" {
+		s.sendNotification(response, target, to)
+	}
 }
 
 // readHeartbeatFile 读取 HEARTBEAT.md 文件
@@ -249,4 +292,59 @@ func (s *Service) Running() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.running
+}
+
+// sendNotification 发送心跳通知
+func (s *Service) sendNotification(response, target, to string) {
+	// 检查响应是否只有 HEARTBEAT_OK（无需通知）
+	trimmed := strings.TrimSpace(response)
+	upperResponse := strings.ToUpper(trimmed)
+	if upperResponse == HeartbeatOKToken {
+		return
+	}
+
+	// 去除 HEARTBEAT_OK 标记后的内容
+	if strings.HasPrefix(upperResponse, HeartbeatOKToken) {
+		trimmed = strings.TrimSpace(trimmed[len(HeartbeatOKToken):])
+	} else if strings.HasSuffix(upperResponse, HeartbeatOKToken) {
+		trimmed = strings.TrimSpace(trimmed[:len(trimmed)-len(HeartbeatOKToken)])
+	}
+
+	// 如果内容为空，不需要通知
+	if trimmed == "" {
+		return
+	}
+
+	// 解析目标渠道和收件人
+	var channel, chatID string
+	switch target {
+	case "last":
+		// 使用最后使用的渠道
+		if s.lastChannelGetter != nil {
+			channel, chatID = s.lastChannelGetter.GetLastUsedChannel()
+		}
+		if to != "" {
+			chatID = to // to 字段可以覆盖
+		}
+	case "none":
+		return
+	default:
+		// 指定渠道名（如 "feishu", "qq"）
+		channel = target
+		chatID = to
+	}
+
+	if channel == "" || chatID == "" {
+		logger.Debug("Heartbeat: no delivery target, skipping notification", "target", target, "to", to)
+		return
+	}
+
+	// 发送消息
+	if s.messageSender != nil {
+		if err := s.messageSender.SendMessage(channel, chatID, trimmed); err != nil {
+			logger.Error("Heartbeat failed to send notification", "channel", channel, "error", err)
+		} else {
+			logger.Info("Heartbeat notification sent", "channel", channel, "chatID", chatID)
+		}
+	}
 }

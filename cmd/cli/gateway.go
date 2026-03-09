@@ -236,9 +236,18 @@ func runGateway() error {
 			interval = 30 * time.Minute
 		}
 
+		// 获取 target 和 to 配置
+		target := cfg.Heartbeat.Target
+		if target == "" {
+			target = "last" // 默认使用最后渠道
+		}
+		to := cfg.Heartbeat.To
+
 		heartbeatService = heartbeat.NewService(&heartbeat.Config{
 			Enabled:  true,
 			Interval: interval,
+			Target:   target,
+			To:       to,
 		}, createHeartbeatCallback(ag))
 
 		hbWorkspace := cfg.Agents.Workspace
@@ -246,8 +255,14 @@ func runGateway() error {
 			hbWorkspace = cfg.Tools.Workspace
 		}
 		heartbeatService.SetWorkspace(utils.ExpandHome(hbWorkspace))
+
+		// 设置消息发送器（mgr 实现了 MessageSender 接口）
+		heartbeatService.SetMessageSender(mgr)
+		// 设置最后渠道获取器（mgr 实现了 LastChannelGetter 接口）
+		heartbeatService.SetLastChannelGetter(mgr)
+
 		heartbeatService.Start()
-		logger.Info("Heartbeat service started", "interval", interval)
+		logger.Info("Heartbeat service started", "interval", interval, "target", target)
 	}
 
 	// 创建消息处理器
@@ -260,6 +275,7 @@ func runGateway() error {
 	// 使用 ContextAdapter 包装 LaneAdapter
 	contextAdapter := channels.NewContextAdapter(laneAdapter, cronWrapper)
 	contextAdapter.SetMessageTool(messageTool)
+	contextAdapter.SetManager(mgr) // 用于记录最后使用的渠道
 
 	var handler channels.MessageHandler = contextAdapter
 

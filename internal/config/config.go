@@ -330,8 +330,10 @@ type CronConfig struct {
 
 // HeartbeatConfig 心跳服务配置
 type HeartbeatConfig struct {
-	Enabled  bool `json:"enabled"`            // 是否启用心跳服务
-	Interval int  `json:"interval,omitempty"` // 心跳间隔（分钟），默认 30
+	Enabled  bool   `json:"enabled"`            // 是否启用心跳服务
+	Interval int    `json:"interval,omitempty"` // 心跳间隔（分钟），默认 30
+	Target   string `json:"target,omitempty"`   // 发送目标: "last" (最后使用的渠道), "none" (不发送), "feishu", "qq" 等
+	To       string `json:"to,omitempty"`       // 收件人 ID（如飞书 open_id 或群 chat_id），target=last 时可留空
 }
 
 // SpeechConfig 语音识别配置
@@ -450,6 +452,7 @@ func DefaultConfig() *Config {
 		Heartbeat: &HeartbeatConfig{
 			Enabled:  true,
 			Interval: 30, // 30 分钟
+			Target:   "last",
 		},
 		Server: &ServerConfig{
 			Enabled: true,

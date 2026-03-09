@@ -94,7 +94,9 @@
   },
   "heartbeat": {
     "enabled": true,
-    "interval": 30
+    "interval": 5,
+    "target": "feishu",
+    "to": "xxx"
   },
   "tools": {
     "restrictToWorkspace": true,

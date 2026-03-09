@@ -19,6 +19,7 @@ type ContextAdapter struct {
 	handler     MessageHandler
 	cronWrapper *tools.CronServiceWrapper
 	messageTool ContextSetter
+	manager     *Manager // 用于记录最后使用的渠道
 }
 
 // NewContextAdapter 创建上下文适配器
@@ -34,6 +35,11 @@ func (a *ContextAdapter) SetMessageTool(tool ContextSetter) {
 	a.messageTool = tool
 }
 
+// SetManager 设置渠道管理器
+func (a *ContextAdapter) SetManager(m *Manager) {
+	a.manager = m
+}
+
 // HandleMessage 实现 MessageHandler 接口
 func (a *ContextAdapter) HandleMessage(ctx context.Context, msg *Message) (string, error) {
 	logger.Debug("ContextAdapter.HandleMessage", "channel", msg.Channel, "userID", msg.UserID)
@@ -46,6 +52,11 @@ func (a *ContextAdapter) HandleMessage(ctx context.Context, msg *Message) (strin
 	// 设置 message 工具的渠道上下文
 	if a.messageTool != nil && msg.Channel != "" {
 		a.messageTool.SetContext(msg.Channel, msg.UserID)
+	}
+
+	// 记录最后使用的渠道（用于 heartbeat target="last"）
+	if a.manager != nil && msg.Channel != "" {
+		a.manager.SetLastUsedChannel(msg.Channel, msg.UserID)
 	}
 
 	return a.handler.HandleMessage(ctx, msg)
@@ -63,6 +74,11 @@ func (a *ContextAdapter) HandleMessageStream(ctx context.Context, msg *Message, 
 	// 设置 message 工具的渠道上下文
 	if a.messageTool != nil && msg.Channel != "" {
 		a.messageTool.SetContext(msg.Channel, msg.UserID)
+	}
+
+	// 记录最后使用的渠道（用于 heartbeat target="last"）
+	if a.manager != nil && msg.Channel != "" {
+		a.manager.SetLastUsedChannel(msg.Channel, msg.UserID)
 	}
 
 	// 检查是否支持流式处理

@@ -199,9 +199,10 @@ func TestServiceTick(t *testing.T) {
 	// Trigger tick
 	svc.tick()
 
-	// Verify callback was called with correct prompt
-	if receivedPrompt != HeartbeatPrompt {
-		t.Errorf("expected prompt %q, got %q", HeartbeatPrompt, receivedPrompt)
+	// Verify callback was called with prompt containing the file path
+	expectedPath := tmpDir + "/HEARTBEAT.md"
+	if !strings.Contains(receivedPrompt, expectedPath) {
+		t.Errorf("expected prompt to contain %q, got %q", expectedPath, receivedPrompt)
 	}
 
 	// Verify status was updated
