@@ -29,6 +29,11 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 	// 统计图片数量，用于动态计算压缩限制
 	imageCount := 0
 	for _, path := range mediaPaths {
+		// 跳过 base64 data URL 格式的媒体
+		if isBase64DataURL(path) {
+			imageCount++
+			continue
+		}
 		ext := strings.ToLower(filepath.Ext(path))
 		if !isVideoFile(ext) {
 			imageCount++
@@ -45,22 +50,38 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 
 	// 添加图片/视频
 	for _, path := range mediaPaths {
-		// 读取媒体文件并转换为 base64
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read media %s: %w", path, err)
+		var data []byte
+		var mimeType string
+		var isDataURL bool
+
+		// 检查是否为 base64 data URL 格式（如来自 QQ 渠道的图片）
+		if isBase64DataURL(path) {
+			// 直接解析 base64 data URL
+			var err error
+			data, mimeType, err = parseBase64DataURL(path)
+			if err != nil {
+				return nil, fmt.Errorf("parse base64 data URL (%s): %w", truncateMediaPath(path), err)
+			}
+			isDataURL = true
+			logger.Info("Parsed base64 data URL", "mimeType", mimeType, "size", len(data))
+		} else {
+			// 从文件读取
+			var err error
+			data, err = os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("read media %s: %w", path, err)
+			}
 		}
 
-		ext := strings.ToLower(filepath.Ext(path))
-
 		// 如果是视频文件，使用 video_url 格式（Qwen-Omni 模型）
-		if isVideoFile(ext) {
-			mimeType := detectVideoMimeType(ext)
+		// 注意：base64 data URL 格式不支持视频，只支持图片
+		if !isDataURL && isVideoFile(filepath.Ext(path)) {
+			videoMimeType := detectVideoMimeType(filepath.Ext(path))
 			videoPaths = append(videoPaths, path)
 
 			// 检查视频大小，超过限制则不发送 base64
 			if len(data) > maxVideoSize {
-				logger.Warn("Video too large, skipping base64 encoding", "path", path, "size", len(data), "maxSize", maxVideoSize)
+				logger.Warn("Video too large, skipping base64 encoding", "path", truncateMediaPath(path), "size", len(data), "maxSize", maxVideoSize)
 				// 只添加提示文本，不发送视频内容
 				parts = append(parts, llm.ContentPart{
 					Type: "text",
@@ -68,19 +89,23 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 				})
 			} else {
 				base64Data := encodeBase64(data)
-				logger.Info("Processing video file for multimodal", "path", path, "mimeType", mimeType, "size", len(data))
+				logger.Info("Processing video file for multimodal", "path", truncateMediaPath(path), "mimeType", videoMimeType, "size", len(data))
 
 				// 使用 video_url 格式（支持 Qwen-Omni 模型）
 				parts = append(parts, llm.ContentPart{
 					Type: "video_url",
 					VideoURL: &llm.VideoURL{
-						URL: fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data),
+						URL: fmt.Sprintf("data:%s;base64,%s", videoMimeType, base64Data),
 					},
 				})
 			}
 		} else {
 			// 图片使用 image_url 格式
-			mimeType := detectMimeType(data)
+			// 如果是 base64 data URL，mimeType 已经在上面的 parseBase64DataURL 中解析出来了
+			imageMimeType := mimeType
+			if imageMimeType == "" {
+				imageMimeType = detectMimeType(data)
+			}
 
 			// 压缩图片以符合动态计算的 API 限制
 			compressedData, err := compressImageForLLM(data, maxBase64PerImage)
@@ -90,16 +115,19 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 			}
 
 			base64Data := base64.StdEncoding.EncodeToString(compressedData)
-			logger.Info("Processing image for multimodal", "path", path, "originalSize", len(data), "compressedSize", len(compressedData), "base64Size", len(base64Data))
+			logger.Info("Processing image for multimodal", "path", truncateMediaPath(path), "originalSize", len(data), "compressedSize", len(compressedData), "base64Size", len(base64Data))
 
 			parts = append(parts, llm.ContentPart{
 				Type: "image_url",
 				ImageURL: &llm.ImageURL{
-					URL:    fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data),
+					URL:    fmt.Sprintf("data:%s;base64,%s", imageMimeType, base64Data),
 					Detail: "auto",
 				},
 			})
-			imagePaths = append(imagePaths, path)
+			// 只记录文件路径，不记录 base64 data URL
+			if !isDataURL {
+				imagePaths = append(imagePaths, path)
+			}
 		}
 	}
 
@@ -281,4 +309,57 @@ func resizeImage(img image.Image, newWidth, newHeight int) image.Image {
 	}
 
 	return dst
+}
+
+// isBase64DataURL 检查字符串是否为 base64 data URL 格式
+// 格式: data:<mimeType>;base64,<base64Data>
+func isBase64DataURL(s string) bool {
+	return strings.HasPrefix(s, "data:") && strings.Contains(s, ";base64,")
+}
+
+// truncateMediaPath 截断媒体路径显示，避免在日志中打印完整的 base64 数据
+func truncateMediaPath(path string) string {
+	if isBase64DataURL(path) {
+		// 对于 base64 data URL，只显示摘要
+		base64Index := strings.Index(path, ";base64,")
+		if base64Index > 0 {
+			mimeType := path[5:base64Index]        // "data:" 长度为 5
+			dataLen := len(path) - base64Index - 8 // ";base64," 长度为 8
+			return fmt.Sprintf("[base64:%s,len=%d]", mimeType, dataLen)
+		}
+		return "[base64 data URL]"
+	}
+	return path
+}
+
+// parseBase64DataURL 解析 base64 data URL，返回解码后的数据和 MIME 类型
+// 格式: data:<mimeType>;base64,<base64Data>
+func parseBase64DataURL(dataURL string) ([]byte, string, error) {
+	// 检查格式
+	if !strings.HasPrefix(dataURL, "data:") {
+		return nil, "", fmt.Errorf("invalid data URL: missing 'data:' prefix")
+	}
+
+	// 查找 base64 标记
+	base64Index := strings.Index(dataURL, ";base64,")
+	if base64Index == -1 {
+		return nil, "", fmt.Errorf("invalid data URL: missing ';base64,' marker")
+	}
+
+	// 提取 MIME 类型
+	mimeType := dataURL[5:base64Index] // "data:" 长度为 5
+
+	// 提取 base64 数据
+	base64Data := dataURL[base64Index+8:] // ";base64," 长度为 8
+	if base64Data == "" {
+		return nil, "", fmt.Errorf("invalid data URL: empty base64 data")
+	}
+
+	// 解码 base64
+	data, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return nil, "", fmt.Errorf("decode base64: %w", err)
+	}
+
+	return data, mimeType, nil
 }

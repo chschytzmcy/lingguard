@@ -6,7 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -895,10 +899,6 @@ func (q *QQChannel) handleC2CMessage(msg *qqC2CMessage) {
 	q.markProcessed(msg.ID)
 
 	content := strings.TrimSpace(msg.Content)
-	if content == "" {
-		return
-	}
-
 	userID := msg.Author.ID
 	if userID == "" {
 		return
@@ -910,22 +910,57 @@ func (q *QQChannel) handleC2CMessage(msg *qqC2CMessage) {
 		return
 	}
 
+	// 处理附件（图片等）
+	var imageUrls []string
+	var attachmentInfo string
+	if len(msg.Attachments) > 0 {
+		logger.Info("QQ C2C message has attachments", "count", len(msg.Attachments))
+		for _, att := range msg.Attachments {
+			if att.ContentType != "" && strings.HasPrefix(att.ContentType, "image/") {
+				// 下载图片并转换为 base64
+				imageBase64, err := q.downloadImageAsBase64(att.URL)
+				if err != nil {
+					logger.Warn("Failed to download QQ image", "url", att.URL, "error", err)
+					attachmentInfo += fmt.Sprintf("\n[图片下载失败: %s]", err.Error())
+				} else {
+					imageUrls = append(imageUrls, imageBase64)
+					attachmentInfo += "\n[用户发送了一张图片，请根据图片内容回复]"
+					logger.Info("QQ image downloaded successfully", "base64Len", len(imageBase64))
+				}
+			} else {
+				attachmentInfo += fmt.Sprintf("\n[附件: %s]", att.Filename)
+			}
+		}
+	}
+
+	// 如果既没有文本也没有附件，跳过
+	if content == "" && len(msg.Attachments) == 0 {
+		return
+	}
+
+	// 合并文本和附件信息
+	fullContent := content + attachmentInfo
+
 	logger.Info("QQ C2C message received",
 		"sender", userID,
-		"content", truncateContent(content, 100))
+		"content", truncateContent(content, 100),
+		"attachments", len(msg.Attachments),
+		"imageCount", len(imageUrls))
 
-	// Build Message
+	// Build Message - 图片 base64 放入 Media 字段供多模态模型处理
 	channelMsg := &Message{
 		ID:        msg.ID,
 		SessionID: "qq-" + userID,
-		Content:   content,
+		Content:   fullContent,
 		Channel:   "qq",
 		UserID:    userID,
+		Media:     imageUrls,
 		Metadata: map[string]any{
-			"user_id":    userID,
-			"username":   msg.Author.Username,
-			"message_id": msg.ID,
-			"msg_type":   "c2c",
+			"user_id":     userID,
+			"username":    msg.Author.Username,
+			"message_id":  msg.ID,
+			"msg_type":    "c2c",
+			"attachments": msg.Attachments,
 		},
 	}
 
@@ -950,6 +985,86 @@ func (q *QQChannel) handleC2CMessage(msg *qqC2CMessage) {
 	}
 }
 
+// downloadImageAsBase64 下载 QQ 图片并转换为 base64
+func (q *QQChannel) downloadImageAsBase64(url string) (string, error) {
+	accessToken, err := q.getAccessToken()
+	if err != nil {
+		return "", fmt.Errorf("get access token: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(q.ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	// 使用 QQ Bot 认证
+	req.Header.Set("Authorization", fmt.Sprintf("%s %s", qqTokenType, accessToken))
+
+	resp, err := q.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("download failed: status=%d", resp.StatusCode)
+	}
+
+	imageData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read image data: %w", err)
+	}
+
+	// 检测图片类型
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "image/png" // 默认
+	}
+
+	// 转换为 base64 data URL
+	base64Data := base64Encode(imageData)
+	return fmt.Sprintf("data:%s;base64,%s", contentType, base64Data), nil
+}
+
+// base64Encode Base64 编码
+func base64Encode(data []byte) string {
+	const base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	result := make([]byte, 0, (len(data)+2)/3*4)
+
+	for i := 0; i < len(data); i += 3 {
+		var n uint32
+		remaining := len(data) - i
+
+		if remaining >= 3 {
+			n = uint32(data[i])<<16 | uint32(data[i+1])<<8 | uint32(data[i+2])
+			result = append(result,
+				base64Chars[n>>18&0x3F],
+				base64Chars[n>>12&0x3F],
+				base64Chars[n>>6&0x3F],
+				base64Chars[n&0x3F],
+			)
+		} else if remaining == 2 {
+			n = uint32(data[i])<<16 | uint32(data[i+1])<<8
+			result = append(result,
+				base64Chars[n>>18&0x3F],
+				base64Chars[n>>12&0x3F],
+				base64Chars[n>>6&0x3F],
+				'=',
+			)
+		} else {
+			n = uint32(data[i]) << 16
+			result = append(result,
+				base64Chars[n>>18&0x3F],
+				base64Chars[n>>12&0x3F],
+				'=',
+				'=',
+			)
+		}
+	}
+
+	return string(result)
+}
+
 // handleGroupMessage 处理群消息
 func (q *QQChannel) handleGroupMessage(msg *qqGroupMessage) {
 	// Deduplication check
@@ -959,30 +1074,61 @@ func (q *QQChannel) handleGroupMessage(msg *qqGroupMessage) {
 	q.markProcessed(msg.ID)
 
 	content := strings.TrimSpace(msg.Content)
-	if content == "" {
+	userID := msg.Author.MemberOpenID
+	groupID := msg.GroupOpenID
+
+	// 处理附件（图片等）
+	var imageUrls []string
+	var attachmentInfo string
+	if len(msg.Attachments) > 0 {
+		logger.Info("QQ group message has attachments", "count", len(msg.Attachments))
+		for _, att := range msg.Attachments {
+			if att.ContentType != "" && strings.HasPrefix(att.ContentType, "image/") {
+				// 下载图片并转换为 base64
+				imageBase64, err := q.downloadImageAsBase64(att.URL)
+				if err != nil {
+					logger.Warn("Failed to download QQ group image", "url", att.URL, "error", err)
+					attachmentInfo += fmt.Sprintf("\n[图片下载失败: %s]", err.Error())
+				} else {
+					imageUrls = append(imageUrls, imageBase64)
+					attachmentInfo += "\n[用户发送了一张图片，请根据图片内容回复]"
+					logger.Info("QQ group image downloaded successfully", "base64Len", len(imageBase64))
+				}
+			} else {
+				attachmentInfo += fmt.Sprintf("\n[附件: %s]", att.Filename)
+			}
+		}
+	}
+
+	// 如果既没有文本也没有附件，跳过
+	if content == "" && len(msg.Attachments) == 0 {
 		return
 	}
 
-	userID := msg.Author.MemberOpenID
-	groupID := msg.GroupOpenID
+	// 合并文本和附件信息
+	fullContent := content + attachmentInfo
 
 	logger.Info("QQ group message received",
 		"group", groupID,
 		"sender", userID,
-		"content", truncateContent(content, 100))
+		"content", truncateContent(content, 100),
+		"attachments", len(msg.Attachments),
+		"imageCount", len(imageUrls))
 
 	// Build Message
 	channelMsg := &Message{
 		ID:        msg.ID,
 		SessionID: "qq-group-" + groupID,
-		Content:   content,
+		Content:   fullContent,
 		Channel:   "qq",
 		UserID:    userID,
 		Metadata: map[string]any{
-			"user_id":    userID,
-			"group_id":   groupID,
-			"message_id": msg.ID,
-			"msg_type":   "group",
+			"user_id":     userID,
+			"group_id":    groupID,
+			"message_id":  msg.ID,
+			"msg_type":    "group",
+			"image_urls":  imageUrls,
+			"attachments": msg.Attachments,
 		},
 	}
 
@@ -1019,10 +1165,40 @@ func (q *QQChannel) handleMessageStream(ctx context.Context, msg *Message, userI
 			}
 			lastUpdate = now
 
+		case stream.EventToolEnd:
+			// 检查工具结果是否包含生成的图片，如果有则发送
+			if strings.Contains(event.ToolResult, "[GENERATED_IMAGE:") {
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							logger.Error("QQ media upload goroutine panic recovered", "error", r)
+						}
+					}()
+
+					// 处理图片 - 优先使用公网 URL
+					imageURLPattern := regexp.MustCompile(`\[IMAGE_URL:([^\]]+)\]`)
+					imageURLMatches := imageURLPattern.FindAllStringSubmatch(event.ToolResult, -1)
+
+					for _, match := range imageURLMatches {
+						if len(match) > 1 {
+							imageURL := match[1]
+							logger.Info("Sending generated image to QQ via URL", "url", imageURL[:min(80, len(imageURL))])
+
+							if err := q.sendC2CImageURL(ctx, userID, imageURL, msgID); err != nil {
+								logger.Warn("Failed to send image URL to QQ", "error", err)
+							}
+						}
+					}
+				}()
+			}
+
 		case stream.EventDone:
 			content := contentBuilder.String()
 			if content != "" {
-				if err := q.sendC2CMessage(ctx, userID, content, msgID); err != nil {
+				// 检查是否包含生成的图片标记
+				if strings.Contains(content, "[GENERATED_IMAGE:") {
+					q.sendC2CWithImages(ctx, userID, content, msgID)
+				} else if err := q.sendC2CMessage(ctx, userID, content, msgID); err != nil {
 					logger.Error("Failed to send QQ message", "error", err)
 				}
 			}
@@ -1144,6 +1320,183 @@ func (q *QQChannel) sendC2CChunk(ctx context.Context, openid string, content str
 	}
 
 	logger.Debug("QQ message sent", "to", openid)
+	return nil
+}
+
+// sendC2CImageMessage 发送私聊图片消息
+func (q *QQChannel) sendC2CImageMessage(ctx context.Context, openid string, imagePath string, msgID string) error {
+	if openid == "" {
+		return fmt.Errorf("openid is empty")
+	}
+
+	// 读取图片文件
+	fileData, err := os.ReadFile(imagePath)
+	if err != nil {
+		return fmt.Errorf("read image file: %w", err)
+	}
+
+	// 获取 access token
+	accessToken, err := q.getAccessToken()
+	if err != nil {
+		return fmt.Errorf("get access token: %w", err)
+	}
+
+	// 限流控制
+	limiter := q.getRateLimiter(openid)
+	if !limiter.allow() {
+		return fmt.Errorf("rate limit exceeded: QQ API limits 5 messages per minute per user")
+	}
+	limiter.record()
+
+	// 使用 multipart/form-data 格式直接发送图片
+	url := fmt.Sprintf("%s/v2/users/%s/messages", qqAPIBase, openid)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	// 添加 msg_type 字段 (7 = 媒体消息)
+	_ = writer.WriteField("msg_type", "7")
+
+	// 添加 msg_seq 字段
+	_ = writer.WriteField("msg_seq", fmt.Sprintf("%d", q.getNextMsgSeq(msgID)))
+
+	// 如果有 msgID，添加到请求体
+	if msgID != "" {
+		_ = writer.WriteField("msg_id", msgID)
+	}
+
+	// 添加图片文件 - 使用 file_image 字段
+	part, err := writer.CreateFormFile("file_image", filepath.Base(imagePath))
+	if err != nil {
+		return fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := part.Write(fileData); err != nil {
+		return fmt.Errorf("write file data: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("%s %s", qqTokenType, accessToken))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Union-Appid", q.cfg.AppID)
+
+	resp, err := q.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("QQ API error: status=%d, body=%s", resp.StatusCode, string(respBody))
+	}
+
+	logger.Info("QQ image message sent", "to", openid, "path", imagePath)
+	return nil
+}
+
+// sendC2CImageURL 发送私聊图片消息（使用公网 URL）
+// 根据 QQ 官方文档：使用 /v2/users/{openid}/files API 上传并发送图片
+func (q *QQChannel) sendC2CImageURL(ctx context.Context, openid string, imageURL string, msgID string) error {
+	if openid == "" {
+		return fmt.Errorf("openid is empty")
+	}
+
+	// 获取 access token
+	accessToken, err := q.getAccessToken()
+	if err != nil {
+		return fmt.Errorf("get access token: %w", err)
+	}
+
+	// 限流控制
+	limiter := q.getRateLimiter(openid)
+	if !limiter.allow() {
+		return fmt.Errorf("rate limit exceeded: QQ API limits 5 messages per minute per user")
+	}
+	limiter.record()
+
+	// 使用 /v2/users/{openid}/files API 发送图片
+	// 参考: https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/send-receive/rich-media.html
+	apiURL := fmt.Sprintf("%s/v2/users/%s/files", qqAPIBase, openid)
+
+	body := map[string]any{
+		"file_type":    1,        // 1=图片
+		"url":          imageURL, // 公网 URL
+		"srv_send_msg": true,     // 直接发送消息
+	}
+
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal message: %w", err)
+	}
+
+	logger.Debug("Sending QQ image via files API", "url", apiURL, "imageURL", imageURL[:min(80, len(imageURL))])
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("%s %s", qqTokenType, accessToken))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Union-Appid", q.cfg.AppID)
+
+	resp, err := q.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("QQ API error: status=%d, body=%s", resp.StatusCode, string(respBody))
+	}
+
+	logger.Info("QQ image message sent via files API", "to", openid, "response", string(respBody)[:min(200, len(respBody))])
+	return nil
+}
+
+// sendC2CWithImages 发送私聊消息（支持图片）
+// 检测内容中的 [GENERATED_IMAGE:路径] 标记，上传并发送
+func (q *QQChannel) sendC2CWithImages(ctx context.Context, openid string, content string, msgID string) error {
+	// 正则匹配 [GENERATED_IMAGE:路径]
+	imagePattern := regexp.MustCompile(`\[GENERATED_IMAGE:([^\]]+)\]`)
+	imageMatches := imagePattern.FindAllStringSubmatch(content, -1)
+
+	// 先发送文本内容（移除所有图片标记）
+	textContent := imagePattern.ReplaceAllString(content, "")
+
+	// 发送文本消息
+	if strings.TrimSpace(textContent) != "" {
+		if err := q.sendC2CMessage(ctx, openid, textContent, msgID); err != nil {
+			logger.Warn("Failed to send text message to QQ", "error", err)
+		}
+	}
+
+	// 逐个发送图片
+	for _, match := range imageMatches {
+		if len(match) > 1 {
+			imagePath := match[1]
+			logger.Info("Sending generated image to QQ", "path", imagePath)
+
+			// 等待一小段时间，避免频率限制
+			time.Sleep(200 * time.Millisecond)
+
+			if err := q.sendC2CImageMessage(ctx, openid, imagePath, msgID); err != nil {
+				logger.Warn("Failed to send image to QQ", "path", imagePath, "error", err)
+			}
+		}
+	}
+
 	return nil
 }
 

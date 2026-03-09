@@ -286,7 +286,8 @@ func (t *AIGCTool) generateImage(ctx context.Context, prompt, model, size, style
 	}
 
 	// 返回特殊格式，让飞书 channel 自动发送图片
-	return fmt.Sprintf("图片生成成功！\n描述: %s\n\n[GENERATED_IMAGE:%s]", prompt, localPath), nil
+	// 同时包含公网 URL 供 QQ 等渠道使用
+	return fmt.Sprintf("图片生成成功！\n描述: %s\n\n[GENERATED_IMAGE:%s][IMAGE_URL:%s]", prompt, localPath, imageURL), nil
 }
 
 // generateVideo 生成视频
