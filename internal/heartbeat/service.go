@@ -45,11 +45,14 @@ type LastChannelGetter interface {
 
 // Config 心跳服务配置
 type Config struct {
-	Enabled       bool          `json:"enabled"`                 // 是否启用心跳
-	Interval      time.Duration `json:"interval"`                // 心跳间隔
-	WorkspacePath string        `json:"workspacePath,omitempty"` // 工作空间路径，用于读取 HEARTBEAT.md
-	Target        string        `json:"target,omitempty"`        // 发送目标: "last", "none", "feishu", "qq"
-	To            string        `json:"to,omitempty"`            // 收件人 ID
+	Enabled        bool          `json:"enabled"`                  // 是否启用心跳
+	Interval       time.Duration `json:"interval"`                 // 心跳间隔
+	WorkspacePath  string        `json:"workspacePath,omitempty"`  // 工作空间路径，用于读取 HEARTBEAT.md
+	Target         string        `json:"target,omitempty"`         // 发送目标: "last", "none", "feishu", "qq"
+	To             string        `json:"to,omitempty"`             // 收件人 ID
+	SilentStart    string        `json:"silentStart,omitempty"`    // 屏蔽期开始时间（如 "00:00"）
+	SilentEnd      string        `json:"silentEnd,omitempty"`      // 屏蔽期结束时间（如 "06:00"）
+	SilentTimezone string        `json:"silentTimezone,omitempty"` // 屏蔽期时区（如 "Asia/Shanghai"，默认本地时区）
 }
 
 // DefaultConfig 默认配置
@@ -81,6 +84,10 @@ type Service struct {
 	lastStatus   string
 	lastResponse string
 	runCount     int
+
+	// 重复去重
+	lastHeartbeatText   string    // 上次发送的心跳内容
+	lastHeartbeatSentAt time.Time // 上次发送心跳的时间
 }
 
 // NewService 创建心跳服务
@@ -154,6 +161,34 @@ func (s *Service) Stop() {
 	close(s.stopCh)
 
 	logger.Info("Heartbeat service stopped")
+}
+
+// UpdateConfig 热更新配置（无需重启服务）
+// 如果 interval 改变，会重新创建 ticker
+func (s *Service) UpdateConfig(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	oldInterval := s.config.Interval
+	s.config = cfg
+
+	// 确保间隔有效
+	if s.config.Interval <= 0 {
+		s.config.Interval = DefaultInterval
+	}
+
+	// 如果服务正在运行且间隔改变，重新创建 ticker
+	if s.running && s.ticker != nil && oldInterval != s.config.Interval {
+		s.ticker.Stop()
+		s.ticker = time.NewTicker(s.config.Interval)
+		logger.Info("Heartbeat interval updated", "old", oldInterval, "new", s.config.Interval)
+	}
+
+	logger.Debug("Heartbeat config updated", "enabled", cfg.Enabled, "interval", cfg.Interval, "target", cfg.Target)
 }
 
 // runLoop 心跳循环
@@ -263,6 +298,80 @@ func isHeartbeatEmpty(content string) bool {
 	return trimmed == ""
 }
 
+// isInSilentPeriod 检查当前时间是否在屏蔽期内
+// silentStart 和 silentEnd 格式为 "HH:MM"（如 "00:00" 到 "06:00"）
+// 支持跨午夜的情况（如 "23:00" 到 "06:00"）
+// timezone 为时区名称（如 "Asia/Shanghai"），为空则使用本地时区
+func isInSilentPeriod(silentStart, silentEnd, timezone string) bool {
+	if silentStart == "" || silentEnd == "" {
+		return false
+	}
+
+	// 解析时区
+	var loc *time.Location
+	if timezone != "" {
+		var err error
+		loc, err = time.LoadLocation(timezone)
+		if err != nil {
+			logger.Debug("Heartbeat: invalid timezone, using local", "timezone", timezone, "error", err)
+			loc = time.Local
+		}
+	} else {
+		loc = time.Local
+	}
+
+	// 获取指定时区的当前时间
+	now := time.Now().In(loc)
+	currentMinutes := now.Hour()*60 + now.Minute()
+
+	startMinutes, ok := parseTimeMinutes(silentStart)
+	if !ok {
+		return false
+	}
+
+	endMinutes, ok := parseTimeMinutes(silentEnd)
+	if !ok {
+		return false
+	}
+
+	// 如果开始时间和结束时间相同，说明全天都是屏蔽期
+	if startMinutes == endMinutes {
+		return false // 00:00-00:00 表示不屏蔽
+	}
+
+	// 如果结束时间小于开始时间，说明跨午夜（如 23:00 - 06:00）
+	if endMinutes < startMinutes {
+		// 当前时间在开始之后或在结束之前
+		return currentMinutes >= startMinutes || currentMinutes < endMinutes
+	}
+
+	// 正常情况（如 00:00 - 06:00）
+	return currentMinutes >= startMinutes && currentMinutes < endMinutes
+}
+
+// parseTimeMinutes 解析 "HH:MM" 格式的时间为分钟数
+func parseTimeMinutes(timeStr string) (int, bool) {
+	parts := strings.Split(timeStr, ":")
+	if len(parts) != 2 {
+		return 0, false
+	}
+
+	hours := 0
+	minutes := 0
+	if _, err := fmt.Sscanf(parts[0], "%d", &hours); err != nil {
+		return 0, false
+	}
+	if _, err := fmt.Sscanf(parts[1], "%d", &minutes); err != nil {
+		return 0, false
+	}
+
+	if hours < 0 || hours > 23 || minutes < 0 || minutes > 59 {
+		return 0, false
+	}
+
+	return hours*60 + minutes, true
+}
+
 // Status 获取服务状态
 func (s *Service) Status() map[string]interface{} {
 	s.mu.RLock()
@@ -302,6 +411,18 @@ func (s *Service) Running() bool {
 
 // sendNotification 发送心跳通知
 func (s *Service) sendNotification(response, target, to string) {
+	// 检查是否在屏蔽期内
+	s.mu.RLock()
+	silentStart := s.config.SilentStart
+	silentEnd := s.config.SilentEnd
+	silentTimezone := s.config.SilentTimezone
+	s.mu.RUnlock()
+
+	if isInSilentPeriod(silentStart, silentEnd, silentTimezone) {
+		logger.Debug("Heartbeat: in silent period, skipping notification", "start", silentStart, "end", silentEnd, "timezone", silentTimezone)
+		return
+	}
+
 	// 检查响应是否只有 HEARTBEAT_OK（无需通知）
 	trimmed := strings.TrimSpace(response)
 	upperResponse := strings.ToUpper(trimmed)
@@ -404,11 +525,30 @@ func (s *Service) sendNotification(response, target, to string) {
 		return
 	}
 
+	// 重复去重检查：24小时内相同内容不重复发送
+	s.mu.Lock()
+	now := time.Now()
+	dedupeWindow := 24 * time.Hour
+	if s.lastHeartbeatText != "" &&
+		trimmed == s.lastHeartbeatText &&
+		!s.lastHeartbeatSentAt.IsZero() &&
+		now.Sub(s.lastHeartbeatSentAt) < dedupeWindow {
+		s.mu.Unlock()
+		logger.Debug("Heartbeat: skipping duplicate notification within 24h", "content", trimmed[:min(50, len(trimmed))])
+		return
+	}
+	s.mu.Unlock()
+
 	// 发送消息
 	if s.messageSender != nil {
 		if err := s.messageSender.SendMessage(channel, chatID, trimmed); err != nil {
 			logger.Error("Heartbeat failed to send notification", "channel", channel, "error", err)
 		} else {
+			// 记录本次发送的内容和时间（用于去重）
+			s.mu.Lock()
+			s.lastHeartbeatText = trimmed
+			s.lastHeartbeatSentAt = now
+			s.mu.Unlock()
 			logger.Info("Heartbeat notification sent", "channel", channel, "chatID", chatID)
 		}
 	}

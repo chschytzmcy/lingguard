@@ -316,6 +316,10 @@
     "_comment": "==================== 心跳服务配置 ====================",
     "_desc": "定期唤醒 Agent 检查 HEARTBEAT.md 中的任务",
     "enabled": true,
-    "interval": 30
+    "interval": 30,
+    "target": "last",
+    "silentStart": "00:00",
+    "silentEnd": "06:00",
+    "silentTimezone": "Asia/Shanghai"
   }
 }

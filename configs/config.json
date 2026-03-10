@@ -94,9 +94,13 @@
   },
   "heartbeat": {
     "enabled": true,
-    "interval": 5,
+    "interval": 30,
     "target": "feishu",
-    "to": "xxx"
+    "to": "xxx",
+    "silentStart": "00:00",
+    "silentEnd": "06:00",
+    "silentTimezone": "Asia/Shanghai",
+    "_comment": "QQ配置: target='qq', to='xxx'"
   },
   "tools": {
     "restrictToWorkspace": true,

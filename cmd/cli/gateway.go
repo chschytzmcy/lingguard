@@ -244,10 +244,12 @@ func runGateway() error {
 		to := cfg.Heartbeat.To
 
 		heartbeatService = heartbeat.NewService(&heartbeat.Config{
-			Enabled:  true,
-			Interval: interval,
-			Target:   target,
-			To:       to,
+			Enabled:     true,
+			Interval:    interval,
+			Target:      target,
+			To:          to,
+			SilentStart: cfg.Heartbeat.SilentStart,
+			SilentEnd:   cfg.Heartbeat.SilentEnd,
 		}, createHeartbeatCallback(ag))
 
 		hbWorkspace := cfg.Agents.Workspace

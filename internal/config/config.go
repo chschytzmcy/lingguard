@@ -330,10 +330,13 @@ type CronConfig struct {
 
 // HeartbeatConfig 心跳服务配置
 type HeartbeatConfig struct {
-	Enabled  bool   `json:"enabled"`            // 是否启用心跳服务
-	Interval int    `json:"interval,omitempty"` // 心跳间隔（分钟），默认 30
-	Target   string `json:"target,omitempty"`   // 发送目标: "last" (最后使用的渠道), "none" (不发送), "feishu", "qq" 等
-	To       string `json:"to,omitempty"`       // 收件人 ID（如飞书 open_id 或群 chat_id），target=last 时可留空
+	Enabled        bool   `json:"enabled"`                  // 是否启用心跳服务
+	Interval       int    `json:"interval,omitempty"`       // 心跳间隔（分钟），默认 30
+	Target         string `json:"target,omitempty"`         // 发送目标: "last" (最后使用的渠道), "none" (不发送), "feishu", "qq" 等
+	To             string `json:"to,omitempty"`             // 收件人 ID（如飞书 open_id 或群 chat_id），target=last 时可留空
+	SilentStart    string `json:"silentStart,omitempty"`    // 屏蔽期开始时间（如 "00:00"），在此期间不发送通知
+	SilentEnd      string `json:"silentEnd,omitempty"`      // 屏蔽期结束时间（如 "06:00"），在此期间不发送通知
+	SilentTimezone string `json:"silentTimezone,omitempty"` // 屏蔽期时区（如 "Asia/Shanghai"），默认本地时区
 }
 
 // SpeechConfig 语音识别配置
