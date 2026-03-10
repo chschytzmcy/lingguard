@@ -39,11 +39,6 @@ type MessageSender interface {
 	SendMessage(channelName string, to string, content string) error
 }
 
-// LastChannelGetter 获取最后使用渠道的接口
-type LastChannelGetter interface {
-	GetLastUsedChannel() (channel, chatID string)
-}
-
 // Config 心跳服务配置
 type Config struct {
 	Enabled        bool          `json:"enabled"`                  // 是否启用心跳
@@ -61,7 +56,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Enabled:  true,
 		Interval: DefaultInterval,
-		Target:   "last",
+		Target:   "none",
 	}
 }
 
@@ -72,8 +67,7 @@ type Service struct {
 	heartbeatDir string // HEARTBEAT.md 所在目录
 
 	// 消息发送相关
-	messageSender     MessageSender
-	lastChannelGetter LastChannelGetter
+	messageSender MessageSender
 
 	mu      sync.RWMutex
 	running bool
@@ -119,13 +113,6 @@ func (s *Service) SetMessageSender(sender MessageSender) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messageSender = sender
-}
-
-// SetLastChannelGetter 设置最后渠道获取器
-func (s *Service) SetLastChannelGetter(getter LastChannelGetter) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.lastChannelGetter = getter
 }
 
 // Start 启动心跳服务
@@ -504,14 +491,6 @@ func (s *Service) sendNotification(response, target, to string) {
 	// 解析目标渠道和收件人
 	var channel, chatID string
 	switch target {
-	case "last":
-		// 使用最后使用的渠道
-		if s.lastChannelGetter != nil {
-			channel, chatID = s.lastChannelGetter.GetLastUsedChannel()
-		}
-		if to != "" {
-			chatID = to // to 字段可以覆盖
-		}
 	case "none":
 		return
 	default:

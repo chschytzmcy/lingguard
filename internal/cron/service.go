@@ -542,6 +542,8 @@ type UpdateJobOptions struct {
 	Message  *string       // 新消息（可选）
 	Enabled  *bool         // 启用/禁用（可选）
 	Execute  *bool         // 执行模式（可选）
+	Channel  *string       // 发送渠道（可选）
+	To       *string       // 发送目标（可选）
 }
 
 // UpdateJob 更新任务
@@ -586,6 +588,14 @@ func (s *Service) UpdateJob(id string, opts UpdateJobOptions) (*CronJob, error) 
 			if opts.Execute != nil {
 				job.Payload.Execute = *opts.Execute
 				logger.Info("Cron updated execute mode", "id", id, "execute", *opts.Execute)
+			}
+
+			// 更新发送渠道和目标
+			if opts.Channel != nil {
+				job.Payload.Channel = *opts.Channel
+			}
+			if opts.To != nil {
+				job.Payload.To = *opts.To
 			}
 
 			job.UpdatedAtMs = nowMs()

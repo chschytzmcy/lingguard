@@ -11,10 +11,6 @@ type Manager struct {
 	mu       sync.RWMutex
 	channels map[string]Channel
 	handlers []MessageHandler
-
-	// 最后使用的渠道信息（用于 heartbeat target="last"）
-	lastChannel string
-	lastChatID  string
 }
 
 // NewManager 创建新的渠道管理器
@@ -79,19 +75,4 @@ func (m *Manager) SendMessage(channelName string, to string, content string) err
 	}
 
 	return sendable.Send(context.Background(), to, content)
-}
-
-// SetLastUsedChannel 设置最后使用的渠道（渠道收到消息时调用）
-func (m *Manager) SetLastUsedChannel(channel, chatID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.lastChannel = channel
-	m.lastChatID = chatID
-}
-
-// GetLastUsedChannel 获取最后使用的渠道（实现 LastChannelGetter 接口）
-func (m *Manager) GetLastUsedChannel() (channel, chatID string) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.lastChannel, m.lastChatID
 }

@@ -119,7 +119,20 @@ func runGateway() error {
 			storePath = utils.ExpandHome("~/.lingguard/cron/jobs.json")
 		}
 
-		cronService = cron.NewService(storePath, createCronJobCallback(ag, mgr))
+		// 创建更新函数（使用指针避免循环依赖）
+		var updateJobTarget func(jobID, channel, to string) error
+		updateJobTarget = func(jobID, channel, to string) error {
+			if cronService == nil {
+				return fmt.Errorf("cron service not initialized")
+			}
+			_, err := cronService.UpdateJob(jobID, cron.UpdateJobOptions{
+				Channel: &channel,
+				To:      &to,
+			})
+			return err
+		}
+
+		cronService = cron.NewService(storePath, createCronJobCallback(ag, mgr, cfg.Heartbeat, updateJobTarget))
 		if err := cronService.Start(); err != nil {
 			return fmt.Errorf("start cron service: %w", err)
 		}
@@ -260,8 +273,6 @@ func runGateway() error {
 
 		// 设置消息发送器（mgr 实现了 MessageSender 接口）
 		heartbeatService.SetMessageSender(mgr)
-		// 设置最后渠道获取器（mgr 实现了 LastChannelGetter 接口）
-		heartbeatService.SetLastChannelGetter(mgr)
 
 		heartbeatService.Start()
 		logger.Info("Heartbeat service started", "interval", interval, "target", target)
@@ -277,7 +288,6 @@ func runGateway() error {
 	// 使用 ContextAdapter 包装 LaneAdapter
 	contextAdapter := channels.NewContextAdapter(laneAdapter, cronWrapper)
 	contextAdapter.SetMessageTool(messageTool)
-	contextAdapter.SetManager(mgr) // 用于记录最后使用的渠道
 
 	var handler channels.MessageHandler = contextAdapter
 
@@ -423,7 +433,7 @@ func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace strin
 }
 
 // createCronJobCallback 创建定时任务执行回调
-func createCronJobCallback(ag *agent.Agent, mgr *channels.Manager) cron.JobCallback {
+func createCronJobCallback(ag *agent.Agent, mgr *channels.Manager, heartbeatConfig *config.HeartbeatConfig, updateJobTarget func(jobID, channel, to string) error) cron.JobCallback {
 	return func(job *cron.CronJob) (string, error) {
 		logger.Info("Cron job executing",
 			"name", job.Name,
@@ -468,9 +478,55 @@ func createCronJobCallback(ag *agent.Agent, mgr *channels.Manager) cron.JobCallb
 				content = fmt.Sprintf("⏰ **%s**\n\n%s", job.Name, job.Payload.Message)
 			}
 
-			logger.Info("Sending cron notification", "channel", job.Payload.Channel, "to", job.Payload.To, "execute", job.Payload.Execute, "hasError", err != nil)
-			if sendErr := mgr.SendMessage(job.Payload.Channel, job.Payload.To, content); sendErr != nil {
-				logger.Error("Failed to send cron notification", "error", sendErr)
+			// 尝试发送通知
+			sendErr := mgr.SendMessage(job.Payload.Channel, job.Payload.To, content)
+			if sendErr != nil {
+				logger.Warn("Failed to send cron notification to original target",
+					"channel", job.Payload.Channel,
+					"to", job.Payload.To,
+					"error", sendErr)
+
+				// 回退机制：尝试发送到 heartbeat 配置的目标
+				if heartbeatConfig != nil && heartbeatConfig.Target != "" && heartbeatConfig.Target != "none" && heartbeatConfig.To != "" {
+					hbChannel := heartbeatConfig.Target
+					hbTo := heartbeatConfig.To
+					// 确保不是发送到同一个失效目标
+					if hbChannel != job.Payload.Channel || hbTo != job.Payload.To {
+						fallbackContent := fmt.Sprintf("⚠️ **任务回退通知**\n原目标已不可用，转发到此会话\n\n---\n\n%s", content)
+						if hbErr := mgr.SendMessage(hbChannel, hbTo, fallbackContent); hbErr != nil {
+							logger.Error("Failed to send cron notification to heartbeat target",
+								"hbChannel", hbChannel,
+								"hbTo", hbTo,
+								"error", hbErr)
+						} else {
+							logger.Info("Cron notification sent to heartbeat target",
+								"name", job.Name,
+								"hbChannel", hbChannel,
+								"hbTo", hbTo)
+
+							// 回退成功后更新任务目标，下次直接发送
+							// 注意：使用 goroutine 异步更新，避免与 cron service 的锁死锁
+							if updateJobTarget != nil {
+								go func(jobID, channel, to string) {
+									if updateErr := updateJobTarget(jobID, channel, to); updateErr != nil {
+										logger.Error("Failed to update cron job target",
+											"jobId", jobID,
+											"error", updateErr)
+									} else {
+										logger.Info("Cron job target updated to heartbeat target",
+											"jobId", jobID,
+											"newChannel", channel,
+											"newTo", to)
+									}
+								}(job.ID, hbChannel, hbTo)
+							}
+						}
+					} else {
+						logger.Error("Heartbeat target is same as failed original target", "name", job.Name)
+					}
+				} else {
+					logger.Error("No fallback target available for cron notification", "name", job.Name)
+				}
 			} else {
 				logger.Info("Cron notification sent", "name", job.Name)
 			}
