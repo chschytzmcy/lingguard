@@ -16,9 +16,10 @@ import (
 // DefaultInterval 默认心跳间隔 (30分钟)
 const DefaultInterval = 30 * time.Minute
 
-// HeartbeatPromptTemplate 心跳提示模板
-const HeartbeatPromptTemplate = `Read the file at %s (if it exists).
-Follow any instructions or tasks listed there.
+// HeartbeatPromptTemplate 心跳提示模板 (直接注入任务内容，避免路径问题)
+const HeartbeatPromptTemplate = `执行以下心跳任务：
+
+%s
 
 ## 输出规则（重要！）
 
@@ -232,9 +233,8 @@ func (s *Service) tick() {
 
 	logger.Info("Heartbeat: checking for tasks...")
 
-	// 生成包含完整路径的 prompt
-	heartbeatPath := filepath.Join(heartbeatDir, "HEARTBEAT.md")
-	prompt := fmt.Sprintf(HeartbeatPromptTemplate, heartbeatPath)
+	// 直接注入文件内容到 prompt（避免 Agent 路径探索浪费迭代)
+	prompt := fmt.Sprintf(HeartbeatPromptTemplate, content)
 
 	// 执行心跳回调
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
