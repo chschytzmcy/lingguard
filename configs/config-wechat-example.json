@@ -1,0 +1,40 @@
+{
+  "providers": {
+    "deepseek": {
+      "apiKey": "sk-xxx",
+      "model": "deepseek-chat",
+      "temperature": 0.7
+    }
+  },
+  "agents": {
+    "workspace": "/tmp/lingguard-workspace",
+    "provider": "deepseek",
+    "maxToolIterations": 20,
+    "memoryWindow": 50,
+    "systemPrompt": "你是一个智能助手",
+    "memory": {
+      "enabled": true,
+      "path": "~/.lingguard/memory"
+    }
+  },
+  "channels": {
+    "wechat": {
+      "enabled": true,
+      "environment": "production",
+      "guid": "550e8400-e29b-41d4-a716-446655440000",
+      "jwtToken": "",
+      "channelToken": "",
+      "allowFrom": [],
+      "webVersion": "1.4.0"
+    }
+  },
+  "server": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8080
+  },
+  "logging": {
+    "level": "info",
+    "format": "text"
+  }
+}

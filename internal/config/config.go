@@ -176,6 +176,7 @@ type VectorDbConfig struct {
 type ChannelsConfig struct {
 	Feishu *FeishuConfig `json:"feishu,omitempty"`
 	QQ     *QQConfig     `json:"qq,omitempty"`
+	WeChat *WeChatConfig `json:"wechat,omitempty"`
 }
 
 // FeishuConfig 飞书配置
@@ -194,6 +195,17 @@ type QQConfig struct {
 	AppID     string   `json:"appId"`     // QQ机器人 AppID
 	AppSecret string   `json:"appSecret"` // QQ机器人 ClientSecret（从机器人开放平台获取）
 	AllowFrom []string `json:"allowFrom,omitempty"`
+}
+
+// WeChatConfig 微信渠道配置（通过 QClaw 接入）
+type WeChatConfig struct {
+	Enabled     bool     `json:"enabled"`
+	Environment string   `json:"environment,omitempty"` // "production" 或 "test"，默认 "production"
+	GUID        string   `json:"guid"`                  // 设备唯一标识
+	JWTToken    string   `json:"jwtToken,omitempty"`    // 持久化的 JWT Token（登录后自动更新）
+	ChannelToken string  `json:"channelToken,omitempty"` // 微信接入 Channel Token（登录后自动更新）
+	AllowFrom   []string `json:"allowFrom,omitempty"`   // 允许的用户 ID 列表
+	WebVersion  string   `json:"webVersion,omitempty"`  // QClaw Web 版本号，默认 "1.4.0"
 }
 
 // ToolsConfig 工具配置
