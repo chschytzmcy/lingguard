@@ -636,7 +636,7 @@ func (q *QQChannel) messageLoop() {
 						logger.Error("QQ 认证失败！",
 							"hint", "检查 AppID 和 AppSecret 是否正确")
 					} else {
-						logger.Warn("QQ WebSocket read error", "error", err)
+						logger.Info("QQ WebSocket read error", "error", err)
 					}
 				}
 				return
