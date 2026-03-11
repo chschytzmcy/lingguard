@@ -472,21 +472,49 @@ func (t *CalendarTool) getUpcoming(ctx context.Context, client *caldav.Client, c
 		return "", fmt.Errorf("get upcoming events: %w", err)
 	}
 
-	if len(events) == 0 {
+	// Filter events: only show ongoing or upcoming events
+	// - Ongoing: Start <= now && End > now (meeting has started but not ended)
+	// - Upcoming: Start > now && Start <= now + within
+	now := time.Now()
+	cutoffTime := now.Add(within)
+	var validEvents []caldav.Event
+	for _, event := range events {
+		// Skip events that have already ended
+		if !event.End.IsZero() && event.End.Before(now) {
+			continue
+		}
+		// Skip events that start after the cutoff time
+		if event.Start.After(cutoffTime) {
+			continue
+		}
+		validEvents = append(validEvents, event)
+	}
+
+	if len(validEvents) == 0 {
 		return fmt.Sprintf("No upcoming events within %s.", within), nil
 	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("📅 Upcoming events (within %s):\n\n", within))
 
-	now := time.Now()
-	for i, event := range events {
-		// Calculate time until event
+	for i, event := range validEvents {
+		// Calculate time until event (or indicate ongoing)
 		timeUntil := event.Start.Sub(now)
-		timeUntilStr := formatDuration(timeUntil)
+		var timeUntilStr string
+		if timeUntil <= 0 {
+			// Event has started - show remaining time
+			remaining := event.End.Sub(now)
+			if remaining > 0 {
+				timeUntilStr = fmt.Sprintf("🔴 进行中 (剩余 %s)", formatDuration(remaining))
+			} else {
+				timeUntilStr = "🔴 进行中"
+			}
+		} else {
+			timeUntilStr = "⏰ Starts in: " + formatDuration(timeUntil)
+		}
 
 		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, caldav.FormatEventForDisplay(&event)))
-		sb.WriteString(fmt.Sprintf("   ⏰ Starts in: %s\n", timeUntilStr))
+		sb.WriteString(fmt.Sprintf("   %s\n", timeUntilStr))
 		sb.WriteString(fmt.Sprintf("   Href: %s\n\n", event.Href))
 	}
 

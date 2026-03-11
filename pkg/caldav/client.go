@@ -250,9 +250,11 @@ func isCalendarResource(innerXML string) bool {
 
 // QueryEvents queries events in a calendar within a time range
 // Supports different CalDAV server implementations:
-// - DingTalk: calendar-query returns calendar-data directly
+// - DingTalk: calendar-query returns calendar-data directly, requires UTC time format
 // - Feishu: requires two-step (calendar-query + calendar-multiget)
 func (c *Client) QueryEvents(ctx context.Context, calendarHref string, start, end time.Time) ([]Event, error) {
+	// Use UTC time format (with Z suffix) - required by DingTalk CalDAV server
+	// Note: We convert local time to UTC for the query, but events are stored with their original timezone
 	startStr := start.UTC().Format("20060102T150405Z")
 	endStr := end.UTC().Format("20060102T150405Z")
 
@@ -506,14 +508,17 @@ func (c *Client) DeleteEvent(ctx context.Context, eventHref string) error {
 
 // GetUpcomingEvents retrieves events within a duration from now
 func (c *Client) GetUpcomingEvents(ctx context.Context, calendarHref string, within time.Duration) ([]Event, error) {
-	start := time.Now()
-	end := start.Add(within)
+	// Start query from 1 hour ago to catch meetings that have already started but are still ongoing
+	// This ensures we don't miss events that began before "now" but haven't ended yet
+	start := time.Now().Add(-1 * time.Hour)
+	end := time.Now().Add(within)
 	return c.QueryEvents(ctx, calendarHref, start, end)
 }
 
 // parseEventMultiStatus parses a REPORT response containing events
 func parseEventMultiStatus(data []byte) ([]Event, error) {
 	// We need a custom struct to handle calendar-data
+	// Use namespace-prefixed tags to match DingTalk's response format
 	var ms struct {
 		XMLName   xml.Name `xml:"multistatus"`
 		Responses []struct {
@@ -528,11 +533,23 @@ func parseEventMultiStatus(data []byte) ([]Event, error) {
 		} `xml:"response"`
 	}
 
-	// Define XML namespaces for unmarshaling
+	// Debug: log raw response for troubleshooting
+	logger.Debug("CalDAV response", "body", string(data))
+
+	// Handle various namespace formats from different CalDAV servers
+	// DingTalk uses: xmlns:D="DAV:" and xmlns:C="urn:ietf:params:xml:ns:caldav"
+	// Normalize namespaces for parsing
+	data = bytes.ReplaceAll(data, []byte(`<D:`), []byte(`<`))
+	data = bytes.ReplaceAll(data, []byte(`</D:`), []byte(`</`))
+	data = bytes.ReplaceAll(data, []byte(`<C:`), []byte(`<`))
+	data = bytes.ReplaceAll(data, []byte(`</C:`), []byte(`</`))
+	data = bytes.ReplaceAll(data, []byte(`xmlns:D="DAV:"`), []byte(`xmlns="DAV"`))
+	data = bytes.ReplaceAll(data, []byte(`xmlns:C="urn:ietf:params:xml:ns:caldav"`), []byte(``))
 	data = bytes.ReplaceAll(data, []byte(`xmlns="DAV:"`), []byte(`xmlns="DAV"`))
 	data = bytes.ReplaceAll(data, []byte(`xmlns="urn:ietf:params:xml:ns:caldav"`), []byte(`xmlns="caldav"`))
 
 	if err := xml.Unmarshal(data, &ms); err != nil {
+		logger.Warn("Failed to parse CalDAV multistatus", "error", err, "body", string(data))
 		return nil, fmt.Errorf("parse multistatus: %w", err)
 	}
 
