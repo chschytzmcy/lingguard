@@ -405,7 +405,7 @@ func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace strin
 			return nil, fmt.Errorf("qq channel enabled but appId or appSecret not configured")
 		}
 		// WebSocket 模式
-		mgr.RegisterChannel(channels.NewQQChannel(cfg.Channels.QQ, handler))
+		mgr.RegisterChannel(channels.NewQQChannel(cfg.Channels.QQ, cfg.Tools.Speech, cfg.Providers, handler))
 		logger.Info("QQ channel registered (websocket mode)")
 	}
 

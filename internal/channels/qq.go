@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/lingguard/internal/config"
 	"github.com/lingguard/pkg/httpclient"
 	"github.com/lingguard/pkg/logger"
+	"github.com/lingguard/pkg/speech"
 	"github.com/lingguard/pkg/stream"
 )
 
@@ -179,6 +181,8 @@ type qqAttachment struct {
 // QQChannel QQ机器人渠道 (使用 WebSocket Gateway)
 type QQChannel struct {
 	cfg              *config.QQConfig
+	speechCfg        *config.SpeechConfig
+	speechService    speech.Service
 	handler          MessageHandler
 	streamingHandler StreamingMessageHandler
 	allowMap         map[string]bool
@@ -276,7 +280,7 @@ func (r *qqRateLimiter) record() {
 }
 
 // NewQQChannel 创建QQ渠道
-func NewQQChannel(cfg *config.QQConfig, handler MessageHandler) *QQChannel {
+func NewQQChannel(cfg *config.QQConfig, speechCfg *config.SpeechConfig, providers map[string]config.ProviderConfig, handler MessageHandler) *QQChannel {
 	allowMap := make(map[string]bool)
 	for _, id := range cfg.AllowFrom {
 		allowMap[id] = true
@@ -284,6 +288,7 @@ func NewQQChannel(cfg *config.QQConfig, handler MessageHandler) *QQChannel {
 
 	qc := &QQChannel{
 		cfg:            cfg,
+		speechCfg:      speechCfg,
 		handler:        handler,
 		allowMap:       allowMap,
 		httpClient:     httpclient.Default(),
@@ -297,6 +302,32 @@ func NewQQChannel(cfg *config.QQConfig, handler MessageHandler) *QQChannel {
 		// msg_seq 基准时间
 		seqBaseTime: time.Now().Unix() % 100000000,
 	}
+
+	// 初始化语音识别服务
+	if speechCfg != nil && speechCfg.Enabled {
+		apiKey := speechCfg.APIKey
+		if apiKey == "" && speechCfg.Provider != "" {
+			if providerCfg, ok := providers[speechCfg.Provider]; ok {
+				apiKey = providerCfg.APIKey
+			}
+		}
+		svc, err := speech.NewService(&speech.Config{
+			Provider: speechCfg.Provider,
+			APIKey:   apiKey,
+			APIBase:  speechCfg.APIBase,
+			Model:    speechCfg.Model,
+			Format:   speechCfg.Format,
+			Language: speechCfg.Language,
+			Timeout:  speechCfg.Timeout,
+		})
+		if err != nil {
+			logger.Warn("Failed to init speech service for QQ", "error", err)
+		} else {
+			qc.speechService = svc
+			logger.Info("Speech recognition enabled for QQ channel", "provider", speechCfg.Provider)
+		}
+	}
+
 	// 检查是否实现了流式处理器接口
 	if sh, ok := handler.(StreamingMessageHandler); ok {
 		qc.streamingHandler = sh
@@ -910,14 +941,14 @@ func (q *QQChannel) handleC2CMessage(msg *qqC2CMessage) {
 		return
 	}
 
-	// 处理附件（图片等）
+	// 处理附件（图片、音频等）
 	var imageUrls []string
 	var attachmentInfo string
 	if len(msg.Attachments) > 0 {
 		logger.Info("QQ C2C message has attachments", "count", len(msg.Attachments))
 		for _, att := range msg.Attachments {
+			// 图片处理
 			if att.ContentType != "" && strings.HasPrefix(att.ContentType, "image/") {
-				// 下载图片并转换为 base64
 				imageBase64, err := q.downloadImageAsBase64(att.URL)
 				if err != nil {
 					logger.Warn("Failed to download QQ image", "url", att.URL, "error", err)
@@ -926,6 +957,21 @@ func (q *QQChannel) handleC2CMessage(msg *qqC2CMessage) {
 					imageUrls = append(imageUrls, imageBase64)
 					attachmentInfo += "\n[用户发送了一张图片，请根据图片内容回复]"
 					logger.Info("QQ image downloaded successfully", "base64Len", len(imageBase64))
+				}
+			} else if att.ContentType != "" && strings.HasPrefix(att.ContentType, "audio/") ||
+				// QQ 语音通常是 amr 格式
+				strings.HasSuffix(strings.ToLower(att.Filename), ".amr") ||
+				strings.HasSuffix(strings.ToLower(att.Filename), ".mp3") ||
+				strings.HasSuffix(strings.ToLower(att.Filename), ".wav") ||
+				strings.HasSuffix(strings.ToLower(att.Filename), ".ogg") ||
+				strings.HasSuffix(strings.ToLower(att.Filename), ".opus") ||
+				strings.HasSuffix(strings.ToLower(att.Filename), ".m4a") {
+				// 音频处理 - 下载并识别
+				audioText := q.processAudioAttachment(q.ctx, att.URL, att.Filename, msg.ID)
+				if audioText != "" {
+					attachmentInfo += fmt.Sprintf("\n[语音内容: %s]", audioText)
+				} else {
+					attachmentInfo += fmt.Sprintf("\n[音频附件: %s]", att.Filename)
 				}
 			} else {
 				attachmentInfo += fmt.Sprintf("\n[附件: %s]", att.Filename)
@@ -1724,4 +1770,149 @@ func parseExpiresIn(v any) int64 {
 	default:
 		return 7200 // 默认 2 小时
 	}
+}
+
+// processAudioAttachment 处理音频附件，下载并进行语音识别
+func (q *QQChannel) processAudioAttachment(ctx context.Context, audioURL, filename, messageID string) string {
+	if q.speechService == nil {
+		logger.Debug("Speech service not available for QQ channel")
+		return ""
+	}
+
+	// 下载音频文件
+	audioPath, err := q.downloadAudioFile(ctx, audioURL, filename, messageID)
+	if err != nil {
+		logger.Warn("Failed to download QQ audio", "url", audioURL, "error", err)
+		return ""
+	}
+	defer os.Remove(audioPath) // 清理临时文件
+
+	// 检测音频格式并转换
+	transcribePath := audioPath
+	lowerFilename := strings.ToLower(filename)
+
+	// QQ 语音实际上是 SILK 格式（文件名可能是 .amr 但内容是 SILK）
+	// 需要先用 pilk 解码 SILK，再用 ffmpeg 转换为 WAV
+	if strings.HasSuffix(lowerFilename, ".amr") || strings.HasSuffix(lowerFilename, ".silk") {
+		wavPath, err := q.convertSILKToWAV(audioPath)
+		if err != nil {
+			logger.Warn("Failed to convert SILK to WAV", "path", audioPath, "error", err)
+			// 尝试直接识别原始文件
+		} else {
+			defer os.Remove(wavPath)
+			transcribePath = wavPath
+			logger.Debug("SILK converted to WAV", "original", audioPath, "converted", wavPath)
+		}
+	}
+
+	// 语音识别
+	result, err := q.speechService.Transcribe(ctx, transcribePath)
+	if err != nil {
+		logger.Warn("Failed to transcribe QQ audio", "path", transcribePath, "error", err)
+		return ""
+	}
+
+	logger.Info("QQ audio transcribed", "text", result.Text, "duration", result.Duration, "messageId", messageID)
+	return result.Text
+}
+
+// convertSILKToWAV 将 QQ 的 SILK 格式语音转换为 WAV
+// QQ 语音实际上是 SILK 编码（文件名可能是 .amr 但内容是 SILK）
+// 需要先用 pilk (Python) 解码 SILK 为 PCM，再用 ffmpeg 转换为 WAV
+func (q *QQChannel) convertSILKToWAV(silkPath string) (string, error) {
+	pcmPath := silkPath + ".pcm"
+	wavPath := silkPath + ".wav"
+
+	// Step 1: 使用 Python pilk 解码 SILK 为 PCM
+	// 先尝试 24kHz（QQ SILK 常用采样率），如果失败再尝试 16kHz
+	sampleRates := []int{24000, 16000, 8000, 44100}
+	var decodeErr error
+
+	for _, rate := range sampleRates {
+		cmd := exec.Command("python3", "-c",
+			fmt.Sprintf("import pilk; pilk.decode('%s', '%s', %d)", silkPath, pcmPath, rate))
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			// 检查 PCM 文件是否存在且不为空
+			if info, statErr := os.Stat(pcmPath); statErr == nil && info.Size() > 0 {
+				logger.Debug("SILK decoded to PCM", "path", pcmPath, "sampleRate", rate, "size", info.Size())
+				break
+			}
+		}
+		decodeErr = fmt.Errorf("pilk decode failed (rate=%d): %w, output: %s", rate, err, string(output))
+	}
+
+	// 检查 PCM 文件是否生成成功
+	if _, err := os.Stat(pcmPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("SILK decode failed: %w", decodeErr)
+	}
+	defer os.Remove(pcmPath) // 清理 PCM 文件
+
+	// Step 2: 使用 ffmpeg 将 PCM 转换为 WAV
+	// -f s16le: 16-bit signed little-endian PCM 格式
+	// -ar 24000: 采样率 24kHz (QQ SILK 默认)
+	// -ac 1: 单声道
+	cmd := exec.Command("ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1",
+		"-i", pcmPath, "-ar", "16000", "-ac", "1", "-f", "wav", wavPath)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("ffmpeg conversion failed: %w, output: %s", err, string(output))
+	}
+
+	// 检查输出文件是否存在
+	if _, err := os.Stat(wavPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("converted WAV file not found: %s", wavPath)
+	}
+
+	logger.Debug("SILK converted to WAV", "silk", silkPath, "wav", wavPath)
+	return wavPath, nil
+}
+
+// downloadAudioFile 下载音频文件到本地临时目录
+func (q *QQChannel) downloadAudioFile(ctx context.Context, audioURL, filename, messageID string) (string, error) {
+	// 创建临时目录
+	tmpDir := filepath.Join(os.TempDir(), "lingguard-qq-audio")
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return "", fmt.Errorf("create temp dir: %w", err)
+	}
+
+	// 生成文件名 - 使用统一的时间戳
+	ext := filepath.Ext(filename)
+	if ext == "" {
+		ext = ".amr" // QQ 语音默认 amr 格式
+	}
+	// 使用单一时间戳生成唯一文件名
+	timestamp := time.Now().Unix()
+	randomID := time.Now().UnixNano() % 1000000
+	tmpFile := filepath.Join(tmpDir, fmt.Sprintf("qq_audio_%d_%06d%s", timestamp, randomID, ext))
+
+	// 下载文件
+	req, err := http.NewRequestWithContext(ctx, "GET", audioURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := q.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download audio: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download audio failed: status=%d", resp.StatusCode)
+	}
+
+	// 保存文件
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read audio data: %w", err)
+	}
+
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		return "", fmt.Errorf("write audio file: %w", err)
+	}
+
+	logger.Info("QQ audio downloaded", "path", tmpFile, "size", len(data), "url", audioURL)
+	return tmpFile, nil
 }

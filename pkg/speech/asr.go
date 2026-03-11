@@ -251,6 +251,10 @@ func (a *QwenASR) getMimeType(format string) string {
 		return "audio/mp4"
 	case "flac":
 		return "audio/flac"
+	case "amr":
+		return "audio/amr"
+	case "aac":
+		return "audio/aac"
 	default:
 		return "audio/opus"
 	}
@@ -280,6 +284,10 @@ func (a *QwenASR) detectFormat(path string) string {
 		return "opus"
 	case ".flac", "flac":
 		return "flac"
+	case ".amr", "amr":
+		return "amr"
+	case ".aac", "aac":
+		return "aac"
 	default:
 		return "opus" // 飞书语音默认格式
 	}
