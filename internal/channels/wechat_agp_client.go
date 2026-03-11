@@ -27,25 +27,12 @@ const (
 	agpUpdateTypeToolCallUpdate = "tool_call_update"
 )
 
-// AGP Tool Call 类型
-const (
-	agpToolCallKindFunction = "function"
-)
-
-// AGP Tool Call 状态
-const (
-	agpToolCallStatusPending  = "pending"
-	agpToolCallStatusRunning  = "running"
-	agpToolCallStatusComplete = "complete"
-	agpToolCallStatusError    = "error"
-)
-
 // AGP 停止原因
 const (
-	agpStopReasonEndTurn   = "end_turn"
+	agpStopReasonEndTurn  = "end_turn"
 	agpStopReasonCancelled = "cancelled"
-	agpStopReasonError     = "error"
-	agpStopReasonRefusal   = "refusal"
+	agpStopReasonError    = "error"
+	agpStopReasonRefusal  = "refusal"
 )
 
 // AGP 消息信封
@@ -88,24 +75,6 @@ type agpMessageChunkData struct {
 	Text string `json:"text"`
 }
 
-// AGP Tool Call 数据
-type agpToolCallData struct {
-	ToolCallID string           `json:"tool_call_id"`
-	Name       string           `json:"name"`
-	Kind       string           `json:"kind"`
-	Status     string           `json:"status"`
-	Input      interface{}      `json:"input,omitempty"`
-	Output     interface{}      `json:"output,omitempty"`
-	Error      string           `json:"error,omitempty"`
-	Location   *agpToolLocation `json:"location,omitempty"`
-}
-
-// AGP Tool Location
-type agpToolLocation struct {
-	Path string `json:"path,omitempty"`
-	Line int    `json:"line,omitempty"`
-}
-
 // AGP PromptResponse 消息
 type agpPromptResponsePayload struct {
 	SessionID  string            `json:"session_id"`
@@ -144,10 +113,10 @@ type AGPClient struct {
 	mu    sync.RWMutex
 
 	// 控制
-	ctx       context.Context
-	cancel    context.CancelFunc
-	stopCh    chan struct{}
-	stoppedCh chan struct{}
+	ctx        context.Context
+	cancel     context.CancelFunc
+	stopCh     chan struct{}
+	stoppedCh  chan struct{}
 
 	// 重连
 	reconnectAttempts int
@@ -421,48 +390,6 @@ func (c *AGPClient) handleMessage(envelope *agpEnvelope) {
 func (c *AGPClient) SendMessageChunk(sessionID, promptID, text string) error {
 	data, _ := json.Marshal(agpMessageChunkData{Text: text})
 	return c.sendUpdate(sessionID, promptID, agpUpdateTypeMessageChunk, data)
-}
-
-// SendToolCall 发送工具调用开始事件
-func (c *AGPClient) SendToolCall(sessionID, promptID, toolCallID, name string, input interface{}) error {
-	data := agpToolCallData{
-		ToolCallID: toolCallID,
-		Name:       name,
-		Kind:       agpToolCallKindFunction,
-		Status:     agpToolCallStatusPending,
-		Input:      input,
-	}
-	dataBytes, _ := json.Marshal(data)
-	return c.sendUpdate(sessionID, promptID, agpUpdateTypeToolCall, dataBytes)
-}
-
-// SendToolCallUpdate 发送工具调用更新事件
-func (c *AGPClient) SendToolCallUpdate(sessionID, promptID, toolCallID, status string, output interface{}, errMsg string) error {
-	data := agpToolCallData{
-		ToolCallID: toolCallID,
-		Status:     status,
-		Output:     output,
-	}
-	if errMsg != "" {
-		data.Error = errMsg
-	}
-	dataBytes, _ := json.Marshal(data)
-	return c.sendUpdate(sessionID, promptID, agpUpdateTypeToolCallUpdate, dataBytes)
-}
-
-// SendToolCallRunning 发送工具调用运行中事件
-func (c *AGPClient) SendToolCallRunning(sessionID, promptID, toolCallID string) error {
-	return c.SendToolCallUpdate(sessionID, promptID, toolCallID, agpToolCallStatusRunning, nil, "")
-}
-
-// SendToolCallComplete 发送工具调用完成事件
-func (c *AGPClient) SendToolCallComplete(sessionID, promptID, toolCallID string, output interface{}) error {
-	return c.SendToolCallUpdate(sessionID, promptID, toolCallID, agpToolCallStatusComplete, output, "")
-}
-
-// SendToolCallError 发送工具调用错误事件
-func (c *AGPClient) SendToolCallError(sessionID, promptID, toolCallID, errMsg string) error {
-	return c.SendToolCallUpdate(sessionID, promptID, toolCallID, agpToolCallStatusError, nil, errMsg)
 }
 
 // SendTextResponse 发送文本响应

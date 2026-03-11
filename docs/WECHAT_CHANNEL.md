@@ -270,51 +270,11 @@ agpClient.SendMessageChunk(sessionID, promptID, "World!")
 agpClient.SendTextResponse(sessionID, promptID, "Hello World!")
 ```
 
-### 5. 工具调用通知
-
-支持发送工具调用状态更新:
-```go
-// 发送工具调用开始
-agpClient.SendToolCall(sessionID, promptID, toolCallID, "search", input)
-
-// 发送工具运行中状态
-agpClient.SendToolCallRunning(sessionID, promptID, toolCallID)
-
-// 发送工具完成
-agpClient.SendToolCallComplete(sessionID, promptID, toolCallID, output)
-
-// 发送工具错误
-agpClient.SendToolCallError(sessionID, promptID, toolCallID, "error message")
-```
-
-### 6. Token 自动续期
+### 5. Token 自动续期
 
 - JWT Token 自动续期 (通过 X-New-Token 响应头)
 - Channel Token 手动刷新接口
 - 会话过期自动清理
-
-### 7. 设备管理
-
-支持设备查询和断开连接:
-```go
-// 查询设备信息
-deviceInfo, err := qclawClient.QueryDeviceByGuid(guid)
-
-// 断开设备连接
-err := qclawClient.DisconnectDevice(guid)
-
-// 生成联系人链接
-link, err := qclawClient.GenerateContactLink()
-
-// 检查更新
-update, err := qclawClient.CheckUpdate()
-
-// 登出
-err := qclawClient.Logout()
-
-// 获取用户信息
-userInfo, err := qclawClient.GetUserInfoFromAPI()
-```
 
 ## 限制
 
@@ -357,86 +317,33 @@ userInfo, err := qclawClient.GetUserInfoFromAPI()
 
 ## 开发参考
 
-### 文件结构
+### 添加 HTTP API 端点
 
-```
-internal/channels/
-├── wechat.go                 # 微信渠道主逻辑
-├── wechat_qclaw_client.go    # QClaw HTTP API 客户端
-└── wechat_agp_client.go      # AGP WebSocket 客户端
+在 `cmd/cli/gateway.go` 中添加微信相关的 HTTP API:
 
-internal/api/handlers/
-└── wechat.go                 # HTTP API 处理器
+```go
+// 获取登录 state
+router.POST("/v1/wechat/login/state", func(c *gin.Context) {
+    // 实现逻辑
+})
 
-cmd/cli/
-└── gateway.go                # 渠道注册和启动
+// 微信登录
+router.POST("/v1/wechat/login", func(c *gin.Context) {
+    // 实现逻辑
+})
+
+// 刷新 Token
+router.POST("/v1/wechat/token/refresh", func(c *gin.Context) {
+    // 实现逻辑
+})
 ```
 
 ### 扩展功能
 
 1. **支持媒体文件**: 在 `agpContentBlock` 中添加图片、视频类型支持
-2. ~~**工具调用通知**: 实现 `SendToolCall` 和 `SendToolCallUpdate`~~ ✅ 已完成
+2. **工具调用通知**: 实现 `SendToolCall` 和 `SendToolCallUpdate`
 3. **配置持久化**: 自动保存 Token 到配置文件
 4. **多设备支持**: 支持多个 GUID 配置
-
-## HTTP API
-
-### 获取登录 URL
-
-```bash
-curl -X POST http://localhost:8080/v1/wechat/login/state
-```
-
-响应:
-```json
-{
-  "qr_url": "https://open.weixin.qq.com/connect/qrconnect?..."
-}
-```
-
-### 微信登录
-
-```bash
-curl -X POST http://localhost:8080/v1/wechat/login \
-  -H "Content-Type: application/json" \
-  -d '{"code": "xxx", "state": "xxx"}'
-```
-
-响应:
-```json
-{
-  "success": true,
-  "message": "login successful"
-}
-```
-
-### 刷新 Token
-
-```bash
-curl -X POST http://localhost:8080/v1/wechat/token/refresh
-```
-
-响应:
-```json
-{
-  "success": true,
-  "message": "token refreshed"
-}
-```
-
-### 获取状态
-
-```bash
-curl http://localhost:8080/v1/wechat/status
-```
-
-响应:
-```json
-{
-  "running": true,
-  "channel": "wechat"
-}
-```
 
 ## 参考资料
 
