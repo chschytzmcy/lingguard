@@ -15,6 +15,12 @@
 - Channel Token 刷新
 - API Key 创建
 - 腾讯嵌套响应解包
+- **设备查询** (QueryDeviceByGuid)
+- **断开设备连接** (DisconnectDevice)
+- **生成联系人链接** (GenerateContactLink)
+- **检查更新** (CheckUpdate)
+- **登出** (Logout)
+- **获取用户信息** (GetUserInfoFromAPI)
 
 ### 3. AGP WebSocket 客户端 ✅
 文件: `internal/channels/wechat_agp_client.go`
@@ -26,6 +32,8 @@
 - 系统唤醒检测
 - 消息去重 (基于 msg_id)
 - 流式响应支持
+- **工具调用通知** (SendToolCall, SendToolCallUpdate)
+- **工具状态更新** (SendToolCallRunning, SendToolCallComplete, SendToolCallError)
 
 ### 4. 微信渠道主逻辑 ✅
 文件: `internal/channels/wechat.go`
@@ -71,6 +79,8 @@ WeChatChannel
 4. **流式响应**: 支持增量文本块发送
 5. **Token 管理**: JWT 自动续期, Channel Token 手动刷新
 6. **系统唤醒检测**: 防止笔记本休眠导致的连接问题
+7. **工具调用通知**: 支持发送工具调用状态更新
+8. **设备管理**: 查询设备、断开连接、生成链接等
 
 ## 使用流程
 
@@ -106,10 +116,10 @@ curl -X POST http://localhost:8080/v1/wechat/login \
 
 ## 代码统计
 
-- `wechat_qclaw_client.go`: ~400 行 (HTTP API)
-- `wechat_agp_client.go`: ~600 行 (WebSocket)
-- `wechat.go`: ~350 行 (主逻辑)
-- 总计: ~1350 行 Go 代码
+- `wechat_qclaw_client.go`: ~500 行 (HTTP API)
+- `wechat_agp_client.go`: ~700 行 (WebSocket)
+- `wechat.go`: ~380 行 (主逻辑)
+- 总计: ~1580 行 Go 代码
 
 ## 测试状态
 
@@ -120,13 +130,13 @@ curl -X POST http://localhost:8080/v1/wechat/login \
 ## 下一步
 
 ### 必需功能
-1. **HTTP API 端点**: 添加登录和 Token 刷新的 HTTP API
+1. ~~**HTTP API 端点**: 添加登录和 Token 刷新的 HTTP API~~ ✅ 已完成
 2. **配置持久化**: 自动保存 Token 到配置文件
 3. **功能测试**: 使用真实 QClaw 账号测试
 
 ### 可选增强
 1. **媒体文件支持**: 支持图片、视频等媒体消息
-2. **工具调用通知**: 实现 SendToolCall 和 SendToolCallUpdate
+2. ~~**工具调用通知**: 实现 SendToolCall 和 SendToolCallUpdate~~ ✅ 已完成
 3. **多设备支持**: 支持多个 GUID 配置
 4. **监控和指标**: 添加连接状态、消息统计等监控
 

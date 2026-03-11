@@ -31,6 +31,11 @@ type WebChatAPIHandler interface {
 	RegisterRoutes(router *gin.RouterGroup)
 }
 
+// WeChatHandler 微信渠道处理器接口
+type WeChatHandler interface {
+	RegisterRoutes(router *gin.RouterGroup)
+}
+
 // Server 统一 Gin 服务器
 type Server struct {
 	config     *config.Config
@@ -45,6 +50,7 @@ type Server struct {
 	taskboardHandler  *handlers.TaskboardHandler
 	traceHandler      *handlers.TraceHandler
 	webchatAPIHandler WebChatAPIHandler
+	wechatHandler     WeChatHandler
 	chatHandler       *handlers.ChatHandler
 	sessionHandler    *handlers.SessionHandler
 	taskHandler       *handlers.TaskHandler
@@ -102,6 +108,13 @@ func WithSessionManager(sessionMgr *session.Manager) ServerOption {
 func WithTaskHandler(handler *handlers.TaskHandler) ServerOption {
 	return func(s *Server) {
 		s.taskHandler = handler
+	}
+}
+
+// WithWeChatHandler 设置微信渠道处理器
+func WithWeChatHandler(handler WeChatHandler) ServerOption {
+	return func(s *Server) {
+		s.wechatHandler = handler
 	}
 }
 
@@ -216,6 +229,11 @@ func (s *Server) registerRoutes() {
 		// Task API
 		if s.taskHandler != nil {
 			s.taskHandler.RegisterRoutes(v1)
+		}
+
+		// WeChat API
+		if s.wechatHandler != nil {
+			s.wechatHandler.RegisterRoutes(v1)
 		}
 
 		// TODO: Phase 5 - Tool/Agent API

@@ -301,9 +301,19 @@ func runGateway() error {
 	workspace = utils.ExpandHome(workspace)
 
 	// 注册渠道
-	webChatChannel, err := registerChannels(cfg, mgr, workspace, handler, ag.GetProfileStore())
+	webChatChannel, weChatChannel, err := registerChannels(cfg, mgr, workspace, handler, ag.GetProfileStore())
 	if err != nil {
 		return err
+	}
+
+	// 如果启用了 WeChat，设置 WeChat API 处理器
+	if weChatChannel != nil && apiServer != nil {
+		wechatHandler := handlers.NewWeChatHandler(weChatChannel)
+		apiServer.GetRouter().POST("/v1/wechat/login/state", wechatHandler.GetLoginState)
+		apiServer.GetRouter().POST("/v1/wechat/login", wechatHandler.Login)
+		apiServer.GetRouter().POST("/v1/wechat/token/refresh", wechatHandler.RefreshToken)
+		apiServer.GetRouter().GET("/v1/wechat/status", wechatHandler.GetStatus)
+		logger.Info("WeChat API handler registered")
 	}
 
 	// 如果启用了 WebChat，设置 WebSocket 处理器和 API 处理器
@@ -387,13 +397,15 @@ func runGateway() error {
 
 // registerChannels 注册所有渠道
 // 返回 WebChat channel 以便设置 WebSocket 处理器
-func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace string, handler channels.MessageHandler, profileStore *memory.ProfileStore) (*channels.WebChatChannel, error) {
+// 返回 WeChat channel 以便设置 API 处理器
+func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace string, handler channels.MessageHandler, profileStore *memory.ProfileStore) (*channels.WebChatChannel, *channels.WeChatChannel, error) {
 	var webChatChannel *channels.WebChatChannel
+	var weChatChannel *channels.WeChatChannel
 
 	// 飞书渠道
 	if cfg.Channels.Feishu != nil && cfg.Channels.Feishu.Enabled {
 		if cfg.Channels.Feishu.AppID == "" || cfg.Channels.Feishu.AppSecret == "" {
-			return nil, fmt.Errorf("feishu channel enabled but appId or appSecret not configured")
+			return nil, nil, fmt.Errorf("feishu channel enabled but appId or appSecret not configured")
 		}
 		mgr.RegisterChannel(channels.NewFeishuChannel(cfg.Channels.Feishu, cfg.Tools.Speech, cfg.Providers, workspace, handler, profileStore, cfg.Agents.Soul))
 		logger.Info("Feishu channel registered")
@@ -402,7 +414,7 @@ func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace strin
 	// QQ 渠道
 	if cfg.Channels.QQ != nil && cfg.Channels.QQ.Enabled {
 		if cfg.Channels.QQ.AppID == "" || cfg.Channels.QQ.AppSecret == "" {
-			return nil, fmt.Errorf("qq channel enabled but appId or appSecret not configured")
+			return nil, nil, fmt.Errorf("qq channel enabled but appId or appSecret not configured")
 		}
 		// WebSocket 模式
 		mgr.RegisterChannel(channels.NewQQChannel(cfg.Channels.QQ, handler))
@@ -412,9 +424,10 @@ func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace strin
 	// 微信渠道
 	if cfg.Channels.WeChat != nil && cfg.Channels.WeChat.Enabled {
 		if cfg.Channels.WeChat.GUID == "" {
-			return nil, fmt.Errorf("wechat channel enabled but guid not configured")
+			return nil, nil, fmt.Errorf("wechat channel enabled but guid not configured")
 		}
-		mgr.RegisterChannel(channels.NewWeChatChannel(cfg.Channels.WeChat, handler))
+		weChatChannel = channels.NewWeChatChannel(cfg.Channels.WeChat, handler)
+		mgr.RegisterChannel(weChatChannel)
 		logger.Info("WeChat channel registered (QClaw mode)")
 	}
 
@@ -436,10 +449,10 @@ func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace strin
 		(cfg.Channels.QQ == nil || !cfg.Channels.QQ.Enabled) &&
 		(cfg.Channels.WeChat == nil || !cfg.Channels.WeChat.Enabled) &&
 		(cfg.Server == nil || !cfg.Server.Enabled) {
-		return nil, fmt.Errorf("no channels enabled, please configure at least one channel")
+		return nil, nil, fmt.Errorf("no channels enabled, please configure at least one channel")
 	}
 
-	return webChatChannel, nil
+	return webChatChannel, weChatChannel, nil
 }
 
 // createCronJobCallback 创建定时任务执行回调

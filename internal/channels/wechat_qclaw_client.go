@@ -58,14 +58,18 @@ var qclawWxConfigs = map[string]qclawWxLoginConfig{
 
 // QClaw API 端点
 const (
-	qclawEndpointWxLoginState    = "data/4050/forward" // 获取微信登录 state
-	qclawEndpointWxLogin         = "data/4026/forward" // 微信登录
-	qclawEndpointGetUserInfo     = "data/4027/forward" // 获取用户信息
-	qclawEndpointWxLogout        = "data/4028/forward" // 微信登出
-	qclawEndpointCreateAPIKey    = "data/4055/forward" // 创建 API Key
-	qclawEndpointRefreshToken    = "data/4058/forward" // 刷新 Channel Token
-	qclawEndpointCheckInviteCode = "data/4056/forward" // 检查邀请码
-	qclawEndpointSubmitInviteCode = "data/4057/forward" // 提交邀请码
+	qclawEndpointWxLoginState        = "data/4050/forward" // 获取微信登录 state
+	qclawEndpointWxLogin             = "data/4026/forward" // 微信登录
+	qclawEndpointGetUserInfo         = "data/4027/forward" // 获取用户信息
+	qclawEndpointWxLogout            = "data/4028/forward" // 微信登出
+	qclawEndpointCreateAPIKey        = "data/4055/forward" // 创建 API Key
+	qclawEndpointRefreshToken        = "data/4058/forward" // 刷新 Channel Token
+	qclawEndpointCheckInviteCode     = "data/4056/forward" // 检查邀请码
+	qclawEndpointSubmitInviteCode    = "data/4057/forward" // 提交邀请码
+	qclawEndpointQueryDevice         = "data/4019/forward" // 查询设备信息
+	qclawEndpointDisconnectDevice    = "data/4020/forward" // 断开设备连接
+	qclawEndpointGenerateContactLink = "data/4018/forward" // 生成联系人链接
+	qclawEndpointCheckUpdate         = "data/4066/forward" // 检查更新
 )
 
 // QClaw API 响应结构
@@ -87,9 +91,9 @@ type qclawWxLoginStateData struct {
 }
 
 type qclawWxLoginData struct {
-	Token               string                `json:"token"`
-	OpenClawChannelToken string               `json:"openclaw_channel_token"`
-	UserInfo            *qclawWxLoginUserInfo `json:"user_info,omitempty"`
+	Token                string                `json:"token"`
+	OpenClawChannelToken string                `json:"openclaw_channel_token"`
+	UserInfo             *qclawWxLoginUserInfo `json:"user_info,omitempty"`
 }
 
 type qclawWxLoginUserInfo struct {
@@ -111,6 +115,28 @@ type qclawAPIKeyData struct {
 	Key string `json:"key"`
 }
 
+// 设备查询相关结构
+type qclawDeviceData struct {
+	GUID      string `json:"guid"`
+	Online    bool   `json:"online"`
+	Connected bool   `json:"connected"`
+	LastSeen  int64  `json:"last_seen,omitempty"`
+}
+
+// 联系人链接相关结构
+type qclawContactLinkData struct {
+	Link     string `json:"link"`
+	ExpireAt int64  `json:"expire_at,omitempty"`
+}
+
+// 更新检查相关结构
+type qclawUpdateData struct {
+	HasUpdate   bool   `json:"has_update"`
+	Version     string `json:"version,omitempty"`
+	Description string `json:"description,omitempty"`
+	DownloadURL string `json:"download_url,omitempty"`
+}
+
 // QClawClient QClaw HTTP API 客户端
 type QClawClient struct {
 	env        string
@@ -120,9 +146,9 @@ type QClawClient struct {
 	guid       string
 
 	// 认证信息
-	jwtToken   string
-	userInfo   *qclawUserInfo
-	tokenMu    sync.RWMutex
+	jwtToken string
+	userInfo *qclawUserInfo
+	tokenMu  sync.RWMutex
 
 	httpClient *http.Client
 }
@@ -281,6 +307,134 @@ func (c *QClawClient) RefreshChannelToken() (string, error) {
 	}
 
 	return token, nil
+}
+
+// QueryDeviceByGuid 查询设备信息
+func (c *QClawClient) QueryDeviceByGuid(guid string) (*qclawDeviceData, error) {
+	if guid == "" {
+		guid = c.guid
+	}
+	reqBody := map[string]interface{}{
+		"guid":        guid,
+		"web_version": c.webVersion,
+		"web_env":     "release",
+	}
+
+	resp, err := c.request(qclawEndpointQueryDevice, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("query device failed: %w", err)
+	}
+
+	var data qclawDeviceData
+	if err := json.Unmarshal(resp, &data); err != nil {
+		return nil, fmt.Errorf("unmarshal device data failed: %w", err)
+	}
+
+	return &data, nil
+}
+
+// DisconnectDevice 断开设备连接
+func (c *QClawClient) DisconnectDevice(guid string) error {
+	if guid == "" {
+		guid = c.guid
+	}
+	reqBody := map[string]interface{}{
+		"guid":        guid,
+		"web_version": c.webVersion,
+		"web_env":     "release",
+	}
+
+	_, err := c.request(qclawEndpointDisconnectDevice, reqBody)
+	if err != nil {
+		return fmt.Errorf("disconnect device failed: %w", err)
+	}
+
+	return nil
+}
+
+// GenerateContactLink 生成联系人链接
+func (c *QClawClient) GenerateContactLink() (*qclawContactLinkData, error) {
+	reqBody := map[string]interface{}{
+		"guid":        c.guid,
+		"web_version": c.webVersion,
+		"web_env":     "release",
+	}
+
+	resp, err := c.request(qclawEndpointGenerateContactLink, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("generate contact link failed: %w", err)
+	}
+
+	var data qclawContactLinkData
+	if err := json.Unmarshal(resp, &data); err != nil {
+		return nil, fmt.Errorf("unmarshal contact link data failed: %w", err)
+	}
+
+	return &data, nil
+}
+
+// CheckUpdate 检查更新
+func (c *QClawClient) CheckUpdate() (*qclawUpdateData, error) {
+	reqBody := map[string]interface{}{
+		"web_version": c.webVersion,
+		"web_env":     "release",
+	}
+
+	resp, err := c.request(qclawEndpointCheckUpdate, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("check update failed: %w", err)
+	}
+
+	var data qclawUpdateData
+	if err := json.Unmarshal(resp, &data); err != nil {
+		return nil, fmt.Errorf("unmarshal update data failed: %w", err)
+	}
+
+	return &data, nil
+}
+
+// Logout 登出
+func (c *QClawClient) Logout() error {
+	reqBody := map[string]interface{}{
+		"guid":        c.guid,
+		"web_version": c.webVersion,
+		"web_env":     "release",
+	}
+
+	_, err := c.request(qclawEndpointWxLogout, reqBody)
+	if err != nil {
+		return fmt.Errorf("logout failed: %w", err)
+	}
+
+	// 清除认证状态
+	c.SetJWTToken("")
+	c.SetUserInfo(nil)
+
+	return nil
+}
+
+// GetUserInfoFromAPI 从 API 获取用户信息
+func (c *QClawClient) GetUserInfoFromAPI() (*qclawUserInfo, error) {
+	reqBody := map[string]interface{}{
+		"guid":        c.guid,
+		"web_version": c.webVersion,
+		"web_env":     "release",
+	}
+
+	resp, err := c.request(qclawEndpointGetUserInfo, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("get user info failed: %w", err)
+	}
+
+	var data qclawUserInfo
+	if err := json.Unmarshal(resp, &data); err != nil {
+		return nil, fmt.Errorf("unmarshal user info failed: %w", err)
+	}
+
+	// 更新缓存的用户信息
+	c.SetUserInfo(&data)
+
+	return &data, nil
 }
 
 // request 发送 HTTP 请求

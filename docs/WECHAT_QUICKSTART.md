@@ -122,9 +122,27 @@ curl -X POST http://localhost:8080/v1/wechat/login \
 }
 ```
 
-登录成功后，`jwtToken` 和 `channelToken` 会自动保存到配置文件。
+登录成功后，Token 会保存在内存中。
 
-## 步骤 5: 重启服务
+> ⚠️ **注意**: 当前版本 Token 不会自动持久化到配置文件。重启服务后需要重新登录。后续版本会支持自动持久化。
+>
+> **临时解决方案**: 登录成功后，可以手动将 Token 添加到配置文件中:
+> ```json
+> {
+>   "channels": {
+>     "wechat": {
+>       "enabled": true,
+>       "guid": "your-guid",
+>       "jwtToken": "从登录响应获取",
+>       "channelToken": "从登录响应获取"
+>     }
+>   }
+> }
+> ```
+
+## 步骤 5: 重启服务（如已配置 Token）
+
+如果已经在配置文件中手动设置了 `jwtToken` 和 `channelToken`:
 
 ```bash
 # 停止服务 (Ctrl+C)
@@ -132,18 +150,28 @@ curl -X POST http://localhost:8080/v1/wechat/login \
 ./lingguard gateway
 ```
 
-现在服务应该正常运行:
+服务应该正常运行:
 ```
 INFO Starting WeChat channel (QClaw)
 INFO WeChat channel started
 INFO WeChat AGP connected
 ```
 
+> ⚠️ 如果没有在配置文件中设置 Token，重启后服务会进入待登录状态，需要重新执行步骤 4。
+
 ## 步骤 6: 测试
 
 在微信中向你的 QClaw 机器人发送消息，LingGuard 会自动接收并响应。
 
 ## 故障排查
+
+### 问题 0: 服务启动但提示 token not configured
+
+**现象**: 服务启动后显示 `WeChat channel token not configured, waiting for login...`
+
+**说明**: 这是正常行为。服务会以待登录状态运行，允许你通过 HTTP API 完成登录。
+
+**解决**: 按照步骤 4 完成微信登录。
 
 ### 问题 1: 登录失败
 

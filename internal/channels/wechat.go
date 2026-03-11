@@ -107,12 +107,14 @@ func (c *WeChatChannel) Start(ctx context.Context) error {
 
 	// 检查是否已登录
 	if c.cfg.ChannelToken == "" {
-		logger.Warn("WeChat channel token not configured, please login first")
+		logger.Warn("WeChat channel token not configured, waiting for login...")
 		logger.Info("Use the following steps to login:")
 		logger.Info("1. Get login state: curl -X POST http://localhost:8080/v1/wechat/login/state")
 		logger.Info("2. Scan QR code with WeChat")
 		logger.Info("3. Complete login: curl -X POST http://localhost:8080/v1/wechat/login -d '{\"code\":\"...\",\"state\":\"...\"}'")
-		return fmt.Errorf("channel token not configured")
+		logger.Info("4. Restart gateway to activate the channel")
+		// 不返回错误，允许渠道以待登录状态启动
+		return nil
 	}
 
 	// 启动 AGP 客户端
@@ -337,12 +339,26 @@ func (c *WeChatChannel) GetLoginURL() (string, error) {
 	return url, nil
 }
 
+// LoginResult 登录结果
+type LoginResult struct {
+	Token        string
+	ChannelToken string
+	UserInfo     *UserInfo
+}
+
+// UserInfo 用户信息
+type UserInfo struct {
+	Nickname string
+	Avatar   string
+	UserID   string
+}
+
 // Login 微信登录
-func (c *WeChatChannel) Login(code, state string) error {
+func (c *WeChatChannel) Login(code, state string) (*LoginResult, error) {
 	// 执行登录
 	loginData, err := c.qclawClient.WxLogin(code, state)
 	if err != nil {
-		return fmt.Errorf("wx login failed: %w", err)
+		return nil, fmt.Errorf("wx login failed: %w", err)
 	}
 
 	// 更新配置
@@ -352,11 +368,25 @@ func (c *WeChatChannel) Login(code, state string) error {
 	// 更新 AGP 客户端 token
 	c.agpClient.SetToken(loginData.OpenClawChannelToken)
 
-	logger.Info("WeChat login successful, user: %s", loginData.UserInfo.Nickname)
+	var userInfo *UserInfo
+	if loginData.UserInfo != nil {
+		userInfo = &UserInfo{
+			Nickname: loginData.UserInfo.Nickname,
+			Avatar:   loginData.UserInfo.Avatar,
+			UserID:   loginData.UserInfo.UserID,
+		}
+		logger.Info("WeChat login successful, user: %s", loginData.UserInfo.Nickname)
+	} else {
+		logger.Info("WeChat login successful")
+	}
 
 	// TODO: 持久化配置到文件
 
-	return nil
+	return &LoginResult{
+		Token:        loginData.Token,
+		ChannelToken: loginData.OpenClawChannelToken,
+		UserInfo:     userInfo,
+	}, nil
 }
 
 // RefreshToken 刷新 Channel Token
