@@ -409,15 +409,6 @@ func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace strin
 		logger.Info("QQ channel registered (websocket mode)")
 	}
 
-	// 微信渠道
-	if cfg.Channels.WeChat != nil && cfg.Channels.WeChat.Enabled {
-		if cfg.Channels.WeChat.GUID == "" {
-			return nil, fmt.Errorf("wechat channel enabled but guid not configured")
-		}
-		mgr.RegisterChannel(channels.NewWeChatChannel(cfg.Channels.WeChat, handler))
-		logger.Info("WeChat channel registered (QClaw mode)")
-	}
-
 	// WebChat 渠道（随 Server 自动启用，无需额外配置）
 	if cfg.Server != nil && cfg.Server.Enabled {
 		var webChatCfg *config.WebChatConfig
@@ -434,7 +425,6 @@ func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace strin
 	// 检查是否有渠道
 	if (cfg.Channels.Feishu == nil || !cfg.Channels.Feishu.Enabled) &&
 		(cfg.Channels.QQ == nil || !cfg.Channels.QQ.Enabled) &&
-		(cfg.Channels.WeChat == nil || !cfg.Channels.WeChat.Enabled) &&
 		(cfg.Server == nil || !cfg.Server.Enabled) {
 		return nil, fmt.Errorf("no channels enabled, please configure at least one channel")
 	}
