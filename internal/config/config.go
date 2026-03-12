@@ -221,6 +221,8 @@ type ToolsConfig struct {
 	Moltbook *MoltbookConfig `json:"moltbook,omitempty"` // Moltbook 配置
 	// Calendar - CalDAV 日历
 	Calendar *CalendarConfig `json:"calendar,omitempty"` // CalDAV 日历配置
+	// Browser - 浏览器自动化
+	Browser *BrowserConfig `json:"browser,omitempty"` // 浏览器自动化配置
 }
 
 // WebSearchConfig 网页搜索配置
@@ -394,6 +396,19 @@ type CORSConfig struct {
 	AllowedMethods   string   `json:"allowedMethods,omitempty"`   // 允许的方法，默认 "GET, POST, PUT, DELETE, OPTIONS"
 	AllowedHeaders   string   `json:"allowedHeaders,omitempty"`   // 允许的头，默认 "Content-Type, Authorization"
 	AllowCredentials bool     `json:"allowCredentials,omitempty"` // 是否允许凭证
+}
+
+// BrowserConfig 浏览器自动化配置
+type BrowserConfig struct {
+	Enabled        bool     `json:"enabled"`                  // 是否启用
+	Mode           string   `json:"mode,omitempty"`           // "managed" (自动启动) | "connect" (连接已有浏览器)
+	BrowserPath    string   `json:"browserPath,omitempty"`    // 浏览器路径（可选，自动检测）
+	RemoteURL      string   `json:"remoteUrl,omitempty"`      // 远程 CDP URL（connect 模式）
+	Headless       *bool    `json:"headless,omitempty"`       // 无头模式，默认 true
+	ProfileDir     string   `json:"profileDir,omitempty"`     // Profile 目录（可选）
+	DefaultTimeout int      `json:"defaultTimeout,omitempty"` // 默认超时(秒)，默认 30
+	ScreenshotDir  string   `json:"screenshotDir,omitempty"`  // 截图保存目录
+	Args           []string `json:"args,omitempty"`           // 额外浏览器启动参数
 }
 
 // TimeoutsConfig 超时配置

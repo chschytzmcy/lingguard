@@ -152,6 +152,13 @@
       "enabled": false,
       "apiToken": "xxx"
     },
+    "browser": {
+      "enabled": false,
+      "mode": "managed",
+      "headless": true,
+      "defaultTimeout": 30,
+      "screenshotDir": "~/.lingguard/workspace/screenshots"
+    },
     "cron": {
       "enabled": true,
       "storePath": "~/.lingguard/cron/jobs.json"

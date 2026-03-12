@@ -233,6 +233,26 @@
       "_note": "apiToken 用于自动登录，从 https://clawhub.ai 获取",
       "enabled": true,
       "apiToken": "clh_xxxxxxxxxxxx"
+    },
+    "browser": {
+      "_comment": "浏览器自动化配置 - 基于 Chrome DevTools Protocol",
+      "_docs": "https://github.com/chromedp/chromedp",
+      "_note": "支持网页操作、截图、表单填写、多标签页管理等",
+      "_actions": "navigate, click, type, screenshot, scroll, wait, evaluate, get_text, upload, press, go_back, go_forward, refresh, get_url, get_title, new_page, switch_page, list_pages, close_page",
+      "enabled": false,
+      "mode": "managed",
+      "_modeNote": "managed=自动启动浏览器, connect=连接已有浏览器(需配置 remoteUrl)",
+      "headless": true,
+      "browserPath": "",
+      "_browserPathNote": "可选，浏览器可执行文件路径，留空则自动检测",
+      "remoteUrl": "",
+      "_remoteUrlNote": "connect 模式需要，例如 http://localhost:9222",
+      "profileDir": "",
+      "_profileDirNote": "可选，浏览器 Profile 目录，用于保持登录状态",
+      "defaultTimeout": 30,
+      "screenshotDir": "~/.lingguard/workspace/screenshots",
+      "args": [],
+      "_argsNote": "额外浏览器启动参数，如 ['--disable-gpu', '--no-sandbox']"
     }
   },
 

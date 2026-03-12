@@ -349,6 +349,22 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 		logger.Info("Calendar tool enabled", "accounts", len(b.cfg.Tools.Calendar.Accounts), "default", b.cfg.Tools.Calendar.Default)
 	}
 
+	// 注册浏览器自动化工具
+	if b.cfg.Tools.Browser != nil && b.cfg.Tools.Browser.Enabled {
+		workspace := b.cfg.Agents.Workspace
+		if workspace == "" {
+			home, _ := os.UserHomeDir()
+			workspace = filepath.Join(home, ".lingguard", "workspace")
+		}
+		if strings.HasPrefix(workspace, "~") {
+			home, _ := os.UserHomeDir()
+			workspace = filepath.Join(home, workspace[1:])
+		}
+		browserTool := tools.NewBrowserTool(b.cfg.Tools.Browser, workspace)
+		ag.RegisterTool(browserTool)
+		logger.Info("Browser tool enabled", "headless", b.cfg.Tools.Browser.Headless, "mode", b.cfg.Tools.Browser.Mode)
+	}
+
 	// 注册可选工具
 	if b.enableCron && b.cronService != nil {
 		ag.RegisterCronTool(b.cronService)

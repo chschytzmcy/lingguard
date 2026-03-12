@@ -6,6 +6,8 @@
 *.dylib
 lingguard
 
+configs/config-1.json
+
 # Test binary
 *.test
 
