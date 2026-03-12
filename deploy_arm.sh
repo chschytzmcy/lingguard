@@ -6,9 +6,9 @@ set -e
 # ============================================
 # 配置
 # ============================================
-DEFAULT_HOST="192.168.1.103"
-DEFAULT_USER="firefly"
-DEFAULT_PASSWORD="firefly"
+DEFAULT_HOST="192.168.1.118"
+DEFAULT_USER="linaro"
+DEFAULT_PASSWORD="SCNKZwnv9pbFd123"  #SCNKZwnv9pbFd123
 DEFAULT_PLATFORM="linux-arm64"
 DEFAULT_PATH="/tmp"
 
@@ -41,7 +41,7 @@ ssh_cmd() {
 # ============================================
 show_help() {
     echo ""
-    echo -e "${CYAN}LingGuard 部署工具 - Firefly 设备${NC}"
+    echo -e "${CYAN}LingGuard 部署工具 - ARM 设备${NC}"
     echo ""
     echo "用法: $0 <命令> [选项]"
     echo ""

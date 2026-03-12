@@ -33,28 +33,8 @@ if [ -f "${PREFIX}/bin/${BIN_NAME}" ]; then
     IS_UPDATE="true"
 fi
 
-# 检测是否为快速更新模式（仅更新二进制文件）
-QUICK_UPDATE="false"
-if [ "$IS_UPDATE" = "true" ] && [ "$PLATFORM" = "linux" ]; then
-    if [ "$EUID" -eq 0 ]; then
-        if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
-            QUICK_UPDATE="true"
-        fi
-    else
-        if [ -f "${HOME}/.config/systemd/user/${SERVICE_NAME}.service" ]; then
-            QUICK_UPDATE="true"
-        fi
-    fi
-fi
-
 # 显示标题
-if [ "$QUICK_UPDATE" = "true" ]; then
-    echo "=== LingGuard 快速更新 ==="
-    echo "平台: $PLATFORM"
-    echo "PREFIX: $PREFIX"
-    echo "模式: 快速更新（仅更新二进制文件）"
-    echo ""
-elif [ "$IS_UPDATE" = "true" ]; then
+if [ "$IS_UPDATE" = "true" ]; then
     echo "=== LingGuard 更新 ==="
 else
     echo "=== LingGuard 安装 ==="
@@ -62,7 +42,7 @@ fi
 echo "平台: $PLATFORM"
 echo "PREFIX: $PREFIX"
 echo "CONFIG_DIR: $CONFIG_DIR"
-echo "模式: $([ "$QUICK_UPDATE" = "true" ] && echo "快速更新" || ([ "$IS_UPDATE" = "true" ] && echo "更新" || echo "新安装"))"
+echo "模式: $([ "$IS_UPDATE" = "true" ] && echo "更新" || echo "新安装")"
 echo ""
 
 # 1. 安装二进制文件
@@ -111,26 +91,6 @@ if [ "$PLATFORM" = "macos" ]; then
 fi
 echo "  ✓ 已安装到 ${PREFIX}/bin/${BIN_NAME}"
 
-# 快速更新模式：仅更新二进制文件后直接退出
-if [ "$QUICK_UPDATE" = "true" ]; then
-    echo ""
-    echo "[2/2] 重启服务..."
-    if [ "$EUID" -eq 0 ]; then
-        systemctl daemon-reload
-        systemctl restart ${SERVICE_NAME}
-        systemctl status ${SERVICE_NAME} --no-pager || true
-    else
-        systemctl --user daemon-reload
-        systemctl --user restart ${SERVICE_NAME}
-        systemctl --user status ${SERVICE_NAME} --no-pager || true
-    fi
-    echo ""
-    echo "=== 快速更新完成 ==="
-    echo ""
-    echo "二进制文件: ${PREFIX}/bin/${BIN_NAME}"
-    exit 0
-fi
-
 # 2. 创建配置目录
 echo "[2/5] 创建配置目录..."
 mkdir -p "${CONFIG_DIR}"
@@ -143,14 +103,10 @@ mkdir -p "${CONFIG_DIR}/moltbook"
 rm -f "${CONFIG_DIR}/locks/"*.lock 2>/dev/null || true
 echo "  ✓ 已创建 ${CONFIG_DIR}"
 
-# 2.1 安装 Moltbook 凭证（如果存在且不存在）
+# 2.1 安装 Moltbook 凭证（直接覆盖）
 if [ -f "configs/moltbook/credentials.json" ]; then
-    if [ ! -f "${CONFIG_DIR}/moltbook/credentials.json" ]; then
-        cp configs/moltbook/credentials.json "${CONFIG_DIR}/moltbook/"
-        echo "  ✓ 已安装 Moltbook 凭证"
-    else
-        echo "  ! Moltbook 凭证已存在，保留"
-    fi
+    cp configs/moltbook/credentials.json "${CONFIG_DIR}/moltbook/"
+    echo "  ✓ 已安装 Moltbook 凭证"
 fi
 
 # 3. 安装配置文件（仅新安装）
@@ -174,40 +130,28 @@ else
     echo "  ! 配置文件已存在，跳过"
 fi
 
-# 3.1 安装 HEARTBEAT.md（仅不存在时）
-if [ ! -f "${CONFIG_DIR}/workspace/HEARTBEAT.md" ]; then
-    if [ -f "configs/HEARTBEAT.md" ]; then
-        cp configs/HEARTBEAT.md "${CONFIG_DIR}/workspace/HEARTBEAT.md"
-        echo "  ✓ 已创建 ${CONFIG_DIR}/workspace/HEARTBEAT.md"
-    fi
+# 3.1 安装 HEARTBEAT.md（直接覆盖）
+if [ -f "configs/HEARTBEAT.md" ]; then
+    cp configs/HEARTBEAT.md "${CONFIG_DIR}/workspace/HEARTBEAT.md"
+    echo "  ✓ 已安装 ${CONFIG_DIR}/workspace/HEARTBEAT.md"
 fi
 
-# 4. 更新技能目录
+# 4. 更新技能目录（内置技能全覆盖安装）
 echo "[4/5] 安装技能目录..."
 if [ -d "skills" ]; then
     mkdir -p "${SKILLS_DIR}"
 
-    # 更新模式：先备份用户自定义技能
-    if [ "$IS_UPDATE" = "true" ]; then
-        # 获取内置技能列表
-        BUILTIN_SKILLS=""
-        if [ -d "skills" ]; then
-            BUILTIN_SKILLS=$(ls -1 skills/ 2>/dev/null)
-        fi
+    # 获取内置技能列表
+    BUILTIN_SKILLS=$(ls -1 skills/ 2>/dev/null)
 
-        # 更新内置技能（覆盖）
-        for skill in $BUILTIN_SKILLS; do
-            if [ -d "skills/${skill}" ]; then
-                rm -rf "${SKILLS_DIR}/${skill}" 2>/dev/null || true
-                cp -r "skills/${skill}" "${SKILLS_DIR}/"
-            fi
-        done
-        echo "  ✓ 已更新内置技能"
-    else
-        # 新安装：直接复制所有技能
-        cp -r skills/* "${SKILLS_DIR}/" 2>/dev/null || true
-        echo "  ✓ 已安装内置技能到 ${SKILLS_DIR}"
-    fi
+    # 内置技能全覆盖安装：先删后拷
+    for skill in $BUILTIN_SKILLS; do
+        if [ -d "skills/${skill}" ]; then
+            rm -rf "${SKILLS_DIR}/${skill}" 2>/dev/null || true
+            cp -r "skills/${skill}" "${SKILLS_DIR}/"
+        fi
+    done
+    echo "  ✓ 已安装内置技能到 ${SKILLS_DIR}（全覆盖）"
 else
     echo "  ! skills 目录不存在，跳过"
 fi
