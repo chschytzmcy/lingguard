@@ -545,6 +545,7 @@ func createCronJobCallback(ag *agent.Agent, mgr *channels.Manager, heartbeatConf
 // createHeartbeatCallback 创建心跳回调
 func createHeartbeatCallback(ag *agent.Agent) heartbeat.AgentCallback {
 	return func(ctx context.Context, prompt string) (string, error) {
-		return ag.ProcessMessage(ctx, "heartbeat-main", prompt)
+		// 心跳任务跳过记忆捕获，避免系统指令污染用户记忆
+		return ag.ProcessMessage(ctx, "heartbeat-main", prompt, agent.WithSkipMemoryCapture())
 	}
 }

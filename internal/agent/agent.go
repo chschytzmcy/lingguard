@@ -50,6 +50,30 @@ var ErrSessionBusy = errors.New("会话正在处理上一条消息，请稍后�
 // ReflectPrompt 反思提示（参考 nanobot）
 const ReflectPrompt = "Reflect on the results and decide next steps."
 
+// ProcessOption 处理消息的选项
+type ProcessOption func(*processOptions)
+
+// processOptions 处理选项
+type processOptions struct {
+	skipMemoryCapture bool // 跳过记忆捕获（用于系统内部任务如心跳）
+}
+
+// WithSkipMemoryCapture 跳过记忆捕获（用于系统内部任务）
+func WithSkipMemoryCapture() ProcessOption {
+	return func(o *processOptions) {
+		o.skipMemoryCapture = true
+	}
+}
+
+// applyOptions 应用处理选项
+func applyOptions(opts ...ProcessOption) *processOptions {
+	o := &processOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
+}
+
 // CronWrapper 定时任务服务包装器接口
 type CronWrapper interface {
 	SetChannelContext(channel, to string)
@@ -530,12 +554,14 @@ func (a *Agent) ListSkills() ([]*skills.Skill, error) {
 }
 
 // ProcessMessage 处理消息
-func (a *Agent) ProcessMessage(ctx context.Context, sessionID, userMessage string) (string, error) {
-	return a.ProcessMessageWithMedia(ctx, sessionID, userMessage, nil)
+func (a *Agent) ProcessMessage(ctx context.Context, sessionID, userMessage string, opts ...ProcessOption) (string, error) {
+	return a.ProcessMessageWithMedia(ctx, sessionID, userMessage, nil, opts...)
 }
 
 // ProcessMessageWithMedia 处理带媒体的消息
-func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMessage string, mediaPaths []string) (string, error) {
+func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMessage string, mediaPaths []string, opts ...ProcessOption) (string, error) {
+	// 应用选项
+	opt := applyOptions(opts...)
 	// 开始追踪
 	var tr *trace.Trace
 	if a.traceCollector != nil {
@@ -612,7 +638,7 @@ func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMess
 	}
 
 	// 4. 执行代理循环
-	result, err := a.runLoopWithProvider(ctx, sessionID, messages, provider)
+	result, err := a.runLoopWithProvider(ctx, sessionID, messages, provider, opt.skipMemoryCapture)
 
 	// 更新追踪结果
 	if tr != nil && a.traceCollector != nil {
@@ -628,12 +654,14 @@ func (a *Agent) ProcessMessageWithMedia(ctx context.Context, sessionID, userMess
 }
 
 // ProcessMessageStream 流式处理消息
-func (a *Agent) ProcessMessageStream(ctx context.Context, sessionID, userMessage string, callback stream.StreamCallback) error {
-	return a.ProcessMessageStreamWithMedia(ctx, sessionID, userMessage, nil, callback)
+func (a *Agent) ProcessMessageStream(ctx context.Context, sessionID, userMessage string, callback stream.StreamCallback, opts ...ProcessOption) error {
+	return a.ProcessMessageStreamWithMedia(ctx, sessionID, userMessage, nil, callback, opts...)
 }
 
 // ProcessMessageStreamWithMedia 流式处理带媒体的消息
-func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, userMessage string, mediaPaths []string, callback stream.StreamCallback) error {
+func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, userMessage string, mediaPaths []string, callback stream.StreamCallback, opts ...ProcessOption) error {
+	// 应用选项
+	opt := applyOptions(opts...)
 	// 开始追踪
 	var tr *trace.Trace
 	if a.traceCollector != nil {
@@ -708,7 +736,7 @@ func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, us
 	}
 
 	// 4. 执行流式代理循环
-	runErr := a.runLoopStreamWithProvider(ctx, sessionID, messages, provider, callback)
+	runErr := a.runLoopStreamWithProvider(ctx, sessionID, messages, provider, callback, opt.skipMemoryCapture)
 
 	// 更新追踪结果
 	if tr != nil && a.traceCollector != nil {
@@ -727,11 +755,11 @@ func (a *Agent) ProcessMessageStreamWithMedia(ctx context.Context, sessionID, us
 
 // runLoop 代理执行循环
 func (a *Agent) runLoop(ctx context.Context, sessionID string, messages []llm.Message) (string, error) {
-	return a.runLoopWithProvider(ctx, sessionID, messages, a.provider)
+	return a.runLoopWithProvider(ctx, sessionID, messages, a.provider, false)
 }
 
 // runLoopWithProvider 代理执行循环（指定 provider）
-func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messages []llm.Message, provider providers.Provider) (string, error) {
+func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messages []llm.Message, provider providers.Provider, skipMemoryCapture bool) (string, error) {
 	// 设置 steer 状态为执行中
 	if a.steerMgr != nil {
 		a.steerMgr.setExecuting(sessionID, true)
@@ -746,7 +774,7 @@ func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messa
 
 	// 确保在函数结束时执行自动捕获和历史记录
 	defer func() {
-		if a.config.MemoryConfig != nil && a.config.MemoryConfig.AutoCapture {
+		if !skipMemoryCapture && a.config.MemoryConfig != nil && a.config.MemoryConfig.AutoCapture {
 			go a.captureMemories(sessionID, messages)
 		}
 	}()
@@ -889,11 +917,11 @@ func (a *Agent) runLoopWithProvider(ctx context.Context, sessionID string, messa
 
 // runLoopStream 流式代理执行循环
 func (a *Agent) runLoopStream(ctx context.Context, sessionID string, messages []llm.Message, callback stream.StreamCallback) error {
-	return a.runLoopStreamWithProvider(ctx, sessionID, messages, a.provider, callback)
+	return a.runLoopStreamWithProvider(ctx, sessionID, messages, a.provider, callback, false)
 }
 
 // runLoopStreamWithProvider 流式代理执行循环（指定 provider）
-func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string, messages []llm.Message, provider providers.Provider, callback stream.StreamCallback) error {
+func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string, messages []llm.Message, provider providers.Provider, callback stream.StreamCallback, skipMemoryCapture bool) error {
 	// 设置 steer 状态为执行中
 	if a.steerMgr != nil {
 		a.steerMgr.setExecuting(sessionID, true)
@@ -913,7 +941,7 @@ func (a *Agent) runLoopStreamWithProvider(ctx context.Context, sessionID string,
 
 	// 确保在函数结束时执行自动捕获
 	defer func() {
-		if a.config.MemoryConfig != nil && a.config.MemoryConfig.AutoCapture {
+		if !skipMemoryCapture && a.config.MemoryConfig != nil && a.config.MemoryConfig.AutoCapture {
 			go a.captureMemories(sessionID, messages)
 		}
 	}()
