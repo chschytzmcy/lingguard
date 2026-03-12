@@ -240,11 +240,7 @@ curl --location --request POST 'http://{BOX_IP}:{BOX_PORT}/v1/files/upload/asset
 ```
 
 **获取图片后显示到聊天界面**：
-当获取图片的缩略图(thumb)、封面(cover)后，需要下载图片到本地，然后在返回内容末尾添加：
-```
-[GENERATED_IMAGE:本地图片路径]
-```
-这样图片会自动上传并在飞书聊天中显示给用户。
+当获取图片的缩略图(thumb)、封面(cover)后，需要下载图片到本地，然后使用 GENERATED_IMAGE 标记（格式见文档末尾"图片显示规则"章节），图片会自动上传并在飞书聊天中显示给用户。
 
 ---
 
@@ -541,49 +537,31 @@ curl --location --request GET 'http://{BOX_IP}:{BOX_PORT}/v1/files/download/asse
 
 ### 步骤 1：下载图片到本地
 
-首先使用 curl 将图片下载到 `/tmp` 目录，保存为实际文件：
+首先使用 curl 将图片下载到 `/tmp` 目录：
 
 ```bash
-curl -o /tmp/图片文件名.jpg "http://{BOX_IP}:{BOX_PORT}/v1/files/download/asset?file_id=实际文件ID&type=thumb"
+curl -o /tmp/image_${file_id}.jpg "http://${BOX_IP}:${BOX_PORT}/v1/files/download/asset?file_id=${file_id}&type=thumb"
 ```
 
 ### 步骤 2：在返回内容中添加标记
 
-下载成功后，在返回内容的末尾添加特殊标记：
+下载成功后，在返回内容的末尾添加特殊标记。标记格式为：左方括号 + `GENERATED_IMAGE` + 冒号 + **实际下载的本地文件绝对路径** + 右方括号。
 
-```
-[GENERATED_IMAGE:下载保存的实际本地路径]
-```
+例如，如果下载后保存到 `/tmp/image_abc123.jpg`，则添加：
+- 左方括号 `[`
+- `GENERATED_IMAGE:/tmp/image_abc123.jpg`
+- 右方括号 `]`
 
-### 完整示例
-
-假设 file_id 为 `abc123`，文件名为 `photo.jpg`：
-
-1. 执行下载命令：
-```bash
-curl -o /tmp/photo_abc123.jpg "http://127.0.0.1:8080/v1/files/download/asset?file_id=abc123&type=thumb"
-```
-
-2. 返回内容：
-```
-已成功获取图片！
-
-文件名: photo.jpg
-
-[GENERATED_IMAGE:/tmp/photo_abc123.jpg]
-```
-
-### 触发自动发送的条件
-- 返回内容中包含 `[GENERATED_IMAGE:实际本地路径]` 标记
-- 路径必须是本地文件系统的**绝对路径**（如 `/tmp/xxx.jpg`）
+### 关键要求
+- 路径必须是本地文件系统的**绝对路径**
 - 文件必须是有效的图片格式（jpg/png/gif/webp）
 - **文件必须已经存在于本地文件系统中**
+- **必须先成功下载图片，再添加标记**
 
 ### 注意事项
 - 图片会自动上传到飞书并发送给用户
-- 可以同时返回多个 `[GENERATED_IMAGE:...]` 标记来发送多张图片
+- 可以同时返回多个标记来发送多张图片
 - 如果只是文字描述而没有这个标记，用户将无法在聊天中直接看到图片
-- **切勿使用占位符或示例路径，必须使用实际下载后的文件路径**
 
 ---
 
