@@ -140,7 +140,7 @@ func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (string
 
 func (t *ShellTool) IsDangerous() bool { return true }
 
-func (t *ShellTool) ShouldLoadByDefault() bool { return false }
+func (t *ShellTool) ShouldLoadByDefault() bool { return true }
 
 // 危险命令黑名单模式（参考 nanobot）
 var dangerousPatterns = []string{
