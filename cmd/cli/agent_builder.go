@@ -15,6 +15,7 @@ import (
 	"github.com/lingguard/internal/taskboard"
 	"github.com/lingguard/internal/tools"
 	"github.com/lingguard/pkg/logger"
+	"github.com/lingguard/pkg/speech"
 	ttspkg "github.com/lingguard/pkg/tts"
 )
 
@@ -294,6 +295,46 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 
 		ag.RegisterTool(tools.NewTTSTool(ttsCfg))
 		logger.Info("TTS tool enabled", "model", ttsCfg.Model, "voice", ttsCfg.Voice)
+	}
+
+	// 注册媒体扫描工具（需要多模态 Provider）
+	if b.multimodalProvider != nil && b.multimodalProvider.SupportsVision() {
+		// 初始化语音识别服务（可选，用于音频扫描）
+		var speechSvc speech.Service
+		if b.cfg.Tools.Speech != nil && b.cfg.Tools.Speech.Enabled {
+			apiKey := b.cfg.Tools.Speech.APIKey
+			if apiKey == "" && b.cfg.Tools.Speech.Provider != "" {
+				if p, ok := b.cfg.Providers[b.cfg.Tools.Speech.Provider]; ok {
+					apiKey = p.APIKey
+				}
+			}
+			if apiKey != "" {
+				speechCfg := &speech.Config{
+					Provider: b.cfg.Tools.Speech.Provider,
+					APIKey:   apiKey,
+					APIBase:  b.cfg.Tools.Speech.APIBase,
+					Model:    b.cfg.Tools.Speech.Model,
+					Format:   b.cfg.Tools.Speech.Format,
+					Language: b.cfg.Tools.Speech.Language,
+					Timeout:  b.cfg.Tools.Speech.Timeout,
+				}
+				svc, err := speech.NewService(speechCfg)
+				if err != nil {
+					logger.Warn("Failed to create speech service for media scan", "error", err)
+				} else {
+					speechSvc = svc
+					logger.Info("Speech service enabled for media scan")
+				}
+			}
+		}
+
+		ag.RegisterTool(tools.NewMediaScanTool(b.multimodalProvider, speechSvc, b.workspaceMgr, b.cfg.Tools.RestrictToWorkspace))
+		logger.Info("Media scan tool enabled", "provider", b.multimodalProvider.Name())
+	} else {
+		// 注册占位工具，提示用户如何启用
+		reason := "需要在 config.json 中配置 agents.multimodalProvider（如 qwen-vl、gpt-4o 等支持视觉的模型）"
+		ag.RegisterTool(tools.NewUnavailableTool("media_scan", reason))
+		logger.Debug("Media scan tool unavailable", "reason", reason)
 	}
 
 	// 注册 OpenCode 工具（即使 disabled 也注册，会返回原生工具提示）
