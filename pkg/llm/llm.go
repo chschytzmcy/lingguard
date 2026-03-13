@@ -240,6 +240,21 @@ func (f *FunctionCall) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON 自定义序列化，将 arguments 编码为 JSON 字符串格式
+// OpenAI API 要求 arguments 必须是字符串类型
+func (f FunctionCall) MarshalJSON() ([]byte, error) {
+	// 将 Arguments（json.RawMessage）转换为字符串
+	argumentsStr := string(f.Arguments)
+
+	return json.Marshal(struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}{
+		Name:      f.Name,
+		Arguments: argumentsStr,
+	})
+}
+
 // ToolDefinition 工具定义
 type ToolDefinition struct {
 	Type     string       `json:"type"`
