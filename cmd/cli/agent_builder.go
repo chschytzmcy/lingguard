@@ -298,6 +298,7 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 	}
 
 	// 注册媒体扫描工具（需要多模态 Provider）
+	// 通过 skill 按需加载，不满足配置时不注册
 	if b.multimodalProvider != nil && b.multimodalProvider.SupportsVision() {
 		// 初始化语音识别服务（可选，用于音频扫描）
 		var speechSvc speech.Service
@@ -329,12 +330,7 @@ func (b *AgentBuilder) Build() (*agent.Agent, error) {
 		}
 
 		ag.RegisterTool(tools.NewMediaScanTool(b.multimodalProvider, speechSvc, b.workspaceMgr, b.cfg.Tools.RestrictToWorkspace))
-		logger.Info("Media scan tool enabled", "provider", b.multimodalProvider.Name())
-	} else {
-		// 注册占位工具，提示用户如何启用
-		reason := "需要在 config.json 中配置 agents.multimodalProvider（如 qwen-vl、gpt-4o 等支持视觉的模型）"
-		ag.RegisterTool(tools.NewUnavailableTool("media_scan", reason))
-		logger.Debug("Media scan tool unavailable", "reason", reason)
+		logger.Info("Media scan tool registered", "provider", b.multimodalProvider.Name())
 	}
 
 	// 注册 OpenCode 工具（即使 disabled 也注册，会返回原生工具提示）

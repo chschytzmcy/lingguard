@@ -98,31 +98,83 @@ func (t *MediaScanTool) Parameters() map[string]interface{} {
 }
 
 func (t *MediaScanTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
-	var params struct {
-		Directory  string   `json:"directory"`
-		Target     string   `json:"target"`
-		MediaTypes []string `json:"media_types"`
-		Recursive  bool     `json:"recursive"`
-		MaxFiles   int      `json:"max_files"`
+	// 使用灵活的参数结构，处理 LLM 可能传递的字符串格式
+	var rawParams struct {
+		Directory  string          `json:"directory"`
+		Target     string          `json:"target"`
+		MediaTypes json.RawMessage `json:"media_types"`
+		Recursive  json.RawMessage `json:"recursive"` // 使用 RawMessage 矿活解析
+		MaxFiles   int             `json:"max_files"`
 	}
 
-	if err := json.Unmarshal(args, &params); err != nil {
+	if err := json.Unmarshal(args, &rawParams); err != nil {
 		return "", fmt.Errorf("parse arguments: %w", err)
 	}
 
-	// 默认值
-	if len(params.MediaTypes) == 0 {
-		params.MediaTypes = []string{"image", "video", "audio"}
+	// 解析 recursive 参数（可能是 bool 或字符串 "true"/"false"）
+	recursive := true // 默认值
+	if len(rawParams.Recursive) > 0 {
+		var boolVal bool
+		if err := json.Unmarshal(rawParams.Recursive, &boolVal); err == nil {
+			recursive = boolVal
+		} else {
+			// 尝试解析为字符串
+			var strVal string
+			if err := json.Unmarshal(rawParams.Recursive, &strVal); err == nil {
+				recursive = strings.ToLower(strVal) == "true"
+			}
+		}
 	}
-	if params.MaxFiles <= 0 {
-		params.MaxFiles = 50
+
+	// 解析 MediaTypes（可能是数组或 JSON 字符串）
+	mediaTypes := []string{"image", "video", "audio"} // 默认值
+	if len(rawParams.MediaTypes) > 0 {
+		var parsedTypes []string
+		// 先尝试作为数组解析
+		if err := json.Unmarshal(rawParams.MediaTypes, &parsedTypes); err != nil {
+			// 如果失败，尝试作为 JSON 字符串解析
+			var typeStr string
+			if err := json.Unmarshal(rawParams.MediaTypes, &typeStr); err == nil && typeStr != "" {
+				// 清理可能的转义字符
+				typeStr = strings.Trim(typeStr, "\"")
+				// 如果字符串本身是 JSON 数组，（如 `["image"]`），再次解析
+				if strings.HasPrefix(typeStr, "[") && strings.HasSuffix(typeStr, "]") {
+					var innerTypes []string
+					if err := json.Unmarshal([]byte(typeStr), &innerTypes); err == nil {
+						parsedTypes = innerTypes
+					}
+				} else if strings.Contains(typeStr, ",") {
+					parsedTypes = strings.Split(typeStr, ",")
+				} else {
+					parsedTypes = []string{typeStr}
+				}
+			}
+		}
+		if len(parsedTypes) > 0 {
+			mediaTypes = parsedTypes
+		}
+	}
+
+	logger.Info("Media types parsed", "raw", string(rawParams.MediaTypes), "parsed", mediaTypes)
+
+	// 提取参数
+	directory := rawParams.Directory
+	target := rawParams.Target
+	maxFiles := rawParams.MaxFiles
+
+	// 默认值
+	if maxFiles <= 0 {
+		maxFiles = 50
 	}
 
 	// 验证目录路径
-	absDir, err := t.validateAndResolvePath(params.Directory)
+	absDir, err := t.validateAndResolvePath(directory)
 	if err != nil {
+		logger.Warn("Path validation failed", "directory", directory, "error", err)
 		return "", err
 	}
+
+	logger.Info("Path resolved", "directory", directory, "absDir", absDir, "recursive", recursive)
 
 	// 检查多模态能力
 	if t.multimodalProvider == nil {
@@ -130,7 +182,7 @@ func (t *MediaScanTool) Execute(ctx context.Context, args json.RawMessage) (stri
 	}
 
 	// 1. 收集媒体文件
-	mediaFiles, err := t.collectMediaFiles(absDir, params.MediaTypes, params.Recursive, params.MaxFiles)
+	mediaFiles, err := t.collectMediaFiles(absDir, mediaTypes, recursive, maxFiles)
 	if err != nil {
 		return "", fmt.Errorf("collect media files: %w", err)
 	}
@@ -139,44 +191,44 @@ func (t *MediaScanTool) Execute(ctx context.Context, args json.RawMessage) (stri
 		return "未找到媒体文件", nil
 	}
 
-	logger.Info("Media scan started", "directory", absDir, "target", params.Target,
+	logger.Info("Media scan started", "directory", absDir, "target", target,
 		"images", len(mediaFiles.Images), "videos", len(mediaFiles.Videos), "audios", len(mediaFiles.Audios))
 
 	startTime := time.Now()
 
 	// 2. 并行分析各类媒体
 	result := &ScanResult{
-		Target: params.Target,
+		Target: target,
 	}
 
 	var wg sync.WaitGroup
 
 	// 图片扫描
-	if len(mediaFiles.Images) > 0 && t.containsType(params.MediaTypes, "image") {
+	if len(mediaFiles.Images) > 0 && t.containsType(mediaTypes, "image") {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			matches := t.scanImages(ctx, mediaFiles.Images, params.Target)
+			matches := t.scanImages(ctx, mediaFiles.Images, target)
 			result.ImageMatches = matches
 		}()
 	}
 
 	// 视频扫描
-	if len(mediaFiles.Videos) > 0 && t.containsType(params.MediaTypes, "video") {
+	if len(mediaFiles.Videos) > 0 && t.containsType(mediaTypes, "video") {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			matches := t.scanVideos(ctx, mediaFiles.Videos, params.Target)
+			matches := t.scanVideos(ctx, mediaFiles.Videos, target)
 			result.VideoMatches = matches
 		}()
 	}
 
 	// 音频扫描
-	if len(mediaFiles.Audios) > 0 && t.containsType(params.MediaTypes, "audio") && t.speechService != nil {
+	if len(mediaFiles.Audios) > 0 && t.containsType(mediaTypes, "audio") && t.speechService != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			matches := t.scanAudios(ctx, mediaFiles.Audios, params.Target)
+			matches := t.scanAudios(ctx, mediaFiles.Audios, target)
 			result.AudioMatches = matches
 		}()
 	}
@@ -260,6 +312,8 @@ func (t *MediaScanTool) expandPath(path string) string {
 func (t *MediaScanTool) collectMediaFiles(dir string, types []string, recursive bool, maxPerType int) (*MediaFiles, error) {
 	files := &MediaFiles{}
 
+	logger.Info("Collecting media files", "dir", dir, "recursive", recursive, "types", types, "maxPerType", maxPerType)
+
 	imageExts := map[string]bool{
 		".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".bmp": true,
 	}
@@ -279,7 +333,11 @@ func (t *MediaScanTool) collectMediaFiles(dir string, types []string, recursive 
 	audioCount := 0
 
 	walkFn := func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+		if err != nil {
+			logger.Debug("Walk error", "path", path, "error", err)
+			return nil
+		}
+		if info.IsDir() {
 			return nil
 		}
 
@@ -288,6 +346,7 @@ func (t *MediaScanTool) collectMediaFiles(dir string, types []string, recursive 
 		if scanImage && imageExts[ext] && imageCount < maxPerType {
 			files.Images = append(files.Images, path)
 			imageCount++
+			logger.Debug("Found image", "path", path)
 		} else if scanVideo && videoExts[ext] && videoCount < maxPerType {
 			files.Videos = append(files.Videos, path)
 			videoCount++
@@ -300,7 +359,10 @@ func (t *MediaScanTool) collectMediaFiles(dir string, types []string, recursive 
 	}
 
 	if recursive {
-		filepath.Walk(dir, walkFn)
+		err := filepath.Walk(dir, walkFn)
+		if err != nil {
+			logger.Warn("Walk failed", "dir", dir, "error", err)
+		}
 	} else {
 		entries, _ := os.ReadDir(dir)
 		for _, entry := range entries {
@@ -312,6 +374,7 @@ func (t *MediaScanTool) collectMediaFiles(dir string, types []string, recursive 
 		}
 	}
 
+	logger.Info("Media files collected", "images", len(files.Images), "videos", len(files.Videos), "audios", len(files.Audios))
 	return files, nil
 }
 
@@ -381,6 +444,7 @@ func (t *MediaScanTool) analyzeImage(ctx context.Context, imgPath, target string
 
 	// 调用多模态 LLM
 	req := &llm.Request{
+		Model: t.multimodalProvider.Model(),
 		Messages: []llm.Message{
 			{Role: "user", ContentParts: content},
 		},
@@ -465,6 +529,7 @@ func (t *MediaScanTool) analyzeVideo(ctx context.Context, videoPath, target stri
 	}
 
 	req := &llm.Request{
+		Model: t.multimodalProvider.Model(),
 		Messages: []llm.Message{
 			{Role: "user", ContentParts: content},
 		},
@@ -534,6 +599,7 @@ func (t *MediaScanTool) analyzeAudio(ctx context.Context, audioPath, target stri
 {"relevant":true或false,"reason":"判断理由"}`, target, truncateText(transcript, 1000))
 
 	req := &llm.Request{
+		Model: t.multimodalProvider.Model(),
 		Messages: []llm.Message{
 			{Role: "user", Content: prompt},
 		},
@@ -765,4 +831,4 @@ func parseJSONFromResponse(response string, target interface{}) error {
 }
 
 func (t *MediaScanTool) IsDangerous() bool         { return false }
-func (t *MediaScanTool) ShouldLoadByDefault() bool { return false }
+func (t *MediaScanTool) ShouldLoadByDefault() bool { return false } // 通过 skill 按需加载
