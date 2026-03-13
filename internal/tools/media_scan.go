@@ -2,10 +2,15 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -757,16 +762,90 @@ func (t *MediaScanTool) containsType(types []string, typ string) bool {
 	return false
 }
 
-// compressImage 压缩图片
+// compressImage 压缩图片到指定大小以下
 func compressImage(data []byte, maxSize int) ([]byte, error) {
-	// 简单实现：如果已经小于目标大小，直接返回
+	// 如果已经小于目标大小，直接返回
 	if len(data) <= maxSize {
 		return data, nil
 	}
 
-	// TODO: 使用图像库进行压缩
-	// 目前先返回原图，后续可以添加实际的压缩逻辑
-	return data, nil
+	// 解码图片
+	img, format, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode image: %w", err)
+	}
+
+	// 尝试不同质量级别压缩
+	quality := 85
+	for quality >= 20 {
+		var buf bytes.Buffer
+		switch format {
+		case "png":
+			// PNG 使用更好的压缩
+			encoder := &png.Encoder{CompressionLevel: png.BestCompression}
+			if err := encoder.Encode(&buf, img); err != nil {
+				return nil, err
+			}
+		case "gif":
+			// GIF 直接编码
+			if err := gif.Encode(&buf, img, nil); err != nil {
+				return nil, err
+			}
+		default:
+			// 默认转为 JPEG（压缩效果最好）
+			if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
+				return nil, err
+			}
+		}
+
+		// 检查大小
+		if buf.Len() <= maxSize {
+			return buf.Bytes(), nil
+		}
+
+		// 降低质量重试
+		quality -= 10
+	}
+
+	// 如果仍然太大，尝试缩小尺寸
+	bounds := img.Bounds()
+	for scale := 0.75; scale >= 0.25; scale -= 0.25 {
+		// 计算新尺寸
+		newWidth := int(float64(bounds.Dx()) * scale)
+		newHeight := int(float64(bounds.Dy()) * scale)
+
+		// 使用简单的最近邻缩放
+		resized := resizeImage(img, newWidth, newHeight)
+
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, resized, &jpeg.Options{Quality: 70}); err != nil {
+			continue
+		}
+
+		if buf.Len() <= maxSize {
+			return buf.Bytes(), nil
+		}
+	}
+
+	return nil, fmt.Errorf("cannot compress image to %d bytes (original: %d)", maxSize, len(data))
+}
+
+// resizeImage 简单缩放图片
+func resizeImage(img image.Image, newWidth, newHeight int) image.Image {
+	// 创建新图片
+	dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+	bounds := img.Bounds()
+
+	// 简单的最近邻插值
+	for y := 0; y < newHeight; y++ {
+		for x := 0; x < newWidth; x++ {
+			srcX := int(float64(x) * float64(bounds.Dx()) / float64(newWidth))
+			srcY := int(float64(y) * float64(bounds.Dy()) / float64(newHeight))
+			dst.Set(x, y, img.At(srcX+bounds.Min.X, srcY+bounds.Min.Y))
+		}
+	}
+
+	return dst
 }
 
 // detectImageMimeType 检测图片 MIME 类型
