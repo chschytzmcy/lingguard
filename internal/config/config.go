@@ -4,6 +4,8 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -543,6 +545,32 @@ func expandPath(path string) string {
 	return path
 }
 
+// isIPBasedHost 判断主机是否是 IP 地址（不需要 apiKey）
+// IP 地址通常是本地/内网服务，域名通常是公网服务
+func isIPBasedHost(apiBase string) bool {
+	// 从 URL 中提取主机名
+	u, err := url.Parse(apiBase)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" {
+		host = apiBase
+	}
+
+	// 尝试解析为 IP 地址
+	if ip := net.ParseIP(host); ip != nil {
+		return true
+	}
+
+	// 检查是否是 host:port 格式的 IP
+	if ip := net.ParseIP(strings.Split(host, ":")[0]); ip != nil {
+		return true
+	}
+
+	return false
+}
+
 // Validate 验证配置
 func (c *Config) Validate() error {
 	var errors []string
@@ -552,7 +580,8 @@ func (c *Config) Validate() error {
 		errors = append(errors, "至少需要配置一个 provider")
 	} else {
 		for name, p := range c.Providers {
-			if p.APIKey == "" {
+			// IP 地址（本地/内网）不需要 apiKey，域名需要
+			if p.APIKey == "" && !isIPBasedHost(p.APIBase) {
 				errors = append(errors, fmt.Sprintf("provider '%s' 缺少 apiKey", name))
 			}
 			if p.Timeout < 0 {
