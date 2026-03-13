@@ -84,12 +84,14 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *llm.Request) (*llm.R
 		logger.Debug("Complete request body", "body", string(reqBody))
 	}
 
-	resp, err := p.client.R().
+	httpReq := p.client.R().
 		SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
-		SetHeader("Authorization", "Bearer "+p.apiKey).
-		SetBody(reqBody).
-		Post(p.apiBase + "/chat/completions")
+		SetBody(reqBody)
+	if p.apiKey != "" {
+		httpReq.SetHeader("Authorization", "Bearer "+p.apiKey)
+	}
+	resp, err := httpReq.Post(p.apiBase + "/chat/completions")
 
 	duration := time.Since(start)
 
@@ -144,13 +146,15 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *llm.Request) (<-chan l
 
 	start := time.Now()
 
-	resp, err := p.client.R().
+	streamReq := p.client.R().
 		SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
-		SetHeader("Authorization", "Bearer "+p.apiKey).
 		SetBody(reqBody).
-		SetDoNotParseResponse(true).
-		Post(p.apiBase + "/chat/completions")
+		SetDoNotParseResponse(true)
+	if p.apiKey != "" {
+		streamReq.SetHeader("Authorization", "Bearer "+p.apiKey)
+	}
+	resp, err := streamReq.Post(p.apiBase + "/chat/completions")
 
 	if err != nil {
 		close(eventChan)

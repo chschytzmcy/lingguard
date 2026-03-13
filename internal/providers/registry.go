@@ -111,10 +111,7 @@ func (r *Registry) GetDefault() (Provider, bool) {
 // 自动检测 provider 类型并创建对应的实例
 func (r *Registry) InitFromConfig(cfg *config.Config) error {
 	for name, pc := range cfg.Providers {
-		if pc.APIKey == "" {
-			logger.Debug("Skipping provider: no API key", "name", name)
-			continue
-		}
+		// 本地模型（如 vLLM、Ollama）不需要 API Key，所以不再强制检查
 
 		// 查找 provider 规范
 		spec := FindSpecByName(name)
