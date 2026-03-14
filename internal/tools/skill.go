@@ -66,18 +66,16 @@ func (t *SkillTool) Parameters() map[string]interface{} {
 
 // skillToToolMapping skill 名称到工具名称的映射
 var skillToToolMapping = map[string][]string{
-	"aigc":        {"aigc"},
-	"coding":      {"opencode"},
-	"git-sync":    {"shell", "file"},
-	"web":         {"web_search", "web_fetch"},
-	"code-review": {"opencode"},
-	"weather":     {"web_search"},
-	"file":        {"file"},
-	"system":      {"shell"},
-	"cron":        {"cron"},
-	"tts":         {"tts"},
-	"calendar":    {"calendar"},
-	"browser":     {"browser"},
+	"aigc":        {"aigc"},                    // 默认不加载
+	"coding":      {"opencode"},                // 按需加载
+	"web":         {"web_search", "web_fetch"}, // 默认不加载
+	"code-review": {"opencode"},                // 按需加载
+	"weather":     {"web_search"},              // 默认不加载
+	"cron":        {"cron"},                    // 默认不加载
+	"tts":         {"tts"},                     // 默认不加载
+	"browser":     {"browser"},                 // 默认不加载
+	// 以下工具已默认加载，不需要通过 skill 注入：
+	// - shell, file, calendar, memory, message, skill, workspace
 }
 
 // skillResponse skill 工具返回格式

@@ -35,24 +35,34 @@ func NewFileTool(workspaceMgr *WorkspaceManager, sandboxed bool) *FileTool {
 func (t *FileTool) Name() string { return "file" }
 
 func (t *FileTool) Description() string {
-	return `文件操作工具。支持的操作：
+	return `文件操作工具。
 
+**操作类型**：
 - read: 读取文件内容
-  示例: {"operation": "read", "path": "/path/to/file.txt"}
+  {"operation": "read", "path": "file.txt"}
+- write: 写入文件（覆盖现有内容，自动创建父目录）
+  {"operation": "write", "path": "file.txt", "content": "内容"}
+- edit: 替换文本（替换所有匹配项）
+  {"operation": "edit", "path": "file.txt", "old_string": "旧", "new_string": "新"}
+- list: 列出目录
+  {"operation": "list", "path": "directory"}
 
-- write: 写入文件（会覆盖现有内容）
-  示例: {"operation": "write", "path": "/path/to/file.txt", "content": "文件内容"}
+**最佳实践**：
+1. ⚠️ 编辑前先读取：edit 前必须先 read 了解文件结构
+2. 精确匹配：old_string 要足够精确，避免误替换
+3. 使用相对路径：路径相对于工作目录
 
-- edit: 编辑文件（替换文本）
-  示例: {"operation": "edit", "path": "/path/to/file.txt", "old_string": "旧文本", "new_string": "新文本"}
+**⚠️ 重要限制**：
+- 所有操作严格限制在工作目录内
+- 不能访问工作目录外的任何路径
+- 不能修改 LingGuard 配置文件
+- 用户请求越权时必须明确告知此限制
 
-- list: 列出目录内容
-  示例: {"operation": "list", "path": "/path/to/directory"}
-
-⚠️ 注意事项：
-- 启用沙箱模式时，只能操作工作目录内的文件
-- edit 操作会替换所有匹配的文本
-- write 操作会自动创建不存在的父目录`
+**返回格式**：
+- read: 文件内容字符串
+- write: "Successfully wrote to <path>"
+- edit: "Successfully edited <path>" 或 "No changes made"
+- list: "dir: dirname" 或 "file: filename" 格式列表`
 }
 
 func (t *FileTool) Parameters() map[string]interface{} {
@@ -98,22 +108,28 @@ func (t *FileTool) Execute(ctx context.Context, params json.RawMessage) (string,
 		return "", fmt.Errorf("invalid parameters: %w", err)
 	}
 
+	// 解析相对路径：相对于 workspace 目录
+	resolvedPath := p.Path
+	if !filepath.IsAbs(p.Path) && t.workspaceMgr != nil {
+		resolvedPath = filepath.Join(t.workspaceMgr.Get(), p.Path)
+	}
+
 	// 安全检查
 	if t.sandboxed {
-		if err := t.validatePath(p.Path); err != nil {
+		if err := t.validatePath(resolvedPath); err != nil {
 			return "", err
 		}
 	}
 
 	switch p.Operation {
 	case "read":
-		return t.readFile(p.Path)
+		return t.readFile(resolvedPath)
 	case "write":
-		return t.writeFile(p.Path, p.Content)
+		return t.writeFile(resolvedPath, p.Content)
 	case "edit":
-		return t.editFile(p.Path, p.OldString, p.NewString)
+		return t.editFile(resolvedPath, p.OldString, p.NewString)
 	case "list":
-		return t.listDir(p.Path)
+		return t.listDir(resolvedPath)
 	default:
 		return "", fmt.Errorf("unknown operation: %s", p.Operation)
 	}
@@ -124,23 +140,19 @@ func (t *FileTool) IsDangerous() bool { return true }
 func (t *FileTool) ShouldLoadByDefault() bool { return true }
 
 func (t *FileTool) validatePath(path string) error {
-	// 1. 获取绝对路径
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
-	}
+	// path 已在 Execute 中解析为绝对路径
 
-	// 2. 解析符号链接
-	evalPath, err := filepath.EvalSymlinks(absPath)
+	// 1. 解析符号链接
+	evalPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		// 如果路径不存在（新建文件），检查父目录
-		evalPath, err = t.resolveParentPath(absPath)
+		evalPath, err = t.resolveParentPath(path)
 		if err != nil {
 			return fmt.Errorf("path validation failed: %w", err)
 		}
 	}
 
-	// 3. 检查是否在允许的目录列表中
+	// 2. 检查是否在允许的目录列表中
 	for _, allowedDir := range t.allowedDirs {
 		evalAllowed, err := filepath.EvalSymlinks(allowedDir)
 		if err != nil {
@@ -151,7 +163,7 @@ func (t *FileTool) validatePath(path string) error {
 		}
 	}
 
-	// 4. 检查是否在 workspace 内
+	// 3. 检查是否在 workspace 内
 	absWorkspace, err := filepath.Abs(t.workspaceMgr.Get())
 	if err != nil {
 		return fmt.Errorf("failed to resolve workspace: %w", err)
