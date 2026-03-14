@@ -42,7 +42,6 @@ func (t *SkillTool) Description() string {
 - 网络搜索：搜索、查一下、网上查、抓取网页 → web
 - 代码分析/优化：分析代码、优化代码、重构、写代码 → coding
 - git 下载/上传：下载代码、上传代码、git clone、git push → git-sync
-- 文件操作：读取文件、写入文件、编辑文件、列出目录 → file
 - 定时任务：提醒我、X分钟后提醒、X点提醒、每天X点、定时、闹钟、别忘了、查看定时任务 → cron
 - 语音合成：朗读、读出来、转成语音、配音 → tts
 - 日历日程：查看日历、查看日程、今天有什么安排、明天有什么会议、添加日程、创建事件 → calendar
@@ -74,8 +73,9 @@ var skillToToolMapping = map[string][]string{
 	"cron":        {"cron"},                    // 默认不加载
 	"tts":         {"tts"},                     // 默认不加载
 	"browser":     {"browser"},                 // 默认不加载
+	"calendar":    {"calendar"},                // 默认不加载
 	// 以下工具已默认加载，不需要通过 skill 注入：
-	// - shell, file, calendar, memory, message, skill, workspace
+	// - shell, file, memory, message, skill, workspace
 }
 
 // skillResponse skill 工具返回格式
