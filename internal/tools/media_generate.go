@@ -116,7 +116,7 @@ func NewAIGCTool(cfg *AIGCConfig) *AIGCTool {
 
 // Name 返回工具名称
 func (t *AIGCTool) Name() string {
-	return "aigc"
+	return "media_generate"
 }
 
 // Description 返回工具描述

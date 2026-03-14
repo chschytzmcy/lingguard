@@ -38,7 +38,7 @@ func (t *SkillTool) Description() string {
 
 ## 触发条件
 
-- 图像/视频生成：生成图片、画图、生成视频、图生视频 → aigc
+- 媒体生成：生成图片、画图、生成视频、图生视频 → media-generate
 - 网络搜索：搜索、查一下、网上查、抓取网页 → web
 - 代码分析/优化：分析代码、优化代码、重构、写代码 → coding
 - git 下载/上传：下载代码、上传代码、git clone、git push → git-sync
@@ -46,6 +46,7 @@ func (t *SkillTool) Description() string {
 - 语音合成：朗读、读出来、转成语音、配音 → tts
 - 日历日程：查看日历、查看日程、今天有什么安排、明天有什么会议、添加日程、创建事件 → calendar
 - 浏览器操作：打开网页、网页截图、浏览器、自动填写、点击按钮 → browser
+- 媒体识别：找出目录里的图片/视频/音频、搜索包含XX的图片 → media-recognize
 
 调用方式：skill --name <技能名>`
 }
@@ -65,15 +66,16 @@ func (t *SkillTool) Parameters() map[string]interface{} {
 
 // skillToToolMapping skill 名称到工具名称的映射
 var skillToToolMapping = map[string][]string{
-	"aigc":        {"aigc"},                    // 默认不加载
-	"coding":      {"opencode"},                // 按需加载
-	"web":         {"web_search", "web_fetch"}, // 默认不加载
-	"code-review": {"opencode"},                // 按需加载
-	"weather":     {"web_search"},              // 默认不加载
-	"cron":        {"cron"},                    // 默认不加载
-	"tts":         {"tts"},                     // 默认不加载
-	"browser":     {"browser"},                 // 默认不加载
-	"calendar":    {"calendar"},                // 默认不加载
+	"media-generate":  {"media_generate"},          // 默认不加载
+	"coding":          {"opencode"},                // 按需加载
+	"web":             {"web_search", "web_fetch"}, // 默认不加载
+	"code-review":     {"opencode"},                // 按需加载
+	"weather":         {"web_search"},              // 默认不加载
+	"cron":            {"cron"},                    // 默认不加载
+	"tts":             {"tts"},                     // 默认不加载
+	"browser":         {"browser"},                 // 默认不加载
+	"calendar":        {"calendar"},                // 默认不加载
+	"media-recognize": {"media_recognize"},         // 默认不加载
 	// 以下工具已默认加载，不需要通过 skill 注入：
 	// - shell, file, memory, message, skill, workspace
 }

@@ -45,7 +45,7 @@ func NewMediaScanTool(multimodalProvider providers.Provider, speechService speec
 	}
 }
 
-func (t *MediaScanTool) Name() string { return "media_scan" }
+func (t *MediaScanTool) Name() string { return "media_recognize" }
 
 func (t *MediaScanTool) Description() string {
 	return `扫描工作目录中的媒体文件（图片/视频/音频），识别特定内容。
