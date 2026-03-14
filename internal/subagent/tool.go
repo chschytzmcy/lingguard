@@ -36,7 +36,7 @@ func (t *TaskTool) Description() string {
 
 | 场景 | 正确做法 |
 |------|----------|
-| 生成图片/视频 | 直接调用 aigc 工具 |
+| 生成图片/视频 | 直接调用 media_generate 工具 |
 | 语音合成 | 直接调用 tts 工具 |
 | 网络搜索 | 直接调用 web_search 工具 |
 | 单个代码修改 | 直接使用 shell/file 工具 |

@@ -398,8 +398,8 @@ func TestAIGCToolShouldNotLoadByDefault(t *testing.T) {
 	cfg := DefaultAIGCConfig()
 	tool := NewAIGCTool(cfg)
 
-	if tool.Name() != "aigc" {
-		t.Errorf("Expected name=aigc, got %s", tool.Name())
+	if tool.Name() != "media_generate" {
+		t.Errorf("Expected name=media_generate, got %s", tool.Name())
 	}
 
 	if tool.ShouldLoadByDefault() {
