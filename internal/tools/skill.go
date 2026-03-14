@@ -76,6 +76,7 @@ var skillToToolMapping = map[string][]string{
 	"browser":         {"browser"},                 // 默认不加载
 	"calendar":        {"calendar"},                // 默认不加载
 	"media-recognize": {"media_recognize"},         // 默认不加载
+	"moltbook":        {"moltbook"},                // 默认不加载
 	// 以下工具已默认加载，不需要通过 skill 注入：
 	// - shell, file, memory, message, skill, workspace
 }
