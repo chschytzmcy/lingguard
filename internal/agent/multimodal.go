@@ -22,6 +22,7 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 	// 收集视频文件路径，用于后续添加路径提示
 	var videoPaths []string
 	var imagePaths []string
+	var documentPaths []string
 
 	// 视频大小限制：5MB（base64 编码后约 6.7MB）
 	const maxVideoSize = 5 * 1024 * 1024
@@ -35,7 +36,7 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(path))
-		if !isVideoFile(ext) {
+		if !isVideoFile(ext) && !isDocumentFile(ext) {
 			imageCount++
 		}
 	}
@@ -99,6 +100,18 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 					},
 				})
 			}
+		} else if !isDataURL && isDocumentFile(filepath.Ext(path)) {
+			// 文档文件：不发送内容，只提供文件路径提示
+			documentPaths = append(documentPaths, path)
+			fileName := filepath.Base(path)
+			fileSize := float64(len(data)) / 1024 / 1024
+			logger.Info("Processing document file", "path", truncateMediaPath(path), "size", len(data))
+
+			// 添加文档提示文本
+			parts = append(parts, llm.ContentPart{
+				Type: "text",
+				Text: fmt.Sprintf("[文档文件: %s，大小: %.1fMB，路径: %s]", fileName, fileSize, path),
+			})
 		} else {
 			// 图片使用 image_url 格式
 			// 如果是 base64 data URL，mimeType 已经在上面的 parseBase64DataURL 中解析出来了
@@ -139,6 +152,9 @@ func (a *Agent) buildMultimodalContent(text string, mediaPaths []string) ([]llm.
 	if len(imagePaths) > 0 {
 		mediaHints = append(mediaHints, fmt.Sprintf("[图片文件路径: %s]", strings.Join(imagePaths, ", ")))
 	}
+	if len(documentPaths) > 0 {
+		mediaHints = append(mediaHints, fmt.Sprintf("[文档文件路径: %s]", strings.Join(documentPaths, ", ")))
+	}
 
 	// 添加文本（放在最后）
 	if text != "" {
@@ -173,6 +189,24 @@ func isVideoFile(ext string) bool {
 		".3gp":  true,
 	}
 	return videoExts[ext]
+}
+
+// isDocumentFile 判断是否为文档文件
+func isDocumentFile(ext string) bool {
+	docExts := map[string]bool{
+		".pdf":  true,
+		".doc":  true,
+		".docx": true,
+		".xls":  true,
+		".xlsx": true,
+		".ppt":  true,
+		".pptx": true,
+		".txt":  true,
+		".md":   true,
+		".csv":  true,
+		".rtf":  true,
+	}
+	return docExts[ext]
 }
 
 // detectVideoMimeType 根据扩展名检测视频 MIME 类型

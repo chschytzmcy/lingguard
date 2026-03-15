@@ -383,6 +383,17 @@ func (f *FeishuChannel) handleMessage(ctx context.Context, event *larkim.P2Messa
 			// 没有媒体，解析纯文本内容
 			content = f.parsePostContent(msg.Content)
 		}
+	} else if msgType == "file" {
+		// 下载文件并保存到本地
+		filePath, fileName, err := f.downloadFile(ctx, msg.Content, safeString(msg.MessageId))
+		if err != nil {
+			logger.Warn("Failed to download file", "error", err)
+			content = "[file: download failed]"
+		} else {
+			mediaPaths = append(mediaPaths, filePath)
+			content = fmt.Sprintf("[file: %s saved to %s]", fileName, filePath)
+			logger.Info("Downloaded file", "name", fileName, "path", filePath, "messageId", messageID)
+		}
 	} else {
 		content = msgTypeMap[msgType]
 		if content == "" {
@@ -1088,6 +1099,76 @@ func (f *FeishuChannel) downloadAudio(ctx context.Context, content *string, mess
 	}
 
 	return filePath, nil
+}
+
+// downloadFile 下载飞书文件消息并保存到本地
+func (f *FeishuChannel) downloadFile(ctx context.Context, content *string, messageID string) (string, string, error) {
+	if content == nil || f.client == nil {
+		return "", "", fmt.Errorf("invalid parameters")
+	}
+
+	// 解析文件消息内容: {"file_key": "file_xxx", "file_name": "document.pdf"}
+	var fileMsg struct {
+		FileKey  string `json:"file_key"`
+		FileName string `json:"file_name"`
+	}
+	if err := json.Unmarshal([]byte(*content), &fileMsg); err != nil {
+		return "", "", fmt.Errorf("parse file content: %w", err)
+	}
+
+	if fileMsg.FileKey == "" {
+		return "", "", fmt.Errorf("empty file_key")
+	}
+
+	fileName := fileMsg.FileName
+	if fileName == "" {
+		fileName = "unknown_file"
+	}
+
+	// 创建媒体目录
+	mediaDir := filepath.Join(f.workspace, "media")
+	if err := os.MkdirAll(mediaDir, 0755); err != nil {
+		return "", "", fmt.Errorf("create media dir: %w", err)
+	}
+
+	// 生成文件名（保留原始文件名和扩展名）
+	timestamp := time.Now().UnixNano()
+	shortID := messageID
+	if len(messageID) > 8 {
+		shortID = messageID[:8]
+	}
+
+	// 提取文件扩展名
+	ext := filepath.Ext(fileName)
+	baseName := strings.TrimSuffix(fileName, ext)
+
+	// 生成唯一文件名：原始名称_时间戳_消息ID.扩展名
+	uniqueFileName := fmt.Sprintf("%s_%d_%s%s", baseName, timestamp, shortID, ext)
+	filePath := filepath.Join(mediaDir, uniqueFileName)
+
+	// 获取文件资源请求
+	req := larkim.NewGetMessageResourceReqBuilder().
+		MessageId(messageID).
+		FileKey(fileMsg.FileKey).
+		Type("file").
+		Build()
+
+	// 获取文件并直接保存到文件
+	resp, err := f.client.Im.MessageResource.Get(ctx, req)
+	if err != nil {
+		return "", "", fmt.Errorf("get file resource: %w", err)
+	}
+
+	if resp.Code != 0 {
+		return "", "", fmt.Errorf("get file failed: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	// 使用 SDK 提供的 WriteFile 方法保存文件
+	if err := resp.WriteFile(filePath); err != nil {
+		return "", "", fmt.Errorf("write file: %w", err)
+	}
+
+	return filePath, fileName, nil
 }
 
 // downloadMedia 下载飞书媒体消息（视频/图片混合）并保存到本地
