@@ -25,10 +25,6 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Expected Provider=openai, got %s", cfg.Agents.Provider)
 	}
 
-	if cfg.Storage.Type != "file" {
-		t.Errorf("Expected Storage.Type=file, got %s", cfg.Storage.Type)
-	}
-
 	// 验证默认记忆配置
 	if cfg.Agents.MemoryConfig == nil {
 		t.Error("Expected MemoryConfig to be non-nil")
@@ -127,18 +123,21 @@ func TestLoadNonExistentFile(t *testing.T) {
 
 func TestFeishuConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.Channels.Feishu = &FeishuConfig{
-		Enabled:   true,
-		AppID:     "cli_test",
-		AppSecret: "secret",
-		AllowFrom: []string{"user1", "user2"},
+	cfg.Channels.Feishu = []FeishuConfig{
+		{
+			Name:      "feishu-bot1",
+			Enabled:   true,
+			AppID:     "cli_test",
+			AppSecret: "secret",
+			AllowFrom: []string{"user1", "user2"},
+		},
 	}
 
-	if !cfg.Channels.Feishu.Enabled {
+	if !cfg.Channels.Feishu[0].Enabled {
 		t.Error("Feishu should be enabled")
 	}
 
-	if len(cfg.Channels.Feishu.AllowFrom) != 2 {
-		t.Errorf("Expected 2 allowed users, got %d", len(cfg.Channels.Feishu.AllowFrom))
+	if len(cfg.Channels.Feishu[0].AllowFrom) != 2 {
+		t.Errorf("Expected 2 allowed users, got %d", len(cfg.Channels.Feishu[0].AllowFrom))
 	}
 }

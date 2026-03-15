@@ -510,11 +510,14 @@ func (d *Doctor) checkChannels() {
 		return
 	}
 
-	// 检查飞书
-	if d.config.Channels.Feishu != nil && d.config.Channels.Feishu.Enabled {
-		feishu := d.config.Channels.Feishu
-		issues := []string{}
+	// 检查飞书（支持多实例）
+	for _, feishu := range d.config.Channels.Feishu {
+		if !feishu.Enabled {
+			d.addResult(fmt.Sprintf("Feishu Channel (%s)", feishu.Name), "skip", "Feishu channel not enabled", "", false)
+			continue
+		}
 
+		issues := []string{}
 		if feishu.AppID == "" {
 			issues = append(issues, "App ID not configured")
 		}
@@ -523,14 +526,16 @@ func (d *Doctor) checkChannels() {
 		}
 
 		if len(issues) > 0 {
-			d.addResult("Feishu Channel", "error",
+			d.addResult(fmt.Sprintf("Feishu Channel (%s)", feishu.Name), "error",
 				strings.Join(issues, ", "),
-				"Set 'channels.feishu.appId' and 'channels.feishu.appSecret'", false)
+				"Set 'channels.feishu[].appId' and 'channels.feishu[].appSecret'", false)
 		} else {
-			d.addResult("Feishu Channel", "ok", "Feishu channel configured", "", false)
+			d.addResult(fmt.Sprintf("Feishu Channel (%s)", feishu.Name), "ok", "Feishu channel configured", "", false)
 		}
-	} else {
-		d.addResult("Feishu Channel", "skip", "Feishu channel not enabled", "", false)
+	}
+	// 如果没有配置飞书，显示 skip
+	if len(d.config.Channels.Feishu) == 0 {
+		d.addResult("Feishu Channel", "skip", "Feishu channel not configured", "", false)
 	}
 }
 

@@ -335,8 +335,13 @@ func NewQQChannel(cfg *config.QQConfig, speechCfg *config.SpeechConfig, provider
 	return qc
 }
 
-// Name 返回渠道名称
-func (q *QQChannel) Name() string { return "qq" }
+// Name 返回渠道名称（使用配置中的 name 字段）
+func (q *QQChannel) Name() string {
+	if q.cfg.Name != "" {
+		return q.cfg.Name
+	}
+	return "qq" // 默认名称
+}
 
 // Start 启动渠道
 func (q *QQChannel) Start(ctx context.Context) error {

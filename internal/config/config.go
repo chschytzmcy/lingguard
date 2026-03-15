@@ -174,14 +174,15 @@ type VectorDbConfig struct {
 	Dimension int    `json:"dimension,omitempty"` // 向量维度，默认 1024
 }
 
-// ChannelsConfig 渠道配置
+// ChannelsConfig 渠道配置（支持每种类型多个实例）
 type ChannelsConfig struct {
-	Feishu *FeishuConfig `json:"feishu,omitempty"`
-	QQ     *QQConfig     `json:"qq,omitempty"`
+	Feishu []FeishuConfig `json:"feishu,omitempty"`
+	QQ     []QQConfig     `json:"qq,omitempty"`
 }
 
 // FeishuConfig 飞书配置
 type FeishuConfig struct {
+	Name              string   `json:"name"` // 实例名称，用于标识不同的飞书应用
 	Enabled           bool     `json:"enabled"`
 	AppID             string   `json:"appId"`
 	AppSecret         string   `json:"appSecret"`
@@ -192,6 +193,7 @@ type FeishuConfig struct {
 
 // QQConfig QQ机器人配置
 type QQConfig struct {
+	Name      string   `json:"name"` // 实例名称，用于标识不同的QQ应用
 	Enabled   bool     `json:"enabled"`
 	AppID     string   `json:"appId"`     // QQ机器人 AppID
 	AppSecret string   `json:"appSecret"` // QQ机器人 ClientSecret（从机器人开放平台获取）
@@ -627,21 +629,31 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// 验证 Channels
-	if c.Channels.Feishu != nil && c.Channels.Feishu.Enabled {
-		if c.Channels.Feishu.AppID == "" {
-			errors = append(errors, "channels.feishu.appId 不能为空")
-		}
-		if c.Channels.Feishu.AppSecret == "" {
-			errors = append(errors, "channels.feishu.appSecret 不能为空")
+	// 验证 Channels（支持多实例）
+	for i, fc := range c.Channels.Feishu {
+		if fc.Enabled {
+			if fc.Name == "" {
+				errors = append(errors, fmt.Sprintf("channels.feishu[%d].name 不能为空", i))
+			}
+			if fc.AppID == "" {
+				errors = append(errors, fmt.Sprintf("channels.feishu[%d].appId 不能为空", i))
+			}
+			if fc.AppSecret == "" {
+				errors = append(errors, fmt.Sprintf("channels.feishu[%d].appSecret 不能为空", i))
+			}
 		}
 	}
-	if c.Channels.QQ != nil && c.Channels.QQ.Enabled {
-		if c.Channels.QQ.AppID == "" {
-			errors = append(errors, "channels.qq.appId 不能为空")
-		}
-		if c.Channels.QQ.AppSecret == "" {
-			errors = append(errors, "channels.qq.secret 不能为空")
+	for i, qc := range c.Channels.QQ {
+		if qc.Enabled {
+			if qc.Name == "" {
+				errors = append(errors, fmt.Sprintf("channels.qq[%d].name 不能为空", i))
+			}
+			if qc.AppID == "" {
+				errors = append(errors, fmt.Sprintf("channels.qq[%d].appId 不能为空", i))
+			}
+			if qc.AppSecret == "" {
+				errors = append(errors, fmt.Sprintf("channels.qq[%d].appSecret 不能为空", i))
+			}
 		}
 	}
 

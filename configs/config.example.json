@@ -122,24 +122,37 @@
   },
 
   "channels": {
-    "_comment": "==================== 渠道配置 ====================",
+    "_comment": "==================== 渠道配置（支持每种类型多个实例）====================",
 
-    "feishu": {
-      "_comment": "飞书机器人 - WebSocket 长连接，无需公网 IP",
-      "enabled": true,
-      "appId": "cli_xxx",
-      "appSecret": "xxx"
-    },
+    "feishu": [
+      {
+        "_comment": "飞书机器人1 - WebSocket 长连接，无需公网 IP",
+        "name": "feishu-bot1",
+        "enabled": true,
+        "appId": "cli_xxx",
+        "appSecret": "xxx"
+      },
+      {
+        "_comment": "飞书机器人2 - 第二个飞书应用",
+        "name": "feishu-bot2",
+        "enabled": false,
+        "appId": "cli_yyy",
+        "appSecret": "yyy"
+      }
+    ],
 
-    "qq": {
-      "_comment": "QQ机器人 - WebSocket Gateway 模式（参考 OpenClaw 实现）",
-      "_docs": "https://bot.q.qq.com",
-      "_features": "Intent权限降级、Session Resume断线重连、快速断开检测、群消息支持",
-      "enabled": false,
-      "appId": "你的QQ机器人AppID",
-      "appSecret": "你的QQ机器人AppSecret",
-      "allowFrom": []
-    }
+    "qq": [
+      {
+        "_comment": "QQ机器人 - WebSocket Gateway 模式（参考 OpenClaw 实现）",
+        "_docs": "https://bot.q.qq.com",
+        "_features": "Intent权限降级、Session Resume断线重连、快速断开检测、群消息支持",
+        "name": "qq-bot1",
+        "enabled": false,
+        "appId": "你的QQ机器人AppID",
+        "appSecret": "你的QQ机器人AppSecret",
+        "allowFrom": []
+      }
+    ]
   },
 
   "server": {

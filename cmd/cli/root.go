@@ -151,13 +151,26 @@ func runStatus() {
 
 	// 显示渠道信息
 	fmt.Println("\nChannels:")
-	if cfg.Channels.Feishu != nil {
-		status := "disabled"
-		if cfg.Channels.Feishu.Enabled {
-			status = "enabled"
+	if len(cfg.Channels.Feishu) > 0 {
+		for _, fc := range cfg.Channels.Feishu {
+			status := "disabled"
+			if fc.Enabled {
+				status = "enabled"
+			}
+			fmt.Printf("  - Feishu (%s): %s\n", fc.Name, status)
 		}
-		fmt.Printf("  - Feishu: %s\n", status)
 	} else {
 		fmt.Println("  - Feishu: not configured")
+	}
+	if len(cfg.Channels.QQ) > 0 {
+		for _, qc := range cfg.Channels.QQ {
+			status := "disabled"
+			if qc.Enabled {
+				status = "enabled"
+			}
+			fmt.Printf("  - QQ (%s): %s\n", qc.Name, status)
+		}
+	} else {
+		fmt.Println("  - QQ: not configured")
 	}
 }

@@ -390,23 +390,38 @@ func runGateway() error {
 func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace string, handler channels.MessageHandler, profileStore *memory.ProfileStore) (*channels.WebChatChannel, error) {
 	var webChatChannel *channels.WebChatChannel
 
-	// 飞书渠道
-	if cfg.Channels.Feishu != nil && cfg.Channels.Feishu.Enabled {
-		if cfg.Channels.Feishu.AppID == "" || cfg.Channels.Feishu.AppSecret == "" {
-			return nil, fmt.Errorf("feishu channel enabled but appId or appSecret not configured")
+	// 飞书渠道（支持多实例）
+	for i := range cfg.Channels.Feishu {
+		feishuCfg := &cfg.Channels.Feishu[i]
+		if !feishuCfg.Enabled {
+			continue
 		}
-		mgr.RegisterChannel(channels.NewFeishuChannel(cfg.Channels.Feishu, cfg.Tools.Speech, cfg.Providers, workspace, handler, profileStore, cfg.Agents.Soul))
-		logger.Info("Feishu channel registered")
+		if feishuCfg.AppID == "" || feishuCfg.AppSecret == "" {
+			return nil, fmt.Errorf("feishu channel '%s' enabled but appId or appSecret not configured", feishuCfg.Name)
+		}
+		// 如果没有设置 name，使用默认名称
+		if feishuCfg.Name == "" {
+			feishuCfg.Name = "feishu"
+		}
+		mgr.RegisterChannel(channels.NewFeishuChannel(feishuCfg, cfg.Tools.Speech, cfg.Providers, workspace, handler, profileStore, cfg.Agents.Soul))
+		logger.Info("Feishu channel registered", "name", feishuCfg.Name, "appId", maskAppID(feishuCfg.AppID))
 	}
 
-	// QQ 渠道
-	if cfg.Channels.QQ != nil && cfg.Channels.QQ.Enabled {
-		if cfg.Channels.QQ.AppID == "" || cfg.Channels.QQ.AppSecret == "" {
-			return nil, fmt.Errorf("qq channel enabled but appId or appSecret not configured")
+	// QQ 渠道（支持多实例）
+	for i := range cfg.Channels.QQ {
+		qqCfg := &cfg.Channels.QQ[i]
+		if !qqCfg.Enabled {
+			continue
 		}
-		// WebSocket 模式
-		mgr.RegisterChannel(channels.NewQQChannel(cfg.Channels.QQ, cfg.Tools.Speech, cfg.Providers, handler))
-		logger.Info("QQ channel registered (websocket mode)")
+		if qqCfg.AppID == "" || qqCfg.AppSecret == "" {
+			return nil, fmt.Errorf("qq channel '%s' enabled but appId or appSecret not configured", qqCfg.Name)
+		}
+		// 如果没有设置 name，使用默认名称
+		if qqCfg.Name == "" {
+			qqCfg.Name = "qq"
+		}
+		mgr.RegisterChannel(channels.NewQQChannel(qqCfg, cfg.Tools.Speech, cfg.Providers, handler))
+		logger.Info("QQ channel registered (websocket mode)", "name", qqCfg.Name, "appId", maskAppID(qqCfg.AppID))
 	}
 
 	// WebChat 渠道（随 Server 自动启用，无需额外配置）
@@ -423,13 +438,33 @@ func registerChannels(cfg *config.Config, mgr *channels.Manager, workspace strin
 	}
 
 	// 检查是否有渠道
-	if (cfg.Channels.Feishu == nil || !cfg.Channels.Feishu.Enabled) &&
-		(cfg.Channels.QQ == nil || !cfg.Channels.QQ.Enabled) &&
-		(cfg.Server == nil || !cfg.Server.Enabled) {
+	hasFeishu := false
+	for _, fc := range cfg.Channels.Feishu {
+		if fc.Enabled {
+			hasFeishu = true
+			break
+		}
+	}
+	hasQQ := false
+	for _, qc := range cfg.Channels.QQ {
+		if qc.Enabled {
+			hasQQ = true
+			break
+		}
+	}
+	if !hasFeishu && !hasQQ && (cfg.Server == nil || !cfg.Server.Enabled) {
 		return nil, fmt.Errorf("no channels enabled, please configure at least one channel")
 	}
 
 	return webChatChannel, nil
+}
+
+// maskAppID 遮蔽 AppID 中间部分
+func maskAppID(appID string) string {
+	if len(appID) <= 8 {
+		return appID
+	}
+	return appID[:4] + "****" + appID[len(appID)-4:]
 }
 
 // createCronJobCallback 创建定时任务执行回调

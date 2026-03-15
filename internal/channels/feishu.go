@@ -122,8 +122,13 @@ func NewFeishuChannel(cfg *config.FeishuConfig, speechCfg *config.SpeechConfig, 
 	return fc
 }
 
-// Name 返回渠道名称
-func (f *FeishuChannel) Name() string { return "feishu" }
+// Name 返回渠道名称（使用配置中的 name 字段）
+func (f *FeishuChannel) Name() string {
+	if f.cfg.Name != "" {
+		return f.cfg.Name
+	}
+	return "feishu" // 默认名称
+}
 
 // Start 启动渠道
 func (f *FeishuChannel) Start(ctx context.Context) error {

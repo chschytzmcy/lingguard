@@ -81,16 +81,34 @@
     }
   },
   "channels": {
-    "feishu": {
-      "enabled": true,
-      "appId": "xxx",
-      "appSecret": "xxx"
-    },
-    "qq": {
-      "enabled": false,
-      "appId": "xxx",
-      "appSecret": "xxx"
-    }
+    "feishu": [
+      {
+        "name": "feishu-bot1",
+        "enabled": true,
+        "appId": "xxx",
+        "appSecret": "xxx"
+      },
+      {
+        "name": "feishu-bot2",
+        "enabled": false,
+        "appId": "xxx",
+        "appSecret": "xxx"
+      }
+    ],
+    "qq": [
+      {
+        "name": "qq-bot1",
+        "enabled": false,
+        "appId": "xxx",
+        "appSecret": "xxx"
+      },
+      {
+        "name": "qq-bot2",
+        "enabled": false,
+        "appId": "xxx",
+        "appSecret": "xxx"
+      }
+    ]
   },
   "heartbeat": {
     "enabled": true,
